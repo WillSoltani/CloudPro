@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import type { ExperienceItem } from "@/src/content/experience";
+import type { ExperienceItem } from "@/content/experience";
 
 type Props = {
   title: string;

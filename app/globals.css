@@ -1,11 +1,22 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-html {
-  scroll-behavior: smooth;
-}
+
 section[id] {
   scroll-margin-top: 96px;
+}
+
+html { 
+  scroll-behavior: smooth;
+  scroll-padding-top: 88px;
+ }
+
+body {
+  text-rendering: geometricPrecision;
+}
+
+:focus-visible {
+  outline: none;
 }
 
 @custom-variant dark (&:is(.dark *));
