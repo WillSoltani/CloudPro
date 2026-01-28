@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
+import Link from "next/link";
+
+
+import { LoginButton } from "@/components/auth/LoginButton";
+import { LogoutButton } from "@/components/auth/LogoutButton";
+import { useAuth } from "@/components/auth/useAuth";
 
 const links = [
   { id: "about", label: "About" },
@@ -11,7 +17,7 @@ const links = [
   { id: "projects", label: "Projects" },
   { id: "experience", label: "Experience" },
   { id: "contact", label: "Contact" },
-];
+] as const;
 
 const panelVariants = {
   hidden: { opacity: 0, y: -10, scale: 0.98 },
@@ -29,6 +35,8 @@ const itemVariants = {
 };
 
 export function Navbar() {
+  const { loggedIn } = useAuth();
+
   const [active, setActive] = useState<string>("about");
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -36,6 +44,7 @@ export function Navbar() {
   const linkIds = useMemo(() => links.map((l) => l.id), []);
 
   const handleNavClick = (id: string) => {
+    // Immediately show highlight on click (IntersectionObserver will keep it correct afterwards).
     setActive(id);
     setOpen(false);
   };
@@ -47,6 +56,7 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Highlight active section as you scroll
   useEffect(() => {
     const els = linkIds
       .map((id) => document.getElementById(id))
@@ -59,13 +69,12 @@ export function Navbar() {
         const visible = entries
           .filter((e) => e.isIntersecting)
           .sort(
-            (a, b) =>
-              (b.intersectionRatio ?? 0) - (a.intersectionRatio ?? 0)
+            (a, b) => (b.intersectionRatio ?? 0) - (a.intersectionRatio ?? 0)
           )[0];
 
         if (visible?.target?.id) setActive(visible.target.id);
       },
-      // Less picky: helps shorter sections (Projects/Contact) trigger more reliably.
+      // Less picky: helps short sections (Projects/Contact) trigger reliably.
       { threshold: 0.15, rootMargin: "-10% 0px -70% 0px" }
     );
 
@@ -87,51 +96,65 @@ export function Navbar() {
       className={[
         "sticky top-0 z-50 transition",
         scrolled
-          ? "backdrop-blur border-b border-white/10 bg-[#070b16]/70"
+          ? "border-b border-white/10 bg-[#070b16]/70 backdrop-blur"
           : "border-b border-white/5 bg-transparent",
       ].join(" ")}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <a href="#" className="text-lg font-semibold">
-          <span className="bg-gradient-to-b from-white to-slate-300 bg-clip-text text-transparent">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
+        {/* Logo */}
+        <Link href="/#about" className="text-lg font-semibold">
+          <span className="bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">
             Will Soltani
           </span>
-        </a>
+        </Link>
 
-        {/* Desktop nav */}
-        <nav className="relative hidden gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm text-slate-300 md:flex">
-          {links.map((l) => {
-            const isActive = active === l.id;
-            return (
-              <a
-                key={l.id}
-                href={`#${l.id}`}
-                onClick={() => handleNavClick(l.id)}
-                className="relative rounded-full px-3 py-1.5 hover:text-slate-100"
-              >
-                {isActive ? (
-                  <motion.span
-                    layoutId="nav-pill"
-                    className="absolute inset-0 rounded-full bg-white/10"
-                    transition={{ type: "spring", stiffness: 500, damping: 40 }}
-                  />
-                ) : null}
-                <span className="relative">{l.label}</span>
-              </a>
-            );
-          })}
-        </nav>
 
-        {/* Mobile button */}
-        <button
-          type="button"
-          className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden"
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Toggle menu"
-          aria-expanded={open}
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        {/* Right side: desktop nav + auth + mobile menu button */}
+        <div className="flex items-center gap-3">
+          {/* Desktop nav */}
+          <nav className="relative hidden gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm text-slate-300 md:flex">
+            {links.map((l) => {
+              const isActive = active === l.id;
+              return (
+                <a
+                  key={l.id}
+                  href={`#${l.id}`}
+                  onClick={() => handleNavClick(l.id)}
+                  className="relative rounded-full px-3 py-1.5 hover:text-slate-100"
+                >
+                  {isActive ? (
+                    <motion.span
+                      layoutId="nav-pill"
+                      className="absolute inset-0 rounded-full bg-white/10"
+                      transition={{
+                        type: "spring",
+                        stiffness: 500,
+                        damping: 40,
+                      }}
+                    />
+                  ) : null}
+                  <span className="relative">{l.label}</span>
+                </a>
+              );
+            })}
+          </nav>
+
+          {/* Auth (desktop) */}
+          <div className="hidden md:block">
+            {loggedIn ? <LogoutButton /> : <LoginButton />}
+          </div>
+
+          {/* Mobile button */}
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden"
+            onClick={() => setOpen((v) => !v)}
+            aria-label="Toggle menu"
+            aria-expanded={open}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Mobile menu panel */}
@@ -144,7 +167,7 @@ export function Navbar() {
             exit="exit"
             className="md:hidden"
           >
-            <div className="mx-auto max-w-6xl px-6 pb-4">
+            <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur">
                 {links.map((l, i) => {
                   const isActive = active === l.id;
@@ -171,6 +194,11 @@ export function Navbar() {
                     </motion.a>
                   );
                 })}
+
+                {/* Mobile auth */}
+                <div className="mt-2 border-t border-white/10 pt-2 px-2 pb-1">
+                  {loggedIn ? <LogoutButton /> : <LoginButton />}
+                </div>
               </div>
             </div>
           </motion.div>

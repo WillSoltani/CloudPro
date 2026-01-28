@@ -3,12 +3,6 @@ import { serverlessFilePipeline } from "./serverless-file-pipeline";
 
 export const projects: Project[] = [serverlessFilePipeline];
 
-
-console.log("PROJECTS:", projects.map(p => ({
-  slug: p.slug,
-  diagram: p.caseStudy?.diagram?.src ?? null
-})));
-
 // Optional safety check (catches duplicates + empty)
 (function assertProjects(list: Project[]) {
   if (list.length === 0) throw new Error("No projects exported from content/projects");
