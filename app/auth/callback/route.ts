@@ -7,6 +7,8 @@ function mustEnv(name: string): string {
 }
 
 export async function GET(req: NextRequest) {
+  const isProd = process.env.NODE_ENV === "production";
+
   const domain = mustEnv("COGNITO_DOMAIN").replace(/\/$/, "");
   const clientId = mustEnv("COGNITO_CLIENT_ID");
   const redirectUri = mustEnv("COGNITO_REDIRECT_URI");
@@ -37,7 +39,7 @@ export async function GET(req: NextRequest) {
   const tokenRes = await fetch(`${domain}/oauth2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
+    body: body.toString(),
   });
 
   if (!tokenRes.ok) {
@@ -48,26 +50,20 @@ export async function GET(req: NextRequest) {
 
   const res = NextResponse.redirect(new URL("/app", req.url));
 
-  // Store tokens securely
-  res.cookies.set("id_token", tokens.id_token, {
+  const commonCookie = {
     httpOnly: true,
-    secure: false, // true in prod
-    sameSite: "lax",
+    secure: isProd,
+    sameSite: "lax" as const,
     path: "/",
-    maxAge: tokens.expires_in,
-  });
+    maxAge: Number(tokens.expires_in) || 3600,
+  };
 
-  res.cookies.set("access_token", tokens.access_token, {
-    httpOnly: true,
-    secure: false,
-    sameSite: "lax",
-    path: "/",
-    maxAge: tokens.expires_in,
-  });
+  res.cookies.set("id_token", tokens.id_token, commonCookie);
+  res.cookies.set("access_token", tokens.access_token, commonCookie);
 
-  // Cleanup PKCE cookies
-  res.cookies.delete("pkce_verifier");
-  res.cookies.delete("oauth_state");
+  // Clear PKCE cookies (more reliable than delete across Next versions)
+  res.cookies.set("pkce_verifier", "", { path: "/", maxAge: 0 });
+  res.cookies.set("oauth_state", "", { path: "/", maxAge: 0 });
 
   return res;
 }
