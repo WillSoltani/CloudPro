@@ -1,7 +1,6 @@
 // app/app/projects/page.tsx
-import Link from "next/link";
 import { cookies, headers } from "next/headers";
-import { CreateProjectButton } from "./CreateProjectButton";
+import ProjectsClient from "./ProjectsClient";
 
 type ProjectRow = {
   projectId: string;
@@ -9,6 +8,13 @@ type ProjectRow = {
   createdAt: string;
   updatedAt: string;
   status: string;
+};
+
+// What ProjectsClient expects
+type ClientStats = {
+  totalProjects: number;
+  totalFiles: number;
+  spaceSavedBytes: number;
 };
 
 function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
@@ -22,6 +28,18 @@ async function getOrigin() {
   const host = h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? "http";
   return `${proto}://${host}`;
+}
+
+function isProjectRow(x: unknown): x is ProjectRow {
+  if (typeof x !== "object" || x === null) return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.projectId === "string" &&
+    typeof o.name === "string" &&
+    typeof o.createdAt === "string" &&
+    typeof o.updatedAt === "string" &&
+    typeof o.status === "string"
+  );
 }
 
 async function fetchProjects(): Promise<ProjectRow[]> {
@@ -41,65 +59,59 @@ async function fetchProjects(): Promise<ProjectRow[]> {
     throw new Error(`GET /app/api/projects failed: ${res.status} ${text}`);
   }
 
-  const data = (await res.json()) as { projects?: ProjectRow[] };
-  return data.projects ?? [];
+  const data: unknown = await res.json();
+  const projectsUnknown = (data as { projects?: unknown }).projects;
+
+  if (!Array.isArray(projectsUnknown)) return [];
+  return projectsUnknown.filter(isProjectRow);
+}
+
+async function fetchStats(): Promise<ClientStats> {
+  const origin = await getOrigin();
+  const store = await cookies();
+  const cookie = cookieHeaderFromStore(store);
+
+  // If you don't actually have this route yet, either create it or return zeros.
+  const res = await fetch(`${origin}/app/api/me/stats`, {
+    method: "GET",
+    headers: cookie ? { cookie } : {},
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    if (res.status === 401) {
+      return { totalProjects: 0, totalFiles: 0, spaceSavedBytes: 0 };
+    }
+    const text = await res.text();
+    throw new Error(`GET /app/api/me/stats failed: ${res.status} ${text}`);
+  }
+
+  const data: unknown = await res.json();
+  const o = (typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {}) as Record<
+    string,
+    unknown
+  >;
+
+  const totalProjects =
+    typeof o.totalProjects === "number" && Number.isFinite(o.totalProjects) ? o.totalProjects : 0;
+
+  // Your API might return filesConverted or totalFiles. Support both.
+  const totalFilesRaw =
+    typeof o.totalFiles === "number"
+      ? o.totalFiles
+      : typeof o.filesConverted === "number"
+        ? o.filesConverted
+        : 0;
+
+  const totalFiles = Number.isFinite(totalFilesRaw) ? totalFilesRaw : 0;
+
+  const spaceSavedBytes =
+    typeof o.spaceSavedBytes === "number" && Number.isFinite(o.spaceSavedBytes) ? o.spaceSavedBytes : 0;
+
+  return { totalProjects, totalFiles, spaceSavedBytes };
 }
 
 export default async function AppProjectsPage() {
-  const projects = await fetchProjects();
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-          <p className="mt-2 text-sm text-slate-300">
-            Create a project and upload files to it.
-          </p>
-        </div>
-
-        <CreateProjectButton />
-      </div>
-
-      {projects.length === 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
-          <p className="text-sm text-slate-300">No projects yet.</p>
-          <div className="mt-4">
-            <Link
-              href="/app/upload"
-              className="text-sm text-sky-300 hover:text-sky-200"
-            >
-              Upload a file →
-            </Link>
-          </div>
-        </div>
-      ) : (
-        <div className="grid gap-3">
-          {projects.map((p) => (
-            <Link
-              key={p.projectId}
-              href={`/app/projects/${encodeURIComponent(p.projectId)}`}
-              className="group rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:bg-white/8"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm text-slate-400">Project</p>
-                  <h2 className="mt-1 text-base font-semibold text-slate-100 group-hover:text-white">
-                    {p.name}
-                  </h2>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Updated {new Date(p.updatedAt).toLocaleString()}
-                  </p>
-                </div>
-
-                <span className="rounded-full border border-white/10 bg-white/8 px-3 py-1 text-xs text-slate-200">
-                  {p.status}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const [projects, stats] = await Promise.all([fetchProjects(), fetchStats()]);
+  return <ProjectsClient initialProjects={projects} initialStats={stats} />;
 }

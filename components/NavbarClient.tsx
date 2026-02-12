@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { LayoutDashboard, Menu, X } from "lucide-react";
 import Link from "next/link";
 
 import { LoginButton } from "@/components/auth/LoginButton";
@@ -39,7 +39,6 @@ type NavbarClientProps = {
 export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
   const [loggedIn, setLoggedIn] = useState<boolean>(initialLoggedIn);
 
-  // Always reflect server truth when the server re-renders this component
   useEffect(() => {
     setLoggedIn(initialLoggedIn);
   }, [initialLoggedIn]);
@@ -48,18 +47,19 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
     try {
       const res = await fetch("/auth/session", { cache: "no-store" });
       if (!res.ok) return;
-      const data = (await res.json()) as { loggedIn: boolean };
-      setLoggedIn(Boolean(data.loggedIn));
+      const data = (await res.json()) as unknown;
+      const next =
+        typeof (data as { loggedIn?: unknown }).loggedIn === "boolean"
+          ? (data as { loggedIn: boolean }).loggedIn
+          : false;
+      setLoggedIn(next);
     } catch {
       // ignore
     }
   }, []);
 
-  // After login/logout routes run, they can dispatch "auth:changed" and we re-check server cookie
   useEffect(() => {
-    const onChanged = () => {
-      void refreshSession();
-    };
+    const onChanged = () => void refreshSession();
     window.addEventListener("auth:changed", onChanged);
     return () => window.removeEventListener("auth:changed", onChanged);
   }, [refreshSession]);
@@ -93,7 +93,9 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
       (entries) => {
         const visible = entries
           .filter((e) => e.isIntersecting)
-          .sort((a, b) => (b.intersectionRatio ?? 0) - (a.intersectionRatio ?? 0))[0];
+          .sort(
+            (a, b) => (b.intersectionRatio ?? 0) - (a.intersectionRatio ?? 0)
+          )[0];
 
         if (visible?.target?.id) setActive(visible.target.id);
       },
@@ -129,6 +131,7 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
         </Link>
 
         <div className="flex items-center gap-3">
+          {/* Desktop nav */}
           <nav className="relative hidden gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm text-slate-300 md:flex">
             {links.map((l) => {
               const isActive = active === l.id;
@@ -143,7 +146,11 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
                     <motion.span
                       layoutId="nav-pill"
                       className="absolute inset-0 rounded-full bg-white/10"
-                      transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 500,
+                        damping: 40,
+                      }}
                     />
                   ) : null}
                   <span className="relative">{l.label}</span>
@@ -152,10 +159,23 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
             })}
           </nav>
 
+          {/* Dashboard button when logged in */}
+          {loggedIn ? (
+            <Link
+              href="/app/projects"
+              className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 text-sm text-slate-100 shadow-[0_0_0_0_rgba(56,189,248,0.0)] transition hover:bg-white/15 hover:shadow-[0_0_28px_rgba(56,189,248,0.22)]"
+            >
+              <LayoutDashboard className="h-4 w-4 text-sky-200" />
+              Dashboard
+            </Link>
+          ) : null}
+
+          {/* Auth (desktop) */}
           <div className="hidden md:block">
             {loggedIn ? <LogoutButton /> : <LoginButton />}
           </div>
 
+          {/* Mobile button */}
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden"
@@ -168,6 +188,7 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
         </div>
       </div>
 
+      {/* Mobile menu */}
       <AnimatePresence>
         {open ? (
           <motion.div
@@ -179,6 +200,29 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
           >
             <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur">
+                {/* Dashboard in mobile menu */}
+                {loggedIn ? (
+                  <motion.div
+                    custom={-1}
+                    variants={itemVariants}
+                    initial="hidden"
+                    animate="show"
+                    className="px-2 pt-2"
+                  >
+                    <Link
+                      href="/app/projects"
+                      onClick={() => setOpen(false)}
+                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-slate-100 transition hover:bg-white/10"
+                    >
+                      <span className="flex items-center gap-2">
+                        <LayoutDashboard className="h-4 w-4 text-sky-200" />
+                        Dashboard
+                      </span>
+                      <span className="h-2 w-2 rounded-full bg-sky-300 shadow-[0_0_18px_rgba(56,189,248,0.35)]" />
+                    </Link>
+                  </motion.div>
+                ) : null}
+
                 {links.map((l, i) => {
                   const isActive = active === l.id;
                   return (

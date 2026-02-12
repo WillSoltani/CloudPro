@@ -20,7 +20,6 @@ export function HomeClient() {
       <Hero />
       <ProofStrip />
       <DeliveryStrip items={delivery} />
-
       <AboutSection />
       <CertificationsSection />
       <SkillsSection />

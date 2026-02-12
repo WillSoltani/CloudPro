@@ -177,10 +177,15 @@ export default async function AppProjectDetailPage({
               <Link
                 key={f.fileId}
                 href={`/app/files/${encodeURIComponent(f.fileId)}`}
-                className="group rounded-xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10"
+                className="group rounded-2xl border border-white/10 bg-white/4 p-4 transition hover:bg-white/8 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_30px_70px_rgba(56,189,248,0.10)]"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
+                <div className="flex items-center gap-4">
+                  {/* Thumbnail-ish square */}
+                  <div className="h-12 w-12 shrink-0 rounded-2xl border border-white/10 bg-white/6 grid place-items-center text-slate-200">
+                    <span className="text-xs opacity-80">FILE</span>
+                  </div>
+
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-100 group-hover:text-white">
                       {f.filename}
                     </p>
@@ -190,11 +195,25 @@ export default async function AppProjectDetailPage({
                     </p>
                   </div>
 
-                  <span className="shrink-0 rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-slate-200">
-                    {f.status}
-                  </span>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <span
+                      className={[
+                        "rounded-full border px-3 py-1 text-xs",
+                        f.status === "completed"
+                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                          : f.status === "failed"
+                          ? "border-red-400/20 bg-red-400/10 text-red-200"
+                          : f.status === "running"
+                          ? "border-amber-400/20 bg-amber-400/10 text-amber-200"
+                          : "border-white/10 bg-white/8 text-slate-200",
+                      ].join(" ")}
+                    >
+                      {f.status}
+                    </span>
+                  </div>
                 </div>
               </Link>
+
             ))}
           </div>
         )}
