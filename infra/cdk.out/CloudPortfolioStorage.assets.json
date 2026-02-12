@@ -1,0 +1,21 @@
+{
+  "version": "48.0.0",
+  "files": {
+    "8aa69d5ad6363c4a6d38e2465292582f0c15639a18c020d45866031a6fb4336e": {
+      "displayName": "CloudPortfolioStorage Template",
+      "source": {
+        "path": "CloudPortfolioStorage.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "928413605677-ca-central-1-1abc05f6": {
+          "bucketName": "cdk-hnb659fds-assets-928413605677-ca-central-1",
+          "objectKey": "8aa69d5ad6363c4a6d38e2465292582f0c15639a18c020d45866031a6fb4336e.json",
+          "region": "ca-central-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-hnb659fds-file-publishing-role-928413605677-ca-central-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}
