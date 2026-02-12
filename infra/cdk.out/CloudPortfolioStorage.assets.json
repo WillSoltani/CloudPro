@@ -16,16 +16,16 @@
         }
       }
     },
-    "16cbdfb0fe494b26c918fc30a779a92fba8fcfe301c3335f0df68e674fda13bf": {
+    "a948a9b2af7b88c7fff5645af7e48a55423f7ee11697b634be6e59479bc52a4b": {
       "displayName": "CloudPortfolioStorage Template",
       "source": {
         "path": "CloudPortfolioStorage.template.json",
         "packaging": "file"
       },
       "destinations": {
-        "928413605677-ca-central-1-c761efb4": {
+        "928413605677-ca-central-1-d1fe71e7": {
           "bucketName": "cdk-hnb659fds-assets-928413605677-ca-central-1",
-          "objectKey": "16cbdfb0fe494b26c918fc30a779a92fba8fcfe301c3335f0df68e674fda13bf.json",
+          "objectKey": "a948a9b2af7b88c7fff5645af7e48a55423f7ee11697b634be6e59479bc52a4b.json",
           "region": "ca-central-1",
           "assumeRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-hnb659fds-file-publishing-role-928413605677-ca-central-1"
         }

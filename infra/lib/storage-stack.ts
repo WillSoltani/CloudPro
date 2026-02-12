@@ -39,6 +39,21 @@ export class StorageStack extends cdk.Stack {
       encryptionKey: this.kmsKey,
       enforceSSL: true,
       versioned: true,
+      cors: [
+        {
+          allowedOrigins: ["http://localhost:3000"],
+          allowedMethods: [
+            s3.HttpMethods.PUT,
+            s3.HttpMethods.POST,
+            s3.HttpMethods.GET,
+            s3.HttpMethods.HEAD,
+          ],
+          // must include headers your browser might send
+          allowedHeaders: ["*"],
+          exposedHeaders: ["ETag"],
+          maxAge: 3000,
+        },
+      ],
 
       // DEV ONLY (safe to remove later)
       removalPolicy: cdk.RemovalPolicy.DESTROY,
@@ -52,6 +67,16 @@ export class StorageStack extends cdk.Stack {
       encryptionKey: this.kmsKey,
       enforceSSL: true,
       versioned: true,
+
+      cors: [
+        {
+          allowedOrigins: ["http://localhost:3000"],
+          allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD],
+          allowedHeaders: ["*"],
+          exposedHeaders: ["ETag"],
+          maxAge: 3000,
+        },
+      ],
 
       // DEV ONLY
       removalPolicy: cdk.RemovalPolicy.DESTROY,
