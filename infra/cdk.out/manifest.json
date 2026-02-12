@@ -18,7 +18,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-hnb659fds-deploy-role-928413605677-ca-central-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-hnb659fds-cfn-exec-role-928413605677-ca-central-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-928413605677-ca-central-1/8aa69d5ad6363c4a6d38e2465292582f0c15639a18c020d45866031a6fb4336e.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-928413605677-ca-central-1/16cbdfb0fe494b26c918fc30a779a92fba8fcfe301c3335f0df68e674fda13bf.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -34,6 +34,12 @@
         "CloudPortfolioStorage.assets"
       ],
       "metadata": {
+        "/CloudPortfolioStorage/SecureDocKmsKey/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecureDocKmsKey025C0E13"
+          }
+        ],
         "/CloudPortfolioStorage/SecureDocAppTable": [
           {
             "type": "aws:cdk:hasPhysicalName",
@@ -46,6 +52,84 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "SecureDocAppTable785C80AC"
+          }
+        ],
+        "/CloudPortfolioStorage/RawUploadsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "RawUploadsBucket0630969E"
+          }
+        ],
+        "/CloudPortfolioStorage/RawUploadsBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "RawUploadsBucketPolicyA5A79860"
+          }
+        ],
+        "/CloudPortfolioStorage/RawUploadsBucket/AutoDeleteObjectsCustomResource/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "RawUploadsBucketAutoDeleteObjectsCustomResourceDEF82284"
+          }
+        ],
+        "/CloudPortfolioStorage/Custom::S3AutoDeleteObjectsCustomResourceProvider": [
+          {
+            "type": "aws:cdk:is-custom-resource-handler-customResourceProvider",
+            "data": true
+          }
+        ],
+        "/CloudPortfolioStorage/Custom::S3AutoDeleteObjectsCustomResourceProvider/Role": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092"
+          }
+        ],
+        "/CloudPortfolioStorage/Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F"
+          }
+        ],
+        "/CloudPortfolioStorage/OutputsBucket/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "OutputsBucket24CB89DF"
+          }
+        ],
+        "/CloudPortfolioStorage/OutputsBucket/Policy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "OutputsBucketPolicy1BAA4ABE"
+          }
+        ],
+        "/CloudPortfolioStorage/OutputsBucket/AutoDeleteObjectsCustomResource/Default": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "OutputsBucketAutoDeleteObjectsCustomResource74769A63"
+          }
+        ],
+        "/CloudPortfolioStorage/SecureDocTableName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "SecureDocTableName"
+          }
+        ],
+        "/CloudPortfolioStorage/RawBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "RawBucketName"
+          }
+        ],
+        "/CloudPortfolioStorage/OutputBucketName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "OutputBucketName"
+          }
+        ],
+        "/CloudPortfolioStorage/KmsKeyArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "KmsKeyArn"
           }
         ],
         "/CloudPortfolioStorage/CDKMetadata/Default": [
