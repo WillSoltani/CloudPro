@@ -115,21 +115,24 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
   }, []);
 
   return (
-      <header
-        className={[
-          "fixed top-0 left-0 right-0 z-50 transition",
-          scrolled
-            ? "border-b border-white/10 bg-[#070b16]/70 backdrop-blur"
-            : "border-b border-white/5 bg-transparent",
-        ].join(" ")}
-      >
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-        <Link href="/#about" className="text-lg font-semibold">
+    <header
+      className={[
+        "fixed top-0 left-0 right-0 z-50 transition",
+        scrolled
+          ? "border-b border-white/10 bg-[#070b16]/70 backdrop-blur"
+          : "border-b border-white/5 bg-transparent",
+      ].join(" ")}
+    >
+      {/* Full-width container (no max-w) */}
+      <div className="flex items-center justify-between px-4 py-4 sm:px-6">
+        {/* Far left brand */}
+        <Link href="/#about" className="shrink-0 text-lg font-semibold">
           <span className="bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">
             Will Soltani
           </span>
         </Link>
 
+        {/* Far right cluster */}
         <div className="flex items-center gap-3">
           {/* Desktop nav */}
           <nav className="relative hidden gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm text-slate-300 md:flex">
@@ -175,7 +178,7 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
             {loggedIn ? <LogoutButton /> : <LoginButton />}
           </div>
 
-          {/* Mobile button */}
+          {/* Mobile menu toggle */}
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden"
@@ -198,7 +201,8 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
             exit="exit"
             className="md:hidden"
           >
-            <div className="mx-auto max-w-6xl px-4 pb-4 sm:px-6">
+            {/* Also full width */}
+            <div className="px-4 pb-4 sm:px-6">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur">
                 {/* Dashboard in mobile menu */}
                 {loggedIn ? (
