@@ -1,7 +1,11 @@
+// app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+
+// ✅ Client component is fine to render inside a Server Component layout
+import { InteractiveBackground } from "@/components/InteractiveBackground";
 
 export const metadata: Metadata = {
   title: "Will Soltani | Cloud Portfolio",
@@ -24,11 +28,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html
-      lang="en"
-      className={`${GeistSans.className} ${GeistMono.variable}`}
-    >
+    <html lang="en" className={`${GeistSans.className} ${GeistMono.variable}`}>
       <body className="min-h-screen w-full overflow-x-hidden bg-[#070b16] text-slate-100 antialiased">
+        {/* Global background (shows on homepage + /app) */}
+        <InteractiveBackground />
+
         {children}
       </body>
     </html>

@@ -115,14 +115,14 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
   }, []);
 
   return (
-    <header
-      className={[
-        "sticky top-0 z-50 transition",
-        scrolled
-          ? "border-b border-white/10 bg-[#070b16]/70 backdrop-blur"
-          : "border-b border-white/5 bg-transparent",
-      ].join(" ")}
-    >
+      <header
+        className={[
+          "fixed top-0 left-0 right-0 z-50 transition",
+          scrolled
+            ? "border-b border-white/10 bg-[#070b16]/70 backdrop-blur"
+            : "border-b border-white/5 bg-transparent",
+        ].join(" ")}
+      >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
         <Link href="/#about" className="text-lg font-semibold">
           <span className="bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">

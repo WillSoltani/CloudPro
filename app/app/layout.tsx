@@ -1,15 +1,11 @@
 // app/app/layout.tsx
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { InteractiveBackgroundShell } from "./InteractiveBackgroundShell";
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="relative min-h-screen text-slate-100">
-      {/* Same animated background as portfolio */}
-      <InteractiveBackgroundShell />
-
-      {/* Content layer */}
+      {/* Content layer only (background now comes from root layout) */}
       <div className="relative z-10">
         <header className="sticky top-0 z-50 border-b border-white/10 bg-[#070b16]/55 backdrop-blur-xl">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
@@ -18,7 +14,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               <Link
                 href="/"
                 className="group inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-200 hover:bg-white/10
-                           shadow-[0_10px_30px_rgba(0,0,0,0.25)]"
+                           shadow-[0_10px_30px_rgba(0,0,0,0.25)] transition"
               >
                 <span className="text-base opacity-80 group-hover:opacity-100">
                   ←
@@ -45,7 +41,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
 
-            {/* Right: only New Project */}
+            {/* Right: New Project */}
             <div className="flex items-center">
               <Link
                 href="/app/projects?create=1"
@@ -59,7 +55,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* thin glow line under header on scroll-y areas */}
+          {/* subtle glow line */}
           <div className="h-px w-full bg-[linear-gradient(90deg,transparent,rgba(56,189,248,0.18),transparent)]" />
         </header>
 
