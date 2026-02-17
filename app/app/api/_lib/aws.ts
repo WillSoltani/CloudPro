@@ -1,4 +1,6 @@
 // app/app/api/_lib/aws.ts
+import "server-only";
+
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { S3Client } from "@aws-sdk/client-s3";
@@ -9,10 +11,11 @@ export function mustEnv(name: string): string {
   return v;
 }
 
-export const REGION: string =
-  process.env.AWS_REGION ??
-  process.env.AWS_DEFAULT_REGION ??
+export const REGION =
+  process.env.AWS_REGION ||
+  process.env.AWS_DEFAULT_REGION ||
   "ca-central-1";
+
 
 // DynamoDB
 const ddb = new DynamoDBClient({ region: REGION });

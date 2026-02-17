@@ -1,4 +1,4 @@
-// app/app/projects/[projectId]/_lib/types.ts
+// app/app/projects/types.ts
 
 export type ProjectRow = {
   projectId: string;
@@ -6,6 +6,12 @@ export type ProjectRow = {
   createdAt: string;
   updatedAt: string;
   status: string;
+};
+
+export type Stats = {
+  totalProjects: number;
+  totalFiles: number;
+  spaceSavedBytes: number;
 };
 
 export type FileRow = {
@@ -20,6 +26,15 @@ export type FileRow = {
   bucket: string;
   key: string;
 };
+
+export type ProjectMeta = {
+  fileCount: number;
+  latestActivityAt: string; // ISO
+};
+
+export type MenuState =
+  | { open: false }
+  | { open: true; projectId: string; x: number; y: number };
 
 export type UiStatus =
   | "queued"

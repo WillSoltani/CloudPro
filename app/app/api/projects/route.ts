@@ -1,7 +1,12 @@
-import { NextResponse } from "next/server";
+// app/app/api/projects/route.ts
+import "server-only";
 import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
+
 import { ddbDoc, TABLE_NAME } from "../_lib/aws";
 import { requireUser } from "../_lib/auth";
+import { withApiErrors, ok, badRequest, conflict } from "../_lib/http";
+
+export const runtime = "nodejs";
 
 type CreateProjectBody = { name: string };
 
@@ -13,33 +18,29 @@ function newId() {
   return crypto.randomUUID();
 }
 
-function getErrorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return "unknown error";
-  }
-}
-
-function isAuthError(msg: string) {
-  return msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN";
-}
-
-function authErrorResponse(msg: string) {
-  return NextResponse.json({ error: msg.toLowerCase() }, { status: 401 });
+function isConditionalCheckFailed(e: unknown) {
+  if (typeof e !== "object" || e === null) return false;
+  const any = e as { name?: unknown; __type?: unknown };
+  return (
+    any.name === "ConditionalCheckFailedException" ||
+    any.__type === "ConditionalCheckFailedException"
+  );
 }
 
 export async function POST(req: Request) {
-  try {
+  return withApiErrors<{ error: string } | { project: { projectId: string; name: string; createdAt: string; updatedAt: string; status: string } }>(async () => {
     const user = await requireUser();
 
-    const body = (await req.json()) as Partial<CreateProjectBody>;
-    const name = (body.name ?? "").trim();
+    let body: Partial<CreateProjectBody> = {};
+    try {
+      body = (await req.json()) as Partial<CreateProjectBody>;
+    } catch {
+      return badRequest("invalid json");
+    }
 
-    if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
-    if (name.length > 80) return NextResponse.json({ error: "name too long" }, { status: 400 });
+    const name = (body.name ?? "").trim();
+    if (!name) return badRequest("name is required");
+    if (name.length > 80) return badRequest("name too long");
 
     const projectId = newId();
     const createdAt = nowIso();
@@ -47,39 +48,38 @@ export async function POST(req: Request) {
     const PK = `USER#${user.sub}`;
     const SK = `PROJECT#${createdAt}#${projectId}`;
 
-    await ddbDoc.send(
-      new PutCommand({
-        TableName: TABLE_NAME,
-        Item: {
-          PK,
-          SK,
-          entity: "PROJECT",
-          projectId,
-          userSub: user.sub,
-          name,
-          createdAt,
-          updatedAt: createdAt,
-          status: "active",
-        },
-        ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
-      })
-    );
+    try {
+      await ddbDoc.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: {
+            PK,
+            SK,
+            entity: "PROJECT",
+            projectId,
+            userSub: user.sub,
+            name,
+            createdAt,
+            updatedAt: createdAt,
+            status: "active",
+          },
+          ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+        })
+      );
+    } catch (e) {
+      if (isConditionalCheckFailed(e)) return conflict("project already exists");
+      throw e;
+    }
 
-    return NextResponse.json(
+    return ok(
       { project: { projectId, name, createdAt, updatedAt: createdAt, status: "active" } },
-      { status: 201 }
+      201
     );
-  } catch (e: unknown) {
-    const msg = getErrorMessage(e);
-    if (isAuthError(msg)) return authErrorResponse(msg);
-
-    console.error("POST /app/api/projects error:", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
-  }
+  });
 }
 
 export async function GET() {
-  try {
+  return withApiErrors(async () => {
     const user = await requireUser();
     const PK = `USER#${user.sub}`;
 
@@ -104,12 +104,6 @@ export async function GET() {
       status: String(it.status ?? "active"),
     }));
 
-    return NextResponse.json({ projects });
-  } catch (e: unknown) {
-    const msg = getErrorMessage(e);
-    if (isAuthError(msg)) return authErrorResponse(msg);
-
-    console.error("GET /app/api/projects error:", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
-  }
+    return ok({ projects });
+  });
 }
