@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import type { FileRow } from "./_lib/types";
-import { fetchFiles, uploadViaPresign } from "./_lib/api";
-import { UploadCard } from "./components/UploadCard";
-import { HistoryList } from "./components/HistoryList";
+import type { FileRow } from "../_lib/types";
+import type { OutputFormat, PendingItem } from "../_lib/ui-types";
+
+import { DropzoneCard } from "./components/DropzoneCard";
+import { ReadyQueue } from "./components/ReadyQueue";
+import { ConversionSettings } from "./components/ConversionSettings";
+import { ConvertedFiles } from "./components/ConvertedFiles";
 
 type Props = {
   projectId: string;
@@ -12,149 +15,119 @@ type Props = {
   files: FileRow[];
 };
 
-export default function ProjectDetailClient({ projectId, projectName, files }: Props) {
+function uid() {
+  // Best option
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  // Fallback
+  return Math.random().toString(16).slice(2) + Date.now().toString(16);
+}
+
+export default function ProjectDetailClient({ projectName, files }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const [rows, setRows] = useState<FileRow[]>(files);
-  const [busyFileId, setBusyFileId] = useState<string | null>(null);
-
-  // upload UI state
+  // Left UI state
   const [dragOver, setDragOver] = useState(false);
-  const [picked, setPicked] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [queue, setQueue] = useState<PendingItem[]>([]);
 
-  const sorted = useMemo(() => {
-    const arr = [...rows];
+  // Right settings state (UI-only)
+  const [output, setOutput] = useState<OutputFormat>("JPG");
+  const [quality, setQuality] = useState<number>(55);
+  const [preset, setPreset] = useState<"web" | "hq" | "email">("web");
+
+  const sortedConverted = useMemo(() => {
+    const arr = [...files];
     arr.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
     return arr;
-  }, [rows]);
+  }, [files]);
 
   function onBrowse() {
     inputRef.current?.click();
   }
 
+  function addFile(f: File) {
+    setQueue((prev) => [{ id: uid(), file: f, selected: true }, ...prev]);
+  }
+
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragOver(false);
-    const f = e.dataTransfer.files?.[0] ?? null;
-    setPicked(f);
-    setUploadErr(null);
+
+    const list = e.dataTransfer.files;
+    if (!list || list.length === 0) return;
+
+    const next: PendingItem[] = Array.from(list).map((f) => ({
+      id: uid(),
+      file: f,
+      selected: true,
+    }));
+
+    setQueue((prev) => [...next, ...prev]);
   }
 
-  async function refreshList() {
-    const fresh = await fetchFiles(projectId);
-    setRows(fresh);
-  }
-
-  async function uploadAndConvert() {
-    if (!picked || uploading) return;
-
-    setUploading(true);
-    setUploadErr(null);
-
-    try {
-      const { createdFile } = await uploadViaPresign({ projectId, file: picked });
-
-      setPicked(null);
-
-      if (createdFile) {
-        setRows((prev) => [createdFile, ...prev]);
-      } else {
-        await refreshList();
-      }
-    } catch (e) {
-      console.error(e);
-      setUploadErr(e instanceof Error ? e.message.replace(/^Error:\s*/, "") : String(e));
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function onDownload(fileId: string) {
-    try {
-      setBusyFileId(fileId);
-      const res = await fetch(
-        `/app/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(
-          fileId
-        )}/download`,
-        { method: "GET", cache: "no-store" }
-      );
-
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `Download failed: ${res.status}`);
-      }
-
-      const data = (await res.json()) as { url?: unknown };
-      const url = typeof data.url === "string" ? data.url : "";
-      if (!url) throw new Error("Missing presigned url");
-
-      window.location.href = url;
-    } catch (e) {
-      console.error(e);
-      window.alert("Download failed. Check console.");
-    } finally {
-      setBusyFileId(null);
-    }
-  }
-
-  function onModify(_fileId: string) {
-    window.alert("Modify will be wired after backend is ready.");
-  }
-
-  async function onDelete(fileId: string) {
-    const ok = window.confirm("Delete this conversion? This cannot be undone.");
-    if (!ok) return;
-
-    try {
-      setBusyFileId(fileId);
-      const res = await fetch(
-        `/app/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}`,
-        { method: "DELETE" }
-      );
-
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(t || `Delete failed: ${res.status}`);
-      }
-
-      setRows((prev) => prev.filter((r) => r.fileId !== fileId));
-    } catch (e) {
-      console.error(e);
-      window.alert("Delete failed. Check console.");
-    } finally {
-      setBusyFileId(null);
-    }
-  }
+  const selectedCount = useMemo(
+    () => queue.reduce((acc, x) => acc + (x.selected ? 1 : 0), 0),
+    [queue]
+  );
 
   return (
     <div className="space-y-8">
-      <UploadCard
-        dragOver={dragOver}
-        setDragOver={setDragOver}
-        picked={picked}
-        setPicked={(f) => {
-          setPicked(f);
-          setUploadErr(null);
-        }}
-        uploading={uploading}
-        uploadErr={uploadErr}
-        onBrowse={onBrowse}
-        onDrop={onDrop}
-        onUpload={() => void uploadAndConvert()}
-        inputRef={inputRef}
-      />
+      <div className="grid gap-6 lg:grid-cols-[1fr,420px]">
+        {/* LEFT */}
+        <div className="space-y-6">
+          <DropzoneCard
+            dragOver={dragOver}
+            setDragOver={setDragOver}
+            onDrop={onDrop}
+            onBrowse={onBrowse}
+            inputRef={inputRef}
+            onPick={(f) => {
+              if (f) addFile(f);
+            }}
+          />
 
-      <HistoryList
-        projectId={projectId}
-        projectName={projectName}
-        rows={sorted}
-        busyFileId={busyFileId}
-        onDownload={(id) => void onDownload(id)}
-        onModify={onModify}
-        onDelete={(id) => void onDelete(id)}
-      />
+          <ReadyQueue
+            items={queue}
+            output={output}
+            onToggleAll={(v) =>
+              setQueue((prev) => prev.map((x) => ({ ...x, selected: v })))
+            }
+            onToggleOne={(id) =>
+              setQueue((prev) =>
+                prev.map((x) =>
+                  x.id === id ? { ...x, selected: !x.selected } : x
+                )
+              )
+            }
+            onRemoveSelected={() =>
+              setQueue((prev) => prev.filter((x) => !x.selected))
+            }
+            onConvertSelected={() => {
+              alert(
+                `UI only: would convert ${selectedCount} file(s) to ${output} @ ${quality}%`
+              );
+            }}
+          />
+
+          <ConvertedFiles
+            files={sortedConverted}
+            onDownloadAll={() => alert("UI only: Download All")}
+          />
+        </div>
+
+        {/* RIGHT */}
+        <div className="h-fit lg:sticky lg:top-28">
+          <ConversionSettings
+            output={output}
+            setOutput={setOutput}
+            quality={quality}
+            setQuality={setQuality}
+            preset={preset}
+            setPreset={setPreset}
+          />
+        </div>
+      </div>
     </div>
   );
 }

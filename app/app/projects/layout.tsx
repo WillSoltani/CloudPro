@@ -6,8 +6,8 @@ export default function ProjectsLayout({ children }: { children: ReactNode }) {
   return (
     <div className="relative min-h-screen text-slate-100">
       {/* Full-width header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-[#070b16]/55 backdrop-blur-xl">
-        <div className="flex items-center justify-between px-4 py-3 sm:px-6">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#070b16]/55 backdrop-blur-xl">
+        <div className="flex w-full items-center justify-between px-4 py-3 sm:px-6">
           {/* Left: back + title */}
           <div className="flex items-center gap-4">
             <Link
@@ -55,7 +55,7 @@ export default function ProjectsLayout({ children }: { children: ReactNode }) {
       </header>
 
       {/* Content padding for fixed header */}
-      <main className="px-4 pt-24 pb-10 sm:px-6">{children}</main>
+      <div className="px-4 pt-24 pb-10 sm:px-6">{children}</div>
     </div>
   );
 }

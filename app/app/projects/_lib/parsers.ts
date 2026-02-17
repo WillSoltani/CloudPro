@@ -1,39 +1,4 @@
-import type { FileRow, UiStatus, CreateUploadResult, CompleteUploadResult } from "./types";
-
-export function normalizeStatus(s: string): UiStatus {
-  const v = (s || "").toLowerCase();
-  if (v === "queued") return "queued";
-  if (v === "processing") return "processing";
-  if (v === "done" || v === "completed" || v === "complete") return "done";
-  if (v === "failed" || v === "error") return "failed";
-  return "unknown";
-}
-
-export function fmtBytes(n: number | null) {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let v = n;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-function extFromName(name: string) {
-  const idx = name.lastIndexOf(".");
-  return idx >= 0 ? name.slice(idx + 1).toLowerCase() : "";
-}
-
-export function isLikelyImage(filename: string, contentType: string) {
-  const ct = (contentType || "").toLowerCase();
-  const ext = extFromName(filename);
-  return (
-    ct.startsWith("image/") ||
-    ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(ext)
-  );
-}
+import type { FileRow, CreateUploadResult, CompleteUploadResult } from "@/app/app/projects/_lib/types";
 
 export function safeJsonParse(text: string): unknown {
   try {
@@ -57,6 +22,7 @@ export function pickObject(v: unknown): Record<string, unknown> | null {
 export function isFileRow(x: unknown): x is FileRow {
   const o = pickObject(x);
   if (!o) return false;
+
   return (
     typeof o.fileId === "string" &&
     typeof o.projectId === "string" &&
@@ -81,7 +47,13 @@ export function parseCreateUploadResponse(json: unknown): CreateUploadResult {
     upload["fileId"]
   );
 
-  const putUrl = pickString(root["putUrl"], root["url"], upload["putUrl"], upload["url"]);
+  const putUrl = pickString(
+    root["putUrl"],
+    root["url"],
+    upload["putUrl"],
+    upload["url"]
+  );
+
   const bucket = pickString(root["bucket"], upload["bucket"]);
   const key = pickString(root["key"], upload["key"]);
 
@@ -110,6 +82,5 @@ export function parseCreateUploadResponse(json: unknown): CreateUploadResult {
 export function parseCompleteUploadResponse(json: unknown): CompleteUploadResult {
   const root = pickObject(json) ?? {};
   const file = root["file"];
-  if (isFileRow(file)) return { file };
-  return {};
+  return isFileRow(file) ? { file } : {};
 }

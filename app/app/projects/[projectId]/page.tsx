@@ -1,27 +1,11 @@
 // app/app/projects/[projectId]/page.tsx
-import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import ProjectDetailClient from "./ProjectDetailClient";
+import type { FileRow } from "../_lib/types";
 
 type ProjectRow = {
   projectId: string;
   name: string;
-  createdAt: string;
-  updatedAt: string;
-  status: string;
-};
-
-export type FileRow = {
-  fileId: string;
-  projectId: string;
-  filename: string;
-  contentType: string;
-  sizeBytes: number | null;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
-  bucket: string;
-  key: string;
 };
 
 function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
@@ -85,11 +69,11 @@ async function fetchProjectFiles(projectId: string): Promise<FileRow[]> {
 }
 
 export default async function AppProjectDetailPage({
-  params,
+  params: paramsPromise,
 }: {
   params: Promise<{ projectId: string }>;
 }) {
-  const { projectId } = await params;
+  const { projectId } = await paramsPromise;
 
   const [projects, files] = await Promise.all([
     fetchProjects(),
