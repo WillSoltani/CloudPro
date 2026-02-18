@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { LayoutDashboard, Menu, X } from "lucide-react";
 import Link from "next/link";
 
 import { LoginButton } from "@/components/auth/LoginButton";
 import { LogoutButton } from "@/components/auth/LogoutButton";
+import { useAuthStatus } from "@/components/auth/useAuthStatus";
 
 const links = [
   { id: "about", label: "About" },
@@ -32,37 +33,8 @@ const itemVariants = {
   }),
 };
 
-type NavbarClientProps = {
-  initialLoggedIn: boolean;
-};
-
-export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
-  const [loggedIn, setLoggedIn] = useState<boolean>(initialLoggedIn);
-
-  useEffect(() => {
-    setLoggedIn(initialLoggedIn);
-  }, [initialLoggedIn]);
-
-  const refreshSession = useCallback(async () => {
-    try {
-      const res = await fetch("/auth/session", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as unknown;
-      const next =
-        typeof (data as { loggedIn?: unknown }).loggedIn === "boolean"
-          ? (data as { loggedIn: boolean }).loggedIn
-          : false;
-      setLoggedIn(next);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    const onChanged = () => void refreshSession();
-    window.addEventListener("auth:changed", onChanged);
-    return () => window.removeEventListener("auth:changed", onChanged);
-  }, [refreshSession]);
+export function NavbarClient() {
+  const { loggedIn, loading } = useAuthStatus();
 
   const [active, setActive] = useState<string>("about");
   const [scrolled, setScrolled] = useState(false);
@@ -114,6 +86,9 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // While auth is loading, avoid flashing the wrong button
+  const showLoggedIn = !loading && loggedIn === true;
+
   return (
     <header
       className={[
@@ -123,18 +98,14 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
           : "border-b border-white/5 bg-transparent",
       ].join(" ")}
     >
-      {/* Full-width container (no max-w) */}
       <div className="flex items-center justify-between px-4 py-4 sm:px-6">
-        {/* Far left brand */}
         <Link href="/#about" className="shrink-0 text-lg font-semibold">
           <span className="bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">
             Will Soltani
           </span>
         </Link>
 
-        {/* Far right cluster */}
         <div className="flex items-center gap-3">
-          {/* Desktop nav */}
           <nav className="relative hidden gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm text-slate-300 md:flex">
             {links.map((l) => {
               const isActive = active === l.id;
@@ -162,8 +133,7 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
             })}
           </nav>
 
-          {/* Dashboard button when logged in */}
-          {loggedIn ? (
+          {showLoggedIn ? (
             <Link
               href="/app/projects"
               className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 text-sm text-slate-100 shadow-[0_0_0_0_rgba(56,189,248,0.0)] transition hover:bg-white/15 hover:shadow-[0_0_28px_rgba(56,189,248,0.22)]"
@@ -173,12 +143,10 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
             </Link>
           ) : null}
 
-          {/* Auth (desktop) */}
           <div className="hidden md:block">
-            {loggedIn ? <LogoutButton /> : <LoginButton />}
+            {showLoggedIn ? <LogoutButton /> : <LoginButton />}
           </div>
 
-          {/* Mobile menu toggle */}
           <button
             type="button"
             className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden"
@@ -191,7 +159,6 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
         </div>
       </div>
 
-      {/* Mobile menu */}
       <AnimatePresence>
         {open ? (
           <motion.div
@@ -201,11 +168,9 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
             exit="exit"
             className="md:hidden"
           >
-            {/* Also full width */}
             <div className="px-4 pb-4 sm:px-6">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur">
-                {/* Dashboard in mobile menu */}
-                {loggedIn ? (
+                {showLoggedIn ? (
                   <motion.div
                     custom={-1}
                     variants={itemVariants}
@@ -254,7 +219,7 @@ export function NavbarClient({ initialLoggedIn }: NavbarClientProps) {
                 })}
 
                 <div className="mt-2 border-t border-white/10 px-2 pb-1 pt-2">
-                  {loggedIn ? <LogoutButton /> : <LoginButton />}
+                  {showLoggedIn ? <LogoutButton /> : <LoginButton />}
                 </div>
               </div>
             </div>
