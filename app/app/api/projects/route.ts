@@ -18,17 +18,23 @@ function newId() {
   return crypto.randomUUID();
 }
 
+function readStringProp(obj: unknown, key: string): string | undefined {
+  if (typeof obj !== "object" || obj === null) return undefined;
+  const rec = obj as Record<string, unknown>;
+  const v = rec[key];
+  return typeof v === "string" ? v : undefined;
+}
+
 function isConditionalCheckFailed(e: unknown) {
-  if (typeof e !== "object" || e === null) return false;
-  const any = e as { name?: unknown; __type?: unknown };
-  return (
-    any.name === "ConditionalCheckFailedException" ||
-    any.__type === "ConditionalCheckFailedException"
-  );
+  const name = readStringProp(e, "name");
+  const type = readStringProp(e, "__type");
+  return name === "ConditionalCheckFailedException" || type === "ConditionalCheckFailedException";
 }
 
 export async function POST(req: Request) {
-  return withApiErrors<{ error: string } | { project: { projectId: string; name: string; createdAt: string; updatedAt: string; status: string } }>(async () => {
+  return withApiErrors<
+    { error: string } | { project: { projectId: string; name: string; createdAt: string; updatedAt: string; status: string } }
+  >(async () => {
     const user = await requireUser();
 
     let body: Partial<CreateProjectBody> = {};
@@ -66,15 +72,12 @@ export async function POST(req: Request) {
           ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
         })
       );
-    } catch (e) {
+    } catch (e: unknown) {
       if (isConditionalCheckFailed(e)) return conflict("project already exists");
       throw e;
     }
 
-    return ok(
-      { project: { projectId, name, createdAt, updatedAt: createdAt, status: "active" } },
-      201
-    );
+    return ok({ project: { projectId, name, createdAt, updatedAt: createdAt, status: "active" } }, 201);
   });
 }
 

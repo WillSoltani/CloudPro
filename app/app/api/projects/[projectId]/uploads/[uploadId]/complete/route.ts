@@ -1,10 +1,45 @@
+import "server-only";
 import { NextResponse } from "next/server";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { ddbDoc, TABLE_NAME } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
+export const runtime = "nodejs";
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function safeFileName(input: string): string {
+  const trimmed = input.trim();
+  const base = trimmed.split("/").pop() ?? trimmed;
+  const cleaned = base.replace(/[^\p{L}\p{N}._ -]+/gu, "_");
+  const noDots = cleaned.replace(/^\.+/, "");
+  return (noDots || "file").slice(0, 120);
+}
+
+function normalizeContentType(ct: string): string {
+  const v = (ct || "").trim().toLowerCase();
+  return (v || "application/octet-stream").slice(0, 200);
+}
+
+function guessContentTypeFromName(filename: string): string {
+  const n = filename.toLowerCase();
+  if (n.endsWith(".csv")) return "text/csv";
+  if (n.endsWith(".json")) return "application/json";
+  if (n.endsWith(".txt")) return "text/plain";
+  if (n.endsWith(".pdf")) return "application/pdf";
+  if (n.endsWith(".doc")) return "application/msword";
+  if (n.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (n.endsWith(".xls")) return "application/vnd.ms-excel";
+  if (n.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (n.endsWith(".png")) return "image/png";
+  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+  if (n.endsWith(".webp")) return "image/webp";
+  if (n.endsWith(".gif")) return "image/gif";
+  if (n.endsWith(".svg")) return "image/svg+xml";
+  if (n.endsWith(".ico")) return "image/x-icon";
+  return "application/octet-stream";
 }
 
 function getErrorMessage(e: unknown): string {
@@ -13,7 +48,7 @@ function getErrorMessage(e: unknown): string {
   try {
     return JSON.stringify(e);
   } catch {
-    return "Unknown error";
+    return "unknown error";
   }
 }
 
@@ -33,23 +68,30 @@ export async function POST(
     const user = await requireUser();
     const { projectId, uploadId } = await params;
 
+    if (!projectId || !uploadId) {
+      return NextResponse.json({ error: "bad_request", detail: "missing params" }, { status: 400 });
+    }
+
     const body = (await req.json()) as Partial<CompleteUploadBody>;
 
-    const filename = String(body.filename ?? "").trim();
-    const contentType = String(body.contentType ?? "application/octet-stream").trim();
+    const rawName = String(body.filename ?? "");
+    const filename = safeFileName(rawName);
+
     const bucket = String(body.bucket ?? "").trim();
     const key = String(body.key ?? "").trim();
 
-    if (!filename || !bucket || !key) {
+    if (!rawName.trim() || !bucket || !key) {
       return NextResponse.json(
-        { error: "filename, bucket, key are required" },
+        { error: "bad_request", detail: "filename, bucket, key are required" },
         { status: 400 }
       );
     }
 
-    if (filename.length > 256) {
-      return NextResponse.json({ error: "filename too long" }, { status: 400 });
-    }
+    const rawCt = String(body.contentType ?? "").trim();
+    const contentType =
+      rawCt && rawCt !== "application/octet-stream"
+        ? normalizeContentType(rawCt)
+        : guessContentTypeFromName(filename);
 
     const sizeBytes =
       typeof body.sizeBytes === "number" && Number.isFinite(body.sizeBytes) && body.sizeBytes >= 0
@@ -57,48 +99,39 @@ export async function POST(
         : null;
 
     const createdAt = nowIso();
-
-    // Single-table keys
     const PK = `USER#${user.sub}`;
-    const SK = `FILE#${createdAt}#${uploadId}`;
-
-    const item = {
-      PK,
-      SK,
-      entity: "FILE",
-      fileId: uploadId, // v1: uploadId === fileId
-      projectId,
-      userSub: user.sub,
-      filename,
-      contentType,
-      sizeBytes,
-      bucket,
-      key,
-      status: "queued",
-      createdAt,
-      updatedAt: createdAt,
-    };
+    const SK = `FILE#${projectId}#${uploadId}`; // ✅ deterministic
 
     await ddbDoc.send(
       new PutCommand({
         TableName: TABLE_NAME,
-        Item: item,
+        Item: {
+          PK,
+          SK,
+          entity: "FILE",
+          fileId: uploadId,
+          projectId,
+          userSub: user.sub,
+          filename,
+          contentType,
+          sizeBytes,
+          bucket,
+          key,
+          status: "queued",
+          createdAt,
+          updatedAt: createdAt,
+        },
         ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
       })
     );
 
-    return NextResponse.json(
-      { file: { fileId: uploadId, status: "queued" } },
-      { status: 201 }
-    );
+    return NextResponse.json({ file: { fileId: uploadId, status: "queued" } }, { status: 201 });
   } catch (e: unknown) {
     const msg = getErrorMessage(e);
-
-    if (msg === "UNAUTHENTICATED") {
+    if (msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN") {
       return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
     }
-
-    console.error("POST /app/api/projects/[projectId]/uploads/[uploadId]/complete error:", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    console.error("complete upload error:", e);
+    return NextResponse.json({ error: "server_error", detail: msg }, { status: 500 });
   }
 }

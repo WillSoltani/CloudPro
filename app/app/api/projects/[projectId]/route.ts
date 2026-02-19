@@ -1,10 +1,11 @@
 // app/app/api/projects/[projectId]/route.ts
 import "server-only";
+import { NextResponse } from "next/server";
 import { QueryCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-import { ddbDoc, TABLE_NAME } from "../../_lib/aws";
+import { ddbDoc, TABLE_NAME, s3 } from "../../_lib/aws";
 import { requireUser } from "../../_lib/auth";
-import { withApiErrors, ok, badRequest, notFound } from "../../_lib/http";
 
 export const runtime = "nodejs";
 
@@ -14,31 +15,51 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function isConditionalCheckFailed(e: unknown) {
-  if (typeof e !== "object" || e === null) return false;
-  const any = e as { name?: unknown; __type?: unknown };
-  return (
-    any.name === "ConditionalCheckFailedException" ||
-    any.__type === "ConditionalCheckFailedException"
-  );
+function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return "unknown error";
+  }
 }
 
-/**
- * Finds the PK/SK for a projectId.
- * Schema note: we cannot direct-lookup by projectId, so we Query the USER partition
- * and Filter by projectId. We paginate because Limit happens before filtering.
- */
-async function findProjectKey(
-  userSub: string,
-  projectId: string
-): Promise<{ PK: string; SK: string } | null> {
-  const PK = `USER#${userSub}`;
-  let lastEvaluatedKey: Record<string, unknown> | undefined = undefined;
+function isAuthError(msg: string) {
+  return msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN";
+}
 
-  for (let page = 0; page < 20; page += 1) {
+function authErrorResponse(msg: string) {
+  return NextResponse.json({ error: msg.toLowerCase() }, { status: 401 });
+}
+
+function readStringProp(obj: unknown, key: string): string | undefined {
+  if (typeof obj !== "object" || obj === null) return undefined;
+  const rec = obj as Record<string, unknown>;
+  const v = rec[key];
+  return typeof v === "string" ? v : undefined;
+}
+
+function isConditionalCheckFailed(e: unknown) {
+  const name = readStringProp(e, "name");
+  const type = readStringProp(e, "__type");
+  return name === "ConditionalCheckFailedException" || type === "ConditionalCheckFailedException";
+}
+
+type ProjectFound = {
+  key: { PK: string; SK: string };
+  item: Record<string, unknown>;
+};
+
+async function findProject(userSub: string, projectId: string): Promise<ProjectFound | null> {
+  const PK = `USER#${userSub}`;
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+  for (let page = 0; page < 50; page += 1) {
     const res = await ddbDoc.send(
       new QueryCommand({
         TableName: TABLE_NAME,
+        ConsistentRead: true,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
           ":pk": PK,
@@ -46,49 +67,129 @@ async function findProjectKey(
           ":pid": projectId,
         },
         FilterExpression: "projectId = :pid",
-        ProjectionExpression: "PK, SK",
         ScanIndexForward: false,
-        ExclusiveStartKey: lastEvaluatedKey,
+        ExclusiveStartKey: lastEvaluatedKey as never,
         Limit: 50,
       })
     );
 
-    const items = res.Items ?? [];
-    for (const it of items) {
-      const sk = typeof it.SK === "string" ? it.SK : "";
-      if (sk) return { PK, SK: sk };
+    const item = (res.Items ?? [])[0];
+    if (item) {
+      const SK = typeof item.SK === "string" ? item.SK : "";
+      if (!SK) return null;
+
+      return {
+        key: { PK, SK },
+        item: item as Record<string, unknown>,
+      };
     }
 
-    lastEvaluatedKey = res.LastEvaluatedKey as Record<string, unknown> | undefined;
+    lastEvaluatedKey = (res.LastEvaluatedKey ?? undefined) as unknown as Record<string, unknown> | undefined;
     if (!lastEvaluatedKey) break;
   }
 
   return null;
 }
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: Promise<{ projectId: string }> }
-) {
-  return withApiErrors<{ error: string } | { ok: boolean; projectId: string }>(async () => {
+type FileItem = {
+  PK: string;
+  SK: string;
+  bucket: string;
+  key: string;
+};
+
+async function listProjectFiles(userSub: string, projectId: string): Promise<FileItem[]> {
+  const PK = `USER#${userSub}`;
+  const out: FileItem[] = [];
+  let lastEvaluatedKey: Record<string, unknown> | undefined;
+
+  for (let page = 0; page < 200; page += 1) {
+    const res = await ddbDoc.send(
+      new QueryCommand({
+        TableName: TABLE_NAME,
+        ConsistentRead: true,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        ExpressionAttributeValues: {
+          ":pk": PK,
+          ":prefix": "FILE#",
+          ":projectId": projectId,
+        },
+        FilterExpression: "projectId = :projectId",
+        ExclusiveStartKey: lastEvaluatedKey as never,
+        Limit: 50,
+      })
+    );
+
+    for (const it of res.Items ?? []) {
+      const SK = typeof it.SK === "string" ? it.SK : "";
+      const bucket = typeof it.bucket === "string" ? it.bucket : "";
+      const key = typeof it.key === "string" ? it.key : "";
+      if (!SK || !bucket || !key) continue;
+
+      out.push({ PK, SK, bucket, key });
+    }
+
+    lastEvaluatedKey = (res.LastEvaluatedKey ?? undefined) as unknown as Record<string, unknown> | undefined;
+    if (!lastEvaluatedKey) break;
+  }
+
+  return out;
+}
+
+// ✅ GET single project
+export async function GET(_req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  try {
     const user = await requireUser();
     const { projectId } = await params;
 
-    if (!projectId) return badRequest("projectId is required");
+    if (!projectId) {
+      return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+    }
+
+    const found = await findProject(user.sub, projectId);
+    if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+    const it = found.item;
+
+    const project = {
+      projectId: String(it.projectId ?? projectId),
+      name: String(it.name ?? "Untitled Project"),
+      createdAt: String(it.createdAt ?? ""),
+      updatedAt: String(it.updatedAt ?? it.createdAt ?? ""),
+      status: String(it.status ?? "active"),
+    };
+
+    return NextResponse.json({ project });
+  } catch (e: unknown) {
+    const msg = getErrorMessage(e);
+    if (isAuthError(msg)) return authErrorResponse(msg);
+
+    console.error("GET /app/api/projects/[projectId] error:", e);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
+  }
+}
+
+// ✅ PATCH rename project
+export async function PATCH(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  try {
+    const user = await requireUser();
+    const { projectId } = await params;
+
+    if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
 
     let body: Partial<PatchBody> = {};
     try {
       body = (await req.json()) as Partial<PatchBody>;
     } catch {
-      return badRequest("invalid json");
+      return NextResponse.json({ error: "invalid json" }, { status: 400 });
     }
 
     const name = (body.name ?? "").trim();
-    if (!name) return badRequest("name is required");
-    if (name.length > 80) return badRequest("name too long");
+    if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
+    if (name.length > 80) return NextResponse.json({ error: "name too long" }, { status: 400 });
 
-    const key = await findProjectKey(user.sub, projectId);
-    if (!key) return notFound();
+    const found = await findProject(user.sub, projectId);
+    if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
 
     const updatedAt = nowIso();
 
@@ -96,7 +197,7 @@ export async function PATCH(
       await ddbDoc.send(
         new UpdateCommand({
           TableName: TABLE_NAME,
-          Key: key,
+          Key: found.key,
           UpdateExpression: "SET #n = :name, updatedAt = :u",
           ExpressionAttributeNames: { "#n": "name" },
           ExpressionAttributeValues: {
@@ -106,42 +207,80 @@ export async function PATCH(
           ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
         })
       );
-    } catch (e) {
-      // disappeared between find and update
-      if (isConditionalCheckFailed(e)) return notFound();
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) return NextResponse.json({ error: "not found" }, { status: 404 });
       throw e;
     }
 
-    return ok({ ok: true, projectId, name, updatedAt });
-  });
+    return NextResponse.json({ projectId, name, updatedAt });
+  } catch (e: unknown) {
+    const msg = getErrorMessage(e);
+    if (isAuthError(msg)) return authErrorResponse(msg);
+
+    console.error("PATCH /app/api/projects/[projectId] error:", e);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
+  }
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: Promise<{ projectId: string }> }
-) {
-  return withApiErrors<{ error: string } | { ok: boolean; projectId: string }>(async () => {
+// ✅ DELETE project + all its files (DDB + S3 best-effort)
+export async function DELETE(_req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+  try {
     const user = await requireUser();
     const { projectId } = await params;
 
-    if (!projectId) return badRequest("projectId is required");
+    if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
 
-    const key = await findProjectKey(user.sub, projectId);
-    if (!key) return notFound();
+    const found = await findProject(user.sub, projectId);
+    if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+    // 1) Delete files for this project
+    const files = await listProjectFiles(user.sub, projectId);
+
+    let deletedFileRows = 0;
+    let deletedS3Objects = 0;
+
+    for (const f of files) {
+      // Delete S3 object (ignore NotFound / AccessDenied, still remove DB row)
+      try {
+        await s3.send(new DeleteObjectCommand({ Bucket: f.bucket, Key: f.key }));
+        deletedS3Objects += 1;
+      } catch (err) {
+        console.warn("DeleteObject failed (continuing):", err);
+      }
+
+      try {
+        await ddbDoc.send(
+          new DeleteCommand({
+            TableName: TABLE_NAME,
+            Key: { PK: f.PK, SK: f.SK },
+          })
+        );
+        deletedFileRows += 1;
+      } catch (err) {
+        console.warn("Delete FILE row failed (continuing):", err);
+      }
+    }
+
+    // 2) Delete the project row
     try {
       await ddbDoc.send(
         new DeleteCommand({
           TableName: TABLE_NAME,
-          Key: key,
+          Key: found.key,
           ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
         })
       );
-    } catch (e) {
-      if (isConditionalCheckFailed(e)) return notFound();
+    } catch (e: unknown) {
+      if (isConditionalCheckFailed(e)) return NextResponse.json({ error: "not found" }, { status: 404 });
       throw e;
     }
 
-    return ok({ ok: true, projectId });
-  });
+    return NextResponse.json({ ok: true, projectId, deletedFileRows, deletedS3Objects });
+  } catch (e: unknown) {
+    const msg = getErrorMessage(e);
+    if (isAuthError(msg)) return authErrorResponse(msg);
+
+    console.error("DELETE /app/api/projects/[projectId] error:", e);
+    return NextResponse.json({ error: "server error" }, { status: 500 });
+  }
 }

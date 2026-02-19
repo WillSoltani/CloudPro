@@ -108,7 +108,7 @@ export default async function ProjectLayout({
       </header>
 
       {/* Body pushed below fixed header */}
-      <main className="w-full px-4 pt-28 pb-12 sm:px-6">
+      <main className="w-full px-4 pt-8 pb-12 sm:px-6">
       {children}
       </main>
     </div>

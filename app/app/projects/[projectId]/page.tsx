@@ -1,11 +1,15 @@
 // app/app/projects/[projectId]/page.tsx
 import { cookies, headers } from "next/headers";
+import { redirect } from "next/navigation";
 import ProjectDetailClient from "./ProjectDetailClient";
 import type { FileRow } from "../_lib/types";
 
 type ProjectRow = {
   projectId: string;
   name: string;
+  createdAt: string;
+  updatedAt: string;
+  status: string;
 };
 
 function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
@@ -32,9 +36,9 @@ async function fetchProjects(): Promise<ProjectRow[]> {
     cache: "no-store",
   });
 
+  if (res.status === 401) return [];
   if (!res.ok) {
-    if (res.status === 401) return [];
-    const text = await res.text();
+    const text = await res.text().catch(() => "");
     throw new Error(`GET /app/api/projects failed: ${res.status} ${text}`);
   }
 
@@ -56,9 +60,9 @@ async function fetchProjectFiles(projectId: string): Promise<FileRow[]> {
     }
   );
 
+  if (res.status === 401) return [];
   if (!res.ok) {
-    if (res.status === 401) return [];
-    const text = await res.text();
+    const text = await res.text().catch(() => "");
     throw new Error(
       `GET /app/api/projects/${projectId}/files failed: ${res.status} ${text}`
     );
@@ -69,24 +73,29 @@ async function fetchProjectFiles(projectId: string): Promise<FileRow[]> {
 }
 
 export default async function AppProjectDetailPage({
-  params: paramsPromise,
+  params,
 }: {
   params: Promise<{ projectId: string }>;
 }) {
-  const { projectId } = await paramsPromise;
+  const { projectId } = await params;
 
-  const [projects, files] = await Promise.all([
+  // extra guard (middleware already does this)
+  const jar = await cookies();
+  if (!jar.get("id_token")?.value) redirect("/?auth=required");
+
+  const [projects, initialFiles] = await Promise.all([
     fetchProjects(),
     fetchProjectFiles(projectId),
   ]);
 
   const project = projects.find((p) => p.projectId === projectId);
+  if (!project) redirect("/?auth=required");
 
   return (
     <ProjectDetailClient
       projectId={projectId}
-      projectName={project?.name ?? "Untitled Project"}
-      files={files}
+      projectName={project.name}
+      initialFiles={initialFiles}
     />
   );
 }

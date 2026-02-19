@@ -1,10 +1,13 @@
+import "server-only";
 import { NextResponse } from "next/server";
-import { QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetCommand } from "@aws-sdk/lib-dynamodb";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-import { ddbDoc, TABLE_NAME } from "@/app/app/api/_lib/aws";
+import { ddbDoc, TABLE_NAME, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
+
+export const runtime = "nodejs";
 
 function getErrorMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
@@ -16,51 +19,38 @@ function getErrorMessage(e: unknown): string {
   }
 }
 
-function isAuthError(msg: string) {
-  return msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN";
-}
-
 export async function GET(
   _req: Request,
-  {
-    params,
-  }: {
-    params: Promise<{ projectId: string; fileId: string }>;
-  }
+  { params }: { params: Promise<{ projectId: string; fileId: string }> }
 ) {
   try {
     const user = await requireUser();
     const { projectId, fileId } = await params;
 
     const PK = `USER#${user.sub}`;
+    const SK = `FILE#${projectId}#${fileId}`;
 
-    // Find the file item (your schema: SK starts with FILE#, fileId + projectId are attrs)
-    const res = await ddbDoc.send(
-      new QueryCommand({
+    const got = await ddbDoc.send(
+      new GetCommand({
         TableName: TABLE_NAME,
-        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
-        ExpressionAttributeValues: {
-          ":pk": PK,
-          ":prefix": "FILE#",
-          ":projectId": projectId,
-          ":fileId": fileId,
-        },
-        FilterExpression: "projectId = :projectId AND fileId = :fileId",
-        Limit: 1,
+        Key: { PK, SK },
       })
     );
 
-    const item = (res.Items ?? [])[0];
-    if (!item) {
-      return NextResponse.json({ error: "not found" }, { status: 404 });
-    }
+    const item = got.Item;
+    if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-    const bucket = String(item.bucket);
-    const key = String(item.key);
+    const bucket = String(item.bucket ?? "");
+    const key = String(item.key ?? "");
     const filename = String(item.filename ?? "download");
 
-    const s3 = new S3Client({}); // uses env/role creds
-    const url = await getSignedUrl(
+    const inlineUrl = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+      { expiresIn: 60 }
+    );
+
+    const downloadUrl = await getSignedUrl(
       s3,
       new GetObjectCommand({
         Bucket: bucket,
@@ -70,13 +60,13 @@ export async function GET(
       { expiresIn: 60 }
     );
 
-    return NextResponse.json({ url });
+    return NextResponse.json({ inlineUrl, downloadUrl });
   } catch (e: unknown) {
     const msg = getErrorMessage(e);
-    if (isAuthError(msg)) {
-      return NextResponse.json({ error: msg.toLowerCase() }, { status: 401 });
+    if (msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN") {
+      return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
     }
     console.error("GET download url error:", e);
-    return NextResponse.json({ error: "server error" }, { status: 500 });
+    return NextResponse.json({ error: "server_error", detail: msg }, { status: 500 });
   }
 }

@@ -1,42 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FileText, Image as ImageIcon } from "lucide-react";
-
-function isImageLike(file: File) {
-  const ct = (file.type || "").toLowerCase();
-  return ct.startsWith("image/");
+function extChip(text: string) {
+  return (
+    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5">
+      <span className="text-[10px] font-semibold tracking-wide text-slate-200/90">
+        {text}
+      </span>
+    </div>
+  );
 }
 
-export function Thumb({ file }: { file: File }) {
-  const url = useMemo(() => {
-    if (!isImageLike(file)) return "";
-    const u = URL.createObjectURL(file);
-    return u;
-  }, [file]);
+export function Thumb(props: { src?: string; alt: string; fallbackLabel?: string }) {
+  const src = props.src?.trim();
 
-  useEffect(() => {
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [url]);
-
-  const icon = useMemo(() => {
-    return isImageLike(file) ? <ImageIcon className="h-5 w-5" /> : <FileText className="h-5 w-5" />;
-  }, [file]);
-
-  if (!isImageLike(file) || !url) {
-    return (
-      <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-white/5 text-slate-200">
-        {icon}
-      </div>
-    );
-  }
+  // Always show ext/format if we don't have a src
+  if (!src) return extChip((props.fallbackLabel ?? "IMG").toUpperCase());
 
   return (
-    <div className="h-12 w-12 overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt="" className="h-full w-full object-cover" />
+    <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+      {/* If image fails, hide it and keep a visible fallback */}
+      <div className="absolute inset-0 grid place-items-center">
+        <span className="text-[10px] font-semibold tracking-wide text-slate-200/90">
+          {(props.fallbackLabel ?? "IMG").toUpperCase()}
+        </span>
+      </div>
+
+      <img
+        key={src}
+        src={src}
+        alt={props.alt}
+        className="absolute inset-0 h-full w-full object-cover"
+        onError={(e) => {
+          e.currentTarget.style.display = "none";
+        }}
+      />
     </div>
   );
 }
