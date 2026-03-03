@@ -1,7 +1,11 @@
 // app/app/api/projects/[projectId]/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
-import { QueryCommand, UpdateCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  QueryCommand,
+  UpdateCommand,
+  DeleteCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 import { ddbDoc, TABLE_NAME, s3 } from "../../_lib/aws";
@@ -43,7 +47,22 @@ function readStringProp(obj: unknown, key: string): string | undefined {
 function isConditionalCheckFailed(e: unknown) {
   const name = readStringProp(e, "name");
   const type = readStringProp(e, "__type");
-  return name === "ConditionalCheckFailedException" || type === "ConditionalCheckFailedException";
+  return (
+    name === "ConditionalCheckFailedException" ||
+    type === "ConditionalCheckFailedException"
+  );
+}
+
+// Align with uploads slugify: no "untitled-project" string.
+function slugify(input: string): string {
+  const s = (input || "").trim().toLowerCase();
+  const cleaned = s
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return cleaned || "untitled";
 }
 
 type ProjectFound = {
@@ -51,7 +70,10 @@ type ProjectFound = {
   item: Record<string, unknown>;
 };
 
-async function findProject(userSub: string, projectId: string): Promise<ProjectFound | null> {
+async function findProject(
+  userSub: string,
+  projectId: string
+): Promise<ProjectFound | null> {
   const PK = `USER#${userSub}`;
   let lastEvaluatedKey: Record<string, unknown> | undefined;
 
@@ -77,14 +99,13 @@ async function findProject(userSub: string, projectId: string): Promise<ProjectF
     if (item) {
       const SK = typeof item.SK === "string" ? item.SK : "";
       if (!SK) return null;
-
-      return {
-        key: { PK, SK },
-        item: item as Record<string, unknown>,
-      };
+      return { key: { PK, SK }, item: item as Record<string, unknown> };
     }
 
-    lastEvaluatedKey = (res.LastEvaluatedKey ?? undefined) as unknown as Record<string, unknown> | undefined;
+    lastEvaluatedKey = (res.LastEvaluatedKey ?? undefined) as unknown as
+      | Record<string, unknown>
+      | undefined;
+
     if (!lastEvaluatedKey) break;
   }
 
@@ -98,7 +119,10 @@ type FileItem = {
   key: string;
 };
 
-async function listProjectFiles(userSub: string, projectId: string): Promise<FileItem[]> {
+async function listProjectFiles(
+  userSub: string,
+  projectId: string
+): Promise<FileItem[]> {
   const PK = `USER#${userSub}`;
   const out: FileItem[] = [];
   let lastEvaluatedKey: Record<string, unknown> | undefined;
@@ -125,25 +149,33 @@ async function listProjectFiles(userSub: string, projectId: string): Promise<Fil
       const bucket = typeof it.bucket === "string" ? it.bucket : "";
       const key = typeof it.key === "string" ? it.key : "";
       if (!SK || !bucket || !key) continue;
-
       out.push({ PK, SK, bucket, key });
     }
 
-    lastEvaluatedKey = (res.LastEvaluatedKey ?? undefined) as unknown as Record<string, unknown> | undefined;
+    lastEvaluatedKey = (res.LastEvaluatedKey ?? undefined) as unknown as
+      | Record<string, unknown>
+      | undefined;
+
     if (!lastEvaluatedKey) break;
   }
 
   return out;
 }
 
-// ✅ GET single project
-export async function GET(_req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+// ✅ GET single project (returns projectSlug when present)
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
   try {
     const user = await requireUser();
     const { projectId } = await params;
 
     if (!projectId) {
-      return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "projectId is required" },
+        { status: 400 }
+      );
     }
 
     const found = await findProject(user.sub, projectId);
@@ -151,9 +183,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ project
 
     const it = found.item;
 
+    const projectSlugRaw =
+      typeof it.projectSlug === "string" ? it.projectSlug.trim() : "";
+
     const project = {
       projectId: String(it.projectId ?? projectId),
       name: String(it.name ?? "Untitled Project"),
+      projectSlug: projectSlugRaw || undefined,
       createdAt: String(it.createdAt ?? ""),
       updatedAt: String(it.updatedAt ?? it.createdAt ?? ""),
       status: String(it.status ?? "active"),
@@ -169,13 +205,21 @@ export async function GET(_req: Request, { params }: { params: Promise<{ project
   }
 }
 
-// ✅ PATCH rename project
-export async function PATCH(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+// ✅ PATCH rename project (Solution A: projectSlug IMMUTABLE)
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
   try {
     const user = await requireUser();
     const { projectId } = await params;
 
-    if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+    if (!projectId) {
+      return NextResponse.json(
+        { error: "projectId is required" },
+        { status: 400 }
+      );
+    }
 
     let body: Partial<PatchBody> = {};
     try {
@@ -193,26 +237,46 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ projec
 
     const updatedAt = nowIso();
 
+    const existingSlug =
+      typeof found.item.projectSlug === "string" && found.item.projectSlug.trim()
+        ? found.item.projectSlug.trim()
+        : "";
+
+    const shouldSetSlug = !existingSlug;
+    const newSlug = shouldSetSlug ? slugify(name) : existingSlug;
+
+    const updateExpr = shouldSetSlug
+      ? "SET #n = :name, updatedAt = :u, projectSlug = :ps"
+      : "SET #n = :name, updatedAt = :u";
+
+    const exprValues: Record<string, unknown> = shouldSetSlug
+      ? { ":name": name, ":u": updatedAt, ":ps": newSlug }
+      : { ":name": name, ":u": updatedAt };
+
     try {
       await ddbDoc.send(
         new UpdateCommand({
           TableName: TABLE_NAME,
           Key: found.key,
-          UpdateExpression: "SET #n = :name, updatedAt = :u",
+          UpdateExpression: updateExpr,
           ExpressionAttributeNames: { "#n": "name" },
-          ExpressionAttributeValues: {
-            ":name": name,
-            ":u": updatedAt,
-          },
+          ExpressionAttributeValues: exprValues,
           ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
         })
       );
     } catch (e: unknown) {
-      if (isConditionalCheckFailed(e)) return NextResponse.json({ error: "not found" }, { status: 404 });
+      if (isConditionalCheckFailed(e)) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
+      }
       throw e;
     }
 
-    return NextResponse.json({ projectId, name, updatedAt });
+    return NextResponse.json({
+      projectId,
+      name,
+      updatedAt,
+      projectSlug: newSlug || undefined,
+    });
   } catch (e: unknown) {
     const msg = getErrorMessage(e);
     if (isAuthError(msg)) return authErrorResponse(msg);
@@ -223,24 +287,30 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ projec
 }
 
 // ✅ DELETE project + all its files (DDB + S3 best-effort)
-export async function DELETE(_req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
   try {
     const user = await requireUser();
     const { projectId } = await params;
 
-    if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+    if (!projectId) {
+      return NextResponse.json(
+        { error: "projectId is required" },
+        { status: 400 }
+      );
+    }
 
     const found = await findProject(user.sub, projectId);
     if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-    // 1) Delete files for this project
     const files = await listProjectFiles(user.sub, projectId);
 
     let deletedFileRows = 0;
     let deletedS3Objects = 0;
 
     for (const f of files) {
-      // Delete S3 object (ignore NotFound / AccessDenied, still remove DB row)
       try {
         await s3.send(new DeleteObjectCommand({ Bucket: f.bucket, Key: f.key }));
         deletedS3Objects += 1;
@@ -261,7 +331,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ proj
       }
     }
 
-    // 2) Delete the project row
     try {
       await ddbDoc.send(
         new DeleteCommand({
@@ -271,11 +340,18 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ proj
         })
       );
     } catch (e: unknown) {
-      if (isConditionalCheckFailed(e)) return NextResponse.json({ error: "not found" }, { status: 404 });
+      if (isConditionalCheckFailed(e)) {
+        return NextResponse.json({ error: "not found" }, { status: 404 });
+      }
       throw e;
     }
 
-    return NextResponse.json({ ok: true, projectId, deletedFileRows, deletedS3Objects });
+    return NextResponse.json({
+      ok: true,
+      projectId,
+      deletedFileRows,
+      deletedS3Objects,
+    });
   } catch (e: unknown) {
     const msg = getErrorMessage(e);
     if (isAuthError(msg)) return authErrorResponse(msg);

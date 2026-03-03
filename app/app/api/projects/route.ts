@@ -28,12 +28,36 @@ function readStringProp(obj: unknown, key: string): string | undefined {
 function isConditionalCheckFailed(e: unknown) {
   const name = readStringProp(e, "name");
   const type = readStringProp(e, "__type");
-  return name === "ConditionalCheckFailedException" || type === "ConditionalCheckFailedException";
+  return (
+    name === "ConditionalCheckFailedException" ||
+    type === "ConditionalCheckFailedException"
+  );
+}
+
+function slugify(input: string) {
+  const s = (input || "").trim().toLowerCase();
+  const cleaned = s
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+  return cleaned || "untitled-project";
 }
 
 export async function POST(req: Request) {
   return withApiErrors<
-    { error: string } | { project: { projectId: string; name: string; createdAt: string; updatedAt: string; status: string } }
+    | { error: string }
+    | {
+        project: {
+          projectId: string;
+          name: string;
+          projectSlug: string;
+          createdAt: string;
+          updatedAt: string;
+          status: string;
+        };
+      }
   >(async () => {
     const user = await requireUser();
 
@@ -50,6 +74,7 @@ export async function POST(req: Request) {
 
     const projectId = newId();
     const createdAt = nowIso();
+    const projectSlug = slugify(name); // ✅ immutable key slug
 
     const PK = `USER#${user.sub}`;
     const SK = `PROJECT#${createdAt}#${projectId}`;
@@ -65,11 +90,13 @@ export async function POST(req: Request) {
             projectId,
             userSub: user.sub,
             name,
+            projectSlug, // ✅ stored once
             createdAt,
             updatedAt: createdAt,
             status: "active",
           },
-          ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+          ConditionExpression:
+            "attribute_not_exists(PK) AND attribute_not_exists(SK)",
         })
       );
     } catch (e: unknown) {
@@ -77,7 +104,19 @@ export async function POST(req: Request) {
       throw e;
     }
 
-    return ok({ project: { projectId, name, createdAt, updatedAt: createdAt, status: "active" } }, 201);
+    return ok(
+      {
+        project: {
+          projectId,
+          name,
+          projectSlug,
+          createdAt,
+          updatedAt: createdAt,
+          status: "active",
+        },
+      },
+      201
+    );
   });
 }
 
@@ -102,6 +141,7 @@ export async function GET() {
     const projects = (res.Items ?? []).map((it) => ({
       projectId: String(it.projectId),
       name: String(it.name),
+      projectSlug: typeof it.projectSlug === "string" ? it.projectSlug : undefined,
       createdAt: String(it.createdAt),
       updatedAt: String(it.updatedAt ?? it.createdAt),
       status: String(it.status ?? "active"),

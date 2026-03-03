@@ -3,7 +3,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { QueryCommand } from "@aws-sdk/lib-dynamodb";
+import { QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
 import { ddbDoc, TABLE_NAME, s3, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireUser, AuthError } from "@/app/app/api/_lib/auth";
@@ -16,7 +16,12 @@ type CreateUploadBody = {
   sizeBytes?: number;
 };
 
-type ProjectLookup = { name: string; status: string } | null;
+type ProjectLookup = {
+  name: string;
+  status: string;
+  projectSlug?: string;
+  projectSK: string; // needed for backfill update
+} | null;
 
 function jsonError(status: number, error: string, detail?: string) {
   return NextResponse.json(
@@ -61,20 +66,17 @@ function userSlugFromClaims(user: { name?: unknown; email?: unknown }): string {
   if (name) return slugify(name);
 
   const email = typeof user.email === "string" ? user.email.trim().toLowerCase() : "";
-  if (email) {
-    const local = email.split("@")[0] || "user";
-    return slugify(local);
-  }
+  if (email) return slugify((email.split("@")[0] || "user").trim());
 
   return "user";
 }
 
 /**
  * IMPORTANT:
- * - No Limit:1 with FilterExpression (Limit applies before filter).
- * - ConsistentRead so create->upload immediately works.
+ * - Never use Limit: 1 with FilterExpression (Limit applies pre-filter).
+ * - ConsistentRead so create project -> upload immediately works.
  * - Paginate until found.
- * - Do NOT inject "Untitled Project" as a name. Return the real stored value.
+ * - Return the real stored name; do NOT substitute "Untitled Project" here.
  */
 async function fetchProjectById(userSub: string, projectId: string): Promise<ProjectLookup> {
   const PK = `USER#${userSub}`;
@@ -94,7 +96,7 @@ async function fetchProjectById(userSub: string, projectId: string): Promise<Pro
         FilterExpression: "projectId = :pid",
         Limit: 50,
         ExclusiveStartKey: lastKey as never,
-        ProjectionExpression: "projectId, #n, #s",
+        ProjectionExpression: "projectId, SK, #n, #s, projectSlug",
         ExpressionAttributeNames: {
           "#n": "name",
           "#s": "status",
@@ -106,9 +108,14 @@ async function fetchProjectById(userSub: string, projectId: string): Promise<Pro
       const pid = readString(it, "projectId");
       if (pid !== projectId) continue;
 
+      const sk = readString(it, "SK") ?? "";
+      if (!sk) continue;
+
       const name = (readString(it, "name") ?? "").trim();
       const status = (readString(it, "status") ?? "active").trim() || "active";
-      return { name, status };
+      const projectSlug = (readString(it, "projectSlug") ?? "").trim() || undefined;
+
+      return { name, status, projectSlug, projectSK: sk };
     }
 
     if (!res.LastEvaluatedKey) return null;
@@ -116,6 +123,31 @@ async function fetchProjectById(userSub: string, projectId: string): Promise<Pro
   }
 
   return null;
+}
+
+async function backfillProjectSlugOnce(params: {
+  userSub: string;
+  projectSK: string;
+  projectSlug: string;
+}): Promise<void> {
+  const PK = `USER#${params.userSub}`;
+
+  // Only set if missing (immutable once set)
+  await ddbDoc.send(
+    new UpdateCommand({
+      TableName: TABLE_NAME,
+      Key: { PK, SK: params.projectSK },
+      UpdateExpression: "SET projectSlug = :ps",
+      ExpressionAttributeValues: { ":ps": params.projectSlug },
+      ConditionExpression:
+        "attribute_exists(PK) AND attribute_exists(SK) AND attribute_not_exists(projectSlug)",
+    })
+  );
+}
+
+function fallbackProjectSlug(projectId: string): string {
+  const short = projectId.slice(0, 8) || "project";
+  return `project-${short}`;
 }
 
 function buildRawKey(args: {
@@ -127,17 +159,16 @@ function buildRawKey(args: {
   filename: string;
 }) {
   const { userSub, userSlug, projectId, projectSlug, fileId, filename } = args;
-  // desired shape: project-name first, then id
+
+  // ✅ Stable across renames because projectSlug is immutable once set.
+  // Desired shape: project-name first, then id
   return `private/${userSub}/${userSlug}/projects/${projectSlug}--${projectId}/raw/${fileId}/${filename}`;
 }
 
-function fallbackProjectSlug(projectId: string): string {
-  // Never "untitled-project". Use a stable deterministic fallback if name is missing.
-  const short = projectId.slice(0, 8) || "project";
-  return `project-${short}`;
-}
-
-export async function POST(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
   try {
     const user = await requireUser();
     const { projectId } = await params;
@@ -164,10 +195,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
     const filename = safeFileName(rawName);
     const contentType = normalizeContentType(body.contentType ?? "");
 
-    // Ensure project exists (and isn't deleted)
+    // Ensure project exists and is active
     const project = await fetchProjectById(user.sub, projectId);
     if (!project) return jsonError(404, "not_found", "project not found");
     if ((project.status || "active") !== "active") return jsonError(410, "gone", "project is not active");
+
+    // ✅ Stable slug: prefer stored projectSlug; otherwise compute once and store.
+    let projectSlug = project.projectSlug;
+    if (!projectSlug) {
+      const computed = project.name ? slugify(project.name) : fallbackProjectSlug(projectId);
+
+      try {
+        await backfillProjectSlugOnce({
+          userSub: user.sub,
+          projectSK: project.projectSK,
+          projectSlug: computed,
+        });
+      } catch {
+        // Another request might have set it first; ignore.
+      }
+
+      projectSlug = computed;
+    }
 
     const bucket = mustEnv("RAW_BUCKET");
     const fileId = crypto.randomUUID();
@@ -176,8 +225,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       name: (user as unknown as { name?: unknown }).name,
       email: (user as unknown as { email?: unknown }).email,
     });
-
-    const projectSlug = project.name ? slugify(project.name) : fallbackProjectSlug(projectId);
 
     const key = buildRawKey({
       userSub: user.sub,
@@ -212,7 +259,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       { status: 201 }
     );
   } catch (e: unknown) {
-    if (e instanceof AuthError) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+    }
     const msg = e instanceof Error ? e.message : String(e);
     console.error("POST uploads error:", e);
     return jsonError(500, "server_error", msg);
