@@ -1,3 +1,4 @@
+// app/app/api/projects/[projectId]/files/[fileId]/download/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { GetCommand } from "@aws-sdk/lib-dynamodb";
@@ -19,6 +20,16 @@ function getErrorMessage(e: unknown): string {
   }
 }
 
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function safeDispositionFilename(name: string): string {
+  // Keep it boring and safe for headers (no quotes/newlines)
+  const cleaned = name.replace(/[\r\n"]/g, "");
+  return cleaned || "download";
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ projectId: string; fileId: string }> }
@@ -26,6 +37,13 @@ export async function GET(
   try {
     const user = await requireUser();
     const { projectId, fileId } = await params;
+
+    if (!projectId || !fileId) {
+      return NextResponse.json(
+        { error: "bad_request", detail: "missing params" },
+        { status: 400 }
+      );
+    }
 
     const PK = `USER#${user.sub}`;
     const SK = `FILE#${projectId}#${fileId}`;
@@ -38,11 +56,19 @@ export async function GET(
     );
 
     const item = got.Item;
-    if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (!item) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
-    const bucket = String(item.bucket ?? "");
-    const key = String(item.key ?? "");
-    const filename = String(item.filename ?? "download");
+    const bucket = str(item.bucket);
+    const key = str(item.key);
+    const filename = safeDispositionFilename(str(item.filename));
+
+    if (!bucket || !key) {
+      // Bad row in Dynamo, treat as missing
+      return NextResponse.json(
+        { error: "not_found", detail: "missing bucket/key" },
+        { status: 404 }
+      );
+    }
 
     const inlineUrl = await getSignedUrl(
       s3,

@@ -1,6 +1,7 @@
+// app/app/api/projects/[projectId]/files/[fileId]/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
-import { GetCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 
 import { ddbDoc, TABLE_NAME, s3 } from "@/app/app/api/_lib/aws";
@@ -18,6 +19,27 @@ function getErrorMessage(e: unknown): string {
   }
 }
 
+function str(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+function awsHttpStatus(e: unknown): number | undefined {
+  if (typeof e !== "object" || e === null) return undefined;
+  const rec = e as Record<string, unknown>;
+  const md = rec.$metadata;
+  if (typeof md !== "object" || md === null) return undefined;
+  const mdr = md as Record<string, unknown>;
+  const code = mdr.httpStatusCode;
+  return typeof code === "number" ? code : undefined;
+}
+
+function awsErrorName(e: unknown): string | undefined {
+  if (typeof e !== "object" || e === null) return undefined;
+  const rec = e as Record<string, unknown>;
+  const name = rec.name;
+  return typeof name === "string" ? name : undefined;
+}
+
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ projectId: string; fileId: string }> }
@@ -26,9 +48,17 @@ export async function DELETE(
     const user = await requireUser();
     const { projectId, fileId } = await params;
 
+    if (!projectId || !fileId) {
+      return NextResponse.json(
+        { error: "bad_request", detail: "missing params" },
+        { status: 400 }
+      );
+    }
+
     const PK = `USER#${user.sub}`;
     const SK = `FILE#${projectId}#${fileId}`;
 
+    // 1) Read row (optional). If it exists, attempt S3 delete best-effort.
     const got = await ddbDoc.send(
       new GetCommand({
         TableName: TABLE_NAME,
@@ -37,19 +67,27 @@ export async function DELETE(
     );
 
     const item = got.Item;
-    if (!item) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-    const bucket = String(item.bucket ?? "");
-    const key = String(item.key ?? "");
-    if (bucket && key) {
-      try {
-        await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-      } catch (err) {
-        // If the user manually deleted from S3, this can fail. We still delete Dynamo.
-        console.warn("DeleteObject failed (continuing):", err);
+    if (item) {
+      const bucket = str(item.bucket);
+      const key = str(item.key);
+
+      if (bucket && key) {
+        try {
+          await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+        } catch (e: unknown) {
+          // If already deleted from S3, that's fine.
+          const status = awsHttpStatus(e);
+          const name = awsErrorName(e);
+          const notFoundish = status === 404 || name === "NotFound" || name === "NoSuchKey";
+          if (!notFoundish) {
+            console.warn("DeleteObject failed (continuing):", e);
+          }
+        }
       }
     }
 
+    // 2) Delete Dynamo row (idempotent).
     await ddbDoc.send(
       new DeleteCommand({
         TableName: TABLE_NAME,
@@ -57,7 +95,7 @@ export async function DELETE(
       })
     );
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, fileId });
   } catch (e: unknown) {
     const msg = getErrorMessage(e);
     if (msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN") {

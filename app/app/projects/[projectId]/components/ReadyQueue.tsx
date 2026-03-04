@@ -1,3 +1,4 @@
+// app/app/projects/[projectId]/components/ReadyQueue.tsx
 "use client";
 
 import { Trash2, Play, Check } from "lucide-react";
@@ -23,6 +24,9 @@ export function ReadyQueue({
   const selected = files.reduce((acc, f) => acc + (f.selected ? 1 : 0), 0);
   const allSelected = total > 0 && selected === total;
 
+  const removeDisabled = selected === 0;
+  const convertDisabled = selected === 0;
+
   return (
     <div className="overflow-hidden rounded-[32px] border border-white/10 bg-white/3 shadow-[0_18px_70px_rgba(0,0,0,0.45)]">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/2 px-5 py-4">
@@ -43,9 +47,7 @@ export function ReadyQueue({
 
           <div className="text-base font-semibold text-slate-100">
             Ready to Convert{" "}
-            <span className="ml-2 text-sm font-normal text-slate-400">
-              ({total} files)
-            </span>
+            <span className="ml-2 text-sm font-normal text-slate-400">({total} files)</span>
           </div>
         </div>
 
@@ -53,10 +55,10 @@ export function ReadyQueue({
           <button
             type="button"
             onClick={onRemoveSelected}
-            disabled={selected === 0}
+            disabled={removeDisabled}
             className={[
               "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm transition",
-              selected === 0
+              removeDisabled
                 ? "cursor-not-allowed text-slate-500"
                 : "text-rose-200 hover:bg-rose-500/10",
             ].join(" ")}
@@ -68,10 +70,10 @@ export function ReadyQueue({
           <button
             type="button"
             onClick={onConvert}
-            disabled={selected === 0}
+            disabled={convertDisabled}
             className={[
               "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
-              selected === 0
+              convertDisabled
                 ? "cursor-not-allowed border border-white/10 bg-white/5 text-slate-500"
                 : "bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.25)] hover:bg-sky-500",
             ].join(" ")}
@@ -84,8 +86,7 @@ export function ReadyQueue({
 
       {total === 0 ? (
         <div className="px-5 py-8 text-sm text-slate-400">
-          No files selected yet. Click{" "}
-          <span className="text-slate-200">Browse Files</span>.
+          No files selected yet. Click <span className="text-slate-200">Browse Files</span>.
         </div>
       ) : (
         <div className="divide-y divide-white/10">
@@ -112,9 +113,7 @@ export function ReadyQueue({
                 <Thumb src={f.previewUrl} alt={f.file.name} fallbackLabel={f.fromLabel} />
 
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold text-slate-100">
-                    {name || "Untitled"}
-                  </div>
+                  <div className="truncate text-sm font-semibold text-slate-100">{name || "Untitled"}</div>
                   <div className="text-xs text-slate-400">{f.sizeLabel}</div>
                 </div>
 
@@ -133,7 +132,6 @@ export function ReadyQueue({
 }
 
 function getDisplayName(f: LocalReadyFile): string {
-  // Works even if you later stop storing File objects (server-loaded items)
   const fileName =
     typeof (f as unknown as { file?: { name?: unknown } }).file?.name === "string"
       ? (f as unknown as { file: { name: string } }).file.name

@@ -1,4 +1,5 @@
-"use client";
+
+// app/app/projects/[projectId]/components/DropzoneCard.tsx;
 
 import { useMemo, useRef } from "react";
 import { Upload, ArrowUpFromLine, Check } from "lucide-react";

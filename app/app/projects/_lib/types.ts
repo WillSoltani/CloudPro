@@ -14,6 +14,8 @@ export type Stats = {
   spaceSavedBytes: number;
 };
 
+export type FileKind = "raw" | "output";
+
 export type FileRow = {
   fileId: string;
   projectId: string;
@@ -25,6 +27,7 @@ export type FileRow = {
   updatedAt: string;
   bucket: string;
   key: string;
+  kind: FileKind; // ✅ NEW
 };
 
 export type ProjectMeta = {

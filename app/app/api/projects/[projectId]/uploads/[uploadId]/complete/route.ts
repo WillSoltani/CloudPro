@@ -1,3 +1,4 @@
+// app/app/api/projects/[projectId]/uploads/[uploadId]/complete/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
@@ -30,9 +31,11 @@ function guessContentTypeFromName(filename: string): string {
   if (n.endsWith(".txt")) return "text/plain";
   if (n.endsWith(".pdf")) return "application/pdf";
   if (n.endsWith(".doc")) return "application/msword";
-  if (n.endsWith(".docx")) return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (n.endsWith(".docx"))
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   if (n.endsWith(".xls")) return "application/vnd.ms-excel";
-  if (n.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (n.endsWith(".xlsx"))
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   if (n.endsWith(".png")) return "image/png";
   if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
   if (n.endsWith(".webp")) return "image/webp";
@@ -60,6 +63,8 @@ type CompleteUploadBody = {
   key?: string;
 };
 
+type FileKind = "raw" | "output";
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ projectId: string; uploadId: string }> }
@@ -69,10 +74,21 @@ export async function POST(
     const { projectId, uploadId } = await params;
 
     if (!projectId || !uploadId) {
-      return NextResponse.json({ error: "bad_request", detail: "missing params" }, { status: 400 });
+      return NextResponse.json(
+        { error: "bad_request", detail: "missing params" },
+        { status: 400 }
+      );
     }
 
-    const body = (await req.json()) as Partial<CompleteUploadBody>;
+    let body: Partial<CompleteUploadBody> = {};
+    try {
+      body = (await req.json()) as Partial<CompleteUploadBody>;
+    } catch {
+      return NextResponse.json(
+        { error: "bad_request", detail: "invalid json" },
+        { status: 400 }
+      );
+    }
 
     const rawName = String(body.filename ?? "");
     const filename = safeFileName(rawName);
@@ -94,13 +110,17 @@ export async function POST(
         : guessContentTypeFromName(filename);
 
     const sizeBytes =
-      typeof body.sizeBytes === "number" && Number.isFinite(body.sizeBytes) && body.sizeBytes >= 0
+      typeof body.sizeBytes === "number" &&
+      Number.isFinite(body.sizeBytes) &&
+      body.sizeBytes >= 0
         ? Math.floor(body.sizeBytes)
         : null;
 
     const createdAt = nowIso();
     const PK = `USER#${user.sub}`;
-    const SK = `FILE#${projectId}#${uploadId}`; // ✅ deterministic
+    const SK = `FILE#${projectId}#${uploadId}`; // deterministic
+
+    const kind: FileKind = "raw";
 
     await ddbDoc.send(
       new PutCommand({
@@ -109,6 +129,7 @@ export async function POST(
           PK,
           SK,
           entity: "FILE",
+          kind, // ✅ NEW
           fileId: uploadId,
           projectId,
           userSub: user.sub,
@@ -125,7 +146,10 @@ export async function POST(
       })
     );
 
-    return NextResponse.json({ file: { fileId: uploadId, status: "queued" } }, { status: 201 });
+    return NextResponse.json(
+      { file: { fileId: uploadId, status: "queued", kind } },
+      { status: 201 }
+    );
   } catch (e: unknown) {
     const msg = getErrorMessage(e);
     if (msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN") {

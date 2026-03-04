@@ -1,3 +1,4 @@
+// app/app/api/projects/[projectId]/files/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
@@ -7,6 +8,8 @@ import { ddbDoc, TABLE_NAME, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
+
+type FileKind = "raw" | "output";
 
 type FileRow = {
   fileId: string;
@@ -19,12 +22,10 @@ type FileRow = {
   updatedAt: string;
   bucket: string;
   key: string;
+  kind: FileKind;
 };
 
-type DbFileItem = FileRow & {
-  PK: string;
-  SK: string;
-};
+type DbFileItem = FileRow & { PK: string; SK: string };
 
 function getErrorMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
@@ -54,6 +55,10 @@ function numOrNull(v: unknown): number | null {
   return Math.floor(v);
 }
 
+function parseKind(v: unknown): FileKind {
+  return v === "raw" || v === "output" ? v : "raw";
+}
+
 function toDbFileItem(raw: unknown): DbFileItem | null {
   if (!isRecord(raw)) return null;
 
@@ -63,16 +68,12 @@ function toDbFileItem(raw: unknown): DbFileItem | null {
   const fileId = str(raw.fileId);
   const projectId = str(raw.projectId);
   const filename = str(raw.filename);
-  const contentType = str(raw.contentType);
-  const status = str(raw.status);
-  const createdAt = str(raw.createdAt);
-  const updatedAt = str(raw.updatedAt);
   const bucket = str(raw.bucket);
   const key = str(raw.key);
 
-  const sizeBytes = numOrNull(raw.sizeBytes);
-
   if (!PK || !SK || !fileId || !projectId || !filename || !bucket || !key) return null;
+
+  const now = new Date().toISOString();
 
   return {
     PK,
@@ -80,13 +81,14 @@ function toDbFileItem(raw: unknown): DbFileItem | null {
     fileId,
     projectId,
     filename,
-    contentType: contentType || "application/octet-stream",
-    sizeBytes,
-    status: status || "queued",
-    createdAt: createdAt || new Date().toISOString(),
-    updatedAt: updatedAt || new Date().toISOString(),
+    contentType: str(raw.contentType) || "application/octet-stream",
+    sizeBytes: numOrNull(raw.sizeBytes),
+    status: str(raw.status) || "queued",
+    createdAt: str(raw.createdAt) || now,
+    updatedAt: str(raw.updatedAt) || str(raw.createdAt) || now,
     bucket,
     key,
+    kind: parseKind(raw.kind),
   };
 }
 
@@ -111,10 +113,9 @@ async function headExists(bucket: string, key: string): Promise<boolean> {
   } catch (e: unknown) {
     const name = awsErrorName(e);
     const status = awsHttpStatus(e);
-    if (name === "NotFound" || status === 404) return false;
+    if (name === "NotFound" || name === "NoSuchKey" || status === 404) return false;
 
-    // If it’s something else (permissions, throttling), treat as “exists”
-    // so we don’t accidentally delete Dynamo records.
+    // Unexpected (permissions, throttling, etc). Avoid deleting Dynamo rows.
     console.warn("HeadObject unexpected error (treating as exists):", e);
     return true;
   }
@@ -136,8 +137,7 @@ async function mapLimit<T, R>(
   }
 
   const n = Math.max(1, Math.min(limit, items.length || 1));
-  const runners = Array.from({ length: n }, () => runOne());
-  await Promise.all(runners);
+  await Promise.all(Array.from({ length: n }, () => runOne()));
   return results;
 }
 
@@ -157,18 +157,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
     const validate = url.searchParams.get("validate") === "1";
 
     const PK = `USER#${user.sub}`;
+    const prefix = `FILE#${projectId}#`;
 
-    // NOTE: this assumes your FILE items live under USER#sub and SK starts with FILE#
+    // ✅ deterministic query: no FilterExpression needed
     const res = await ddbDoc.send(
       new QueryCommand({
         TableName: TABLE_NAME,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
           ":pk": PK,
-          ":prefix": "FILE#",
-          ":projectId": projectId,
+          ":prefix": prefix,
         },
-        FilterExpression: "projectId = :projectId",
+        ScanIndexForward: false,
       })
     );
 
@@ -181,7 +181,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
       return NextResponse.json({ files });
     }
 
-    // Validate against S3 (concurrency-limited)
     const checks = await mapLimit(items, 6, async (it) => {
       const exists = await headExists(it.bucket, it.key);
       return { it, exists };
@@ -189,7 +188,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
 
     const missing = checks.filter((c) => !c.exists).map((c) => c.it);
 
-    // Delete missing Dynamo records (best effort)
+    // delete missing Dynamo rows best-effort
     await Promise.all(
       missing.map((m) =>
         ddbDoc
@@ -203,11 +202,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
       )
     );
 
-    // Return cleaned list
-    const cleaned = checks
+    const cleaned: FileRow[] = checks
       .filter((c) => c.exists)
       .map(({ it }) => {
-        // strip PK/SK
         const { PK: _PK, SK: _SK, ...rest } = it;
         return rest;
       });
