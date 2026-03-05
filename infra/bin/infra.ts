@@ -9,6 +9,10 @@ new StorageStack(app, "CloudPortfolioStorage", {
     account: process.env.CDK_DEFAULT_ACCOUNT,
     region: process.env.CDK_DEFAULT_REGION,
   },
+  synthesizer: new cdk.DefaultStackSynthesizer({
+    qualifier: "willfresh1",
+  }),
 });
 
 app.synth();
+

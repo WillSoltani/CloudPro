@@ -4,6 +4,7 @@ import "server-only";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { S3Client } from "@aws-sdk/client-s3";
+import { SFNClient } from "@aws-sdk/client-sfn";
 
 export function mustEnv(name: string): string {
   const v = process.env[name];
@@ -15,7 +16,6 @@ export const REGION =
   process.env.AWS_REGION ||
   process.env.AWS_DEFAULT_REGION ||
   "ca-central-1";
-
 
 // DynamoDB
 const ddb = new DynamoDBClient({ region: REGION });
@@ -29,3 +29,6 @@ export const TABLE_NAME: string = mustEnv("SECURE_DOC_TABLE");
 
 // S3
 export const s3 = new S3Client({ region: REGION });
+
+// Step Functions
+export const sfn = new SFNClient({ region: REGION });

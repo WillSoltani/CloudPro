@@ -11,9 +11,11 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.988.0",
     "@aws-sdk/client-s3": "^3.988.0",
+    "@aws-sdk/client-sfn": "^3.1001.0",
     "@aws-sdk/lib-dynamodb": "^3.988.0",
     "@aws-sdk/s3-request-presigner": "^3.988.0",
     "@radix-ui/react-slot": "^1.2.4",
+    "aws-sdk": "^2.1693.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.29.0",

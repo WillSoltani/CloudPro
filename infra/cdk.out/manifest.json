@@ -1,12 +1,12 @@
 {
-  "version": "48.0.0",
+  "version": "52.0.0",
   "artifacts": {
     "CloudPortfolioStorage.assets": {
       "type": "cdk:asset-manifest",
       "properties": {
         "file": "CloudPortfolioStorage.assets.json",
         "requiresBootstrapStackVersion": 6,
-        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/willfresh1/version"
       }
     },
     "CloudPortfolioStorage": {
@@ -16,18 +16,18 @@
         "templateFile": "CloudPortfolioStorage.template.json",
         "terminationProtection": false,
         "validateOnSynth": false,
-        "assumeRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-hnb659fds-deploy-role-928413605677-ca-central-1",
-        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-hnb659fds-cfn-exec-role-928413605677-ca-central-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-928413605677-ca-central-1/a948a9b2af7b88c7fff5645af7e48a55423f7ee11697b634be6e59479bc52a4b.json",
+        "assumeRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-willfresh1-deploy-role-928413605677-ca-central-1",
+        "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-willfresh1-cfn-exec-role-928413605677-ca-central-1",
+        "stackTemplateAssetObjectUrl": "s3://cdk-willfresh1-assets-928413605677-ca-central-1/684e9d7c9234d8c684377913adfeb35f92f8b6d18f121d512fd45406b143fe9a.json",
         "requiresBootstrapStackVersion": 6,
-        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
+        "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/willfresh1/version",
         "additionalDependencies": [
           "CloudPortfolioStorage.assets"
         ],
         "lookupRole": {
-          "arn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-hnb659fds-lookup-role-928413605677-ca-central-1",
+          "arn": "arn:${AWS::Partition}:iam::928413605677:role/cdk-willfresh1-lookup-role-928413605677-ca-central-1",
           "requiresBootstrapStackVersion": 8,
-          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version"
+          "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/willfresh1/version"
         }
       },
       "dependencies": [
@@ -108,6 +108,42 @@
             "data": "OutputsBucketAutoDeleteObjectsCustomResource74769A63"
           }
         ],
+        "/CloudPortfolioStorage/ConvertWorker/ServiceRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ConvertWorkerServiceRole612A4159"
+          }
+        ],
+        "/CloudPortfolioStorage/ConvertWorker/ServiceRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ConvertWorkerServiceRoleDefaultPolicy65045670"
+          }
+        ],
+        "/CloudPortfolioStorage/ConvertWorker/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ConvertWorkerBB08793B"
+          }
+        ],
+        "/CloudPortfolioStorage/ConvertStateMachine/Role/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ConvertStateMachineRole751D7C75"
+          }
+        ],
+        "/CloudPortfolioStorage/ConvertStateMachine/Role/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ConvertStateMachineRoleDefaultPolicy696CCB8A"
+          }
+        ],
+        "/CloudPortfolioStorage/ConvertStateMachine/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ConvertStateMachine032CF9D0"
+          }
+        ],
         "/CloudPortfolioStorage/SecureDocTableName": [
           {
             "type": "aws:cdk:logicalId",
@@ -130,6 +166,12 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "KmsKeyArn"
+          }
+        ],
+        "/CloudPortfolioStorage/ConvertStateMachineArn": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "ConvertStateMachineArn"
           }
         ],
         "/CloudPortfolioStorage/CDKMetadata/Default": [
@@ -574,10 +616,17 @@
           "@aws-cdk/aws-route53-patterns:useDistribution": {
             "recommendedValue": true,
             "explanation": "Use the `Distribution` resource instead of `CloudFrontWebDistribution`"
+          },
+          "@aws-cdk/core:automaticL1Traits": {
+            "recommendedValue": true,
+            "explanation": "Automatically use the default L1 traits for L1 constructs`",
+            "unconfiguredBehavesLike": {
+              "v2": true
+            }
           }
         }
       }
     }
   },
-  "minimumCliVersion": "2.1033.0"
+  "minimumCliVersion": "2.1107.0"
 }

@@ -1,9 +1,9 @@
 import "server-only";
 import { NextResponse } from "next/server";
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { CopyObjectCommand } from "@aws-sdk/client-s3";
+import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 
-import { ddbDoc, TABLE_NAME, s3, mustEnv } from "@/app/app/api/_lib/aws";
+import { ddbDoc, TABLE_NAME, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
@@ -36,12 +36,6 @@ type DbFileItem = {
   status: string;
   createdAt: string;
   updatedAt: string;
-
-  // optional traceability
-  sourceFileId?: string;
-  outputFormat?: OutputFormat;
-  quality?: number | null;
-  preset?: string | null;
 };
 
 type ConvertResult =
@@ -171,57 +165,9 @@ async function fetchProjectById(userSub: string, projectId: string): Promise<Pro
   return null;
 }
 
-function encodeCopySourceKey(key: string): string {
-  return key
-    .split("/")
-    .map((seg) => encodeURIComponent(seg))
-    .join("/");
-}
-
-function splitRawPrefix(key: string): { basePrefix: string } | null {
-  const marker = "/raw/";
-  const idx = key.indexOf(marker);
-  if (idx === -1) return null;
-  return { basePrefix: key.slice(0, idx) };
-}
-
-function stemFromFilename(name: string): string {
-  const base = (name || "").split("?")[0].split("#")[0];
-  const i = base.lastIndexOf(".");
-  return i === -1 ? base : base.slice(0, i);
-}
-
-function outputExtForFormat(fmt: OutputFormat): string {
-  if (fmt === "JPG") return "jpg";
-  if (fmt === "WebP") return "webp";
-  return fmt.toLowerCase();
-}
-
-function outputContentTypeForFormat(fmt: OutputFormat): string {
-  switch (fmt) {
-    case "PNG":
-      return "image/png";
-    case "JPG":
-      return "image/jpeg";
-    case "WebP":
-      return "image/webp";
-    case "GIF":
-      return "image/gif";
-    case "SVG":
-      return "image/svg+xml";
-    case "ICO":
-      return "image/x-icon";
-    case "BMP":
-      return "image/bmp";
-    case "TIFF":
-      return "image/tiff";
-    default:
-      return "application/octet-stream";
-  }
-}
-
 function isRawConvertibleStatus(status: string): boolean {
   const v = (status || "").toLowerCase();
+  // Raw uploads are usually queued; if you later mark raw as done, allow that too.
   return v === "queued" || v === "done";
 }
 
@@ -236,6 +182,12 @@ function dedupeFileIds(ids: string[]): string[] {
     out.push(trimmed);
   }
   return out;
+}
+
+function safeExecutionName(projectId: string, outFileId: string): string {
+  // SFN execution name: [0-9A-Za-z-_] up to 80 chars
+  const raw = `p-${projectId}-o-${outFileId}`;
+  return raw.replace(/[^0-9A-Za-z-_]/g, "_").slice(0, 80);
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
@@ -257,8 +209,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
     }
 
     if (!Array.isArray(body.fileIds)) return jsonError(400, "bad_request", "fileIds must be an array");
-
     const fileIds = dedupeFileIds(body.fileIds.filter((x): x is string => typeof x === "string"));
+
     if (fileIds.length === 0) return jsonError(400, "bad_request", "fileIds is empty");
     if (fileIds.length > 25) return jsonError(400, "bad_request", "too many fileIds (max 25)");
 
@@ -272,94 +224,73 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
 
     const preset = typeof body.preset === "string" ? body.preset.slice(0, 40) : undefined;
 
-    const RAW_BUCKET = mustEnv("RAW_BUCKET");
-    const OUTPUT_BUCKET = mustEnv("OUTPUT_BUCKET");
+    const stateMachineArn = mustEnv("CONVERT_SFN_ARN");
+    const sfn = new SFNClient({});
 
     const PK = `USER#${user.sub}`;
     const results: ConvertResult[] = [];
 
     for (const fileId of fileIds) {
-      const SK = `FILE#${projectId}#${fileId}`;
+      const rawSK = `FILE#${projectId}#${fileId}`;
 
-      const got = await ddbDoc.send(new GetCommand({ TableName: TABLE_NAME, Key: { PK, SK } }));
-      const srcItem = toDbFileItem(got.Item);
+      // 1) Load raw row
+      const got = await ddbDoc.send(
+        new GetCommand({
+          TableName: TABLE_NAME,
+          Key: { PK, SK: rawSK },
+        })
+      );
 
-      if (!srcItem) {
+      const src = toDbFileItem(got.Item);
+      if (!src) {
         results.push({ fileId, ok: false, error: "not found" });
         continue;
       }
 
-      if (srcItem.projectId !== projectId || srcItem.userSub !== user.sub) {
+      // ownership checks (defense in depth)
+      if (src.projectId !== projectId || src.userSub !== user.sub) {
         results.push({ fileId, ok: false, error: "forbidden" });
         continue;
       }
 
-      if (srcItem.kind !== "raw") {
+      if (src.kind !== "raw") {
         results.push({ fileId, ok: false, error: "cannot convert an output file" });
         continue;
       }
 
-      if (!isRawConvertibleStatus(srcItem.status)) {
-        results.push({ fileId, ok: false, error: `not convertible in status ${srcItem.status}` });
+      if (!isRawConvertibleStatus(src.status)) {
+        results.push({ fileId, ok: false, error: `not convertible in status ${src.status}` });
         continue;
       }
 
-      const prefix = splitRawPrefix(srcItem.key);
-      if (!prefix) {
-        results.push({ fileId, ok: false, error: "invalid raw key shape (missing /raw/)" });
-        continue;
-      }
-
+      // 2) Create output row (processing)
       const outFileId = crypto.randomUUID();
-      const stem = stemFromFilename(srcItem.filename) || "file";
-      const outExt = outputExtForFormat(outputFormat);
-      const outName = `${stem}.${outExt}`;
-
-      const outKey = `${prefix.basePrefix}/out/${outFileId}/${outName}`;
-
-      // Copy = v1 “conversion”
-      try {
-        const copySource = `${RAW_BUCKET}/${encodeCopySourceKey(srcItem.key)}`;
-
-        await s3.send(
-          new CopyObjectCommand({
-            Bucket: OUTPUT_BUCKET,
-            Key: outKey,
-            CopySource: copySource,
-            ContentType: outputContentTypeForFormat(outputFormat),
-            MetadataDirective: "REPLACE",
-            Metadata: {
-              source_projectid: projectId,
-              source_fileid: fileId,
-              kind: "output",
-            },
-          })
-        );
-      } catch (e: unknown) {
-        results.push({ fileId, ok: false, error: `s3 copy failed: ${getErrorMessage(e)}` });
-        continue;
-      }
-
-      // Write output FILE row
-      const createdAt = nowIso();
       const outSK = `FILE#${projectId}#${outFileId}`;
+      const createdAt = nowIso();
 
-      const outItem: DbFileItem = {
+      const outItem = {
         PK,
         SK: outSK,
-        entity: "FILE",
-        kind: "output",
+        entity: "FILE" as const,
+        kind: "output" as const,
         fileId: outFileId,
         projectId,
         userSub: user.sub,
-        filename: outName,
-        contentType: outputContentTypeForFormat(outputFormat),
-        sizeBytes: null,
-        bucket: OUTPUT_BUCKET,
-        key: outKey,
-        status: "done",
+
+        // filename/contentType will be finalized by the worker (it knows real output)
+        filename: src.filename,
+        contentType: src.contentType,
+        sizeBytes: null as number | null,
+
+        // worker will write OUTPUT_BUCKET + output key
+        bucket: "" as string,
+        key: "" as string,
+
+        status: "processing",
         createdAt,
         updatedAt: createdAt,
+
+        // traceability
         sourceFileId: fileId,
         outputFormat,
         quality: quality ?? null,
@@ -376,6 +307,50 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
         );
       } catch (e: unknown) {
         results.push({ fileId, ok: false, error: `ddb put failed: ${getErrorMessage(e)}` });
+        continue;
+      }
+
+      // 3) Start SFN execution (enqueue)
+      try {
+        const input = {
+          userSub: user.sub,
+          projectId,
+          sourceFileId: fileId,
+          outputFileId: outFileId,
+          outputFormat,
+          quality: quality ?? null,
+          preset: preset ?? null,
+        };
+
+        await sfn.send(
+          new StartExecutionCommand({
+            stateMachineArn,
+            name: safeExecutionName(projectId, outFileId),
+            input: JSON.stringify(input),
+          })
+        );
+      } catch (e: unknown) {
+        // If SFN start fails, mark output row as failed so UI reflects reality.
+        const msg = getErrorMessage(e);
+
+        try {
+          await ddbDoc.send(
+            new PutCommand({
+              TableName: TABLE_NAME,
+              Item: {
+                ...outItem,
+                status: "failed",
+                updatedAt: nowIso(),
+                errorMessage: msg,
+              },
+              // overwrite the same item intentionally
+            })
+          );
+        } catch {
+          // ignore secondary failure; we still return failure for this file
+        }
+
+        results.push({ fileId, ok: false, error: `enqueue failed: ${msg}` });
         continue;
       }
 
