@@ -8,7 +8,7 @@ import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
 
-type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "DOCX";
+type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "DOCX" | "PDF";
 type FileKind = "raw" | "output";
 
 // Allowlist: source MIME prefix or extension keyword → permitted output formats.
@@ -28,8 +28,8 @@ const ALLOWED_OUTPUTS: Record<string, OutputFormat[]> = {
   "image/x-icon":        ["PNG", "JPG", "WebP"],
   "image/vnd.microsoft.icon": ["PNG", "JPG", "WebP"],
   "application/pdf":     ["PNG", "JPG", "WebP", "DOCX"],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["PNG", "JPG", "WebP"],
-  "application/msword":  ["PNG", "JPG", "WebP"],
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["PNG", "JPG", "WebP", "PDF"],
+  "application/msword":  ["PNG", "JPG", "WebP", "PDF"],
 };
 
 // Fallback: any image/* not listed above allows all outputs
@@ -95,7 +95,7 @@ function getErrorMessage(e: unknown): string {
 function parseOutputFormat(v: unknown): OutputFormat | null {
   if (typeof v !== "string") return null;
   const up = v.trim();
-  const allowed: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "DOCX"];
+  const allowed: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "DOCX", "PDF"];
   return allowed.includes(up as OutputFormat) ? (up as OutputFormat) : null;
 }
 
@@ -149,7 +149,7 @@ function isRawConvertibleStatus(status: string): boolean {
 }
 
 function extForFormat(fmt: OutputFormat): string {
-  const map: Record<OutputFormat, string> = { PNG: "png", JPG: "jpg", WebP: "webp", GIF: "gif", TIFF: "tiff", AVIF: "avif", DOCX: "docx" };
+  const map: Record<OutputFormat, string> = { PNG: "png", JPG: "jpg", WebP: "webp", GIF: "gif", TIFF: "tiff", AVIF: "avif", DOCX: "docx", PDF: "pdf" };
   return map[fmt];
 }
 

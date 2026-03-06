@@ -4,8 +4,8 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import sharp from "sharp";
 
-type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "DOCX";
-type ImageOutputFormat = Exclude<OutputFormat, "DOCX">;
+type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "DOCX" | "PDF";
+type ImageOutputFormat = Exclude<OutputFormat, "DOCX" | "PDF">;
 
 type ConvertEvent = {
   userSub: string;
@@ -73,6 +73,7 @@ function extForFormat(fmt: OutputFormat): string {
     TIFF: "tiff",
     AVIF: "avif",
     DOCX: "docx",
+    PDF: "pdf",
   };
   return map[fmt];
 }
@@ -86,6 +87,7 @@ function contentTypeFor(fmt: OutputFormat): string {
     TIFF: "image/tiff",
     AVIF: "image/avif",
     DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    PDF: "application/pdf",
   };
   return map[fmt];
 }
@@ -220,6 +222,42 @@ async function pdfToDocxBuffer(buf: Buffer): Promise<Buffer> {
     });
     const result = fs.readFileSync(outPath);
     if (!result || result.length === 0) throw new Error("pdf2docx produced an empty output file");
+    return result;
+  } finally {
+    try { fs.unlinkSync(inPath); } catch { /* ignore */ }
+    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * DOCX → PDF buffer using mammoth (DOCX→HTML) + WeasyPrint (HTML→PDF, Python).
+ *
+ * mammoth converts DOCX to semantic HTML preserving headings, paragraphs, tables,
+ * and embedded images. WeasyPrint renders the HTML to a paginated PDF using
+ * Pango/Cairo (system libraries installed in the Lambda container image).
+ */
+async function docxToPdfBuffer(buf: Buffer): Promise<Buffer> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const os = require("os") as typeof import("os");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("path") as typeof import("path");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { execFileSync } = require("child_process") as typeof import("child_process");
+
+  const id = `docx2pdf-${Date.now()}-${process.pid}`;
+  const inPath  = path.join(os.tmpdir(), `${id}.docx`);
+  const outPath = path.join(os.tmpdir(), `${id}.pdf`);
+
+  try {
+    fs.writeFileSync(inPath, buf);
+    execFileSync("python3", ["/var/task/docx_to_pdf.py", inPath, outPath], {
+      timeout: 90_000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const result = fs.readFileSync(outPath);
+    if (!result || result.length === 0) throw new Error("docx_to_pdf produced an empty output file");
     return result;
   } finally {
     try { fs.unlinkSync(inPath); } catch { /* ignore */ }
@@ -520,7 +558,7 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
   const PK = `USER#${userSub}`;
   const outSK = `FILE#${projectId}#${outputFileId}`;
 
-  const validFormats: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "DOCX"];
+  const validFormats: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "DOCX", "PDF"];
   if (!validFormats.includes(outputFormat)) {
     await updateOutputRow({
       pk: PK,
@@ -567,13 +605,25 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     let outputBuf: Buffer;
     if (outputFormat === "DOCX") {
       // PDF → DOCX: layout-preserving document conversion via pdf2docx (Python).
-      // Only PDF input is supported for DOCX output.
       if (!srcIsPdf) {
         throw new Error(
           `DOCX output is only supported for PDF input (received content-type: ${srcContentType})`
         );
       }
       outputBuf = await pdfToDocxBuffer(rawBuf);
+    } else if (outputFormat === "PDF") {
+      // DOCX → PDF: mammoth (DOCX→HTML) + WeasyPrint (HTML→PDF) via Python subprocess.
+      const srcIsDocx =
+        srcContentType.includes("wordprocessingml") ||
+        srcContentType.includes("msword") ||
+        srcFilenameLow.endsWith(".docx") ||
+        srcFilenameLow.endsWith(".doc");
+      if (!srcIsDocx) {
+        throw new Error(
+          `PDF output is only supported for DOCX input (received content-type: ${srcContentType})`
+        );
+      }
+      outputBuf = await docxToPdfBuffer(rawBuf);
     } else {
       // Image output: optionally pre-rasterize special input types, then run Sharp.
       let inputBuf: Buffer;

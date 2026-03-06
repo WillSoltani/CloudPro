@@ -28,8 +28,16 @@ RUN apt-get update \
 # so compiled extensions (PyMuPDF, opencv) are binary-compatible.
 # amazonlinux:2023 has full SSL support unlike the stripped Lambda base image.
 FROM --platform=linux/amd64 amazonlinux:2023 AS python-deps
-RUN dnf install -y python3 python3-pip python3-devel gcc && dnf clean all
-RUN pip3 install --no-cache-dir --target /python-packages pdf2docx
+# pango-devel/cairo-devel/gdk-pixbuf2-devel/libffi-devel needed to compile WeasyPrint/cffi
+RUN dnf install -y \
+    python3 python3-pip python3-devel gcc \
+    pango-devel cairo-devel gdk-pixbuf2-devel libffi-devel \
+    && dnf clean all
+# Pin PyMuPDF<1.24 — v1.24 removed Rect.get_area() which pdf2docx uses.
+# mammoth: DOCX→HTML for WeasyPrint; weasyprint: HTML→PDF for DOCX→PDF output.
+RUN pip3 install --no-cache-dir --target /python-packages \
+    "pdf2docx==0.5.6" "PyMuPDF>=1.19.6,<1.24" \
+    mammoth weasyprint
 
 # Stage 4: Lambda container image
 FROM --platform=linux/amd64 public.ecr.aws/lambda/nodejs:20
@@ -42,14 +50,20 @@ COPY --from=deps /app/node_modules ./node_modules
 RUN mkdir -p /var/task/fonts
 COPY --from=deps /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf /var/task/fonts/DejaVuSans.ttf
 
-# Python 3 runtime (no pip needed — packages are pre-installed via --target).
-RUN dnf install -y python3 && dnf clean all
+# Python 3 + WeasyPrint runtime dependencies (pango, cairo, gdk-pixbuf2 for rendering;
+# google-noto-sans-fonts so fontconfig resolves sans-serif for PDF text layout).
+RUN dnf install -y \
+    python3 \
+    pango cairo gdk-pixbuf2 fontconfig \
+    google-noto-sans-fonts \
+    && dnf clean all
 
-# pdf2docx + dependencies built on amazonlinux:2023 (binary-compatible with Lambda).
+# Python packages built on amazonlinux:2023 (binary-compatible with Lambda image).
 COPY --from=python-deps /python-packages /var/task/python-packages
 ENV PYTHONPATH=/var/task/python-packages
 
-# Copy the converter script so the Node.js handler can call it via subprocess.
+# Converter scripts: pdf→docx and docx→pdf (called from Node.js via subprocess).
 COPY pdf_to_docx.py /var/task/pdf_to_docx.py
+COPY docx_to_pdf.py /var/task/docx_to_pdf.py
 
 CMD ["index.handler"]
