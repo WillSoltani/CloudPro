@@ -54,12 +54,12 @@ COPY --from=deps /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf /var/task/fonts
 
 # Python 3 + WeasyPrint runtime dependencies (pango, cairo, gdk-pixbuf2 for rendering;
 # google-noto-sans-fonts so fontconfig resolves sans-serif for PDF text layout).
-# tesseract + tesseract-langpack-eng: OCR for scanned/image-only PDF pages.
+# Note: tesseract is not in the Lambda AL2023 repo; scanned PDF pages fall back
+# to embedded images via the _has_tesseract() guard in pdf_to_docx.py.
 RUN dnf install -y \
     python3 \
     pango cairo gdk-pixbuf2 fontconfig \
     google-noto-sans-fonts \
-    tesseract tesseract-langpack-eng \
     && dnf clean all
 
 # Python packages built on amazonlinux:2023 (binary-compatible with Lambda image).
