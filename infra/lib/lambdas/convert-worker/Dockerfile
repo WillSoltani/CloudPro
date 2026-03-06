@@ -25,7 +25,7 @@ RUN apt-get update \
     && npm ci --omit=dev
 
 # Stage 3: Python package build — use amazonlinux:2023 (same OS/glibc as Lambda)
-# so compiled extensions (PyMuPDF, opencv) are binary-compatible.
+# so compiled extensions (PyMuPDF) are binary-compatible.
 # amazonlinux:2023 has full SSL support unlike the stripped Lambda base image.
 FROM --platform=linux/amd64 amazonlinux:2023 AS python-deps
 # pango-devel/cairo-devel/gdk-pixbuf2-devel/libffi-devel needed to compile WeasyPrint/cffi
@@ -33,10 +33,12 @@ RUN dnf install -y \
     python3 python3-pip python3-devel gcc \
     pango-devel cairo-devel gdk-pixbuf2-devel libffi-devel \
     && dnf clean all
-# Pin PyMuPDF<1.24 — v1.24 removed Rect.get_area() which pdf2docx uses.
+# PyMuPDF: PDF text extraction + page rendering (no OpenCV / libGL dependency).
+# python-docx: builds the output DOCX file.
 # mammoth: DOCX→HTML for WeasyPrint; weasyprint: HTML→PDF for DOCX→PDF output.
 RUN pip3 install --no-cache-dir --target /python-packages \
-    "pdf2docx==0.5.6" "PyMuPDF>=1.19.6,<1.24" \
+    "PyMuPDF>=1.23.0" \
+    "python-docx>=1.1.0" \
     mammoth weasyprint
 
 # Stage 4: Lambda container image
@@ -52,10 +54,12 @@ COPY --from=deps /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf /var/task/fonts
 
 # Python 3 + WeasyPrint runtime dependencies (pango, cairo, gdk-pixbuf2 for rendering;
 # google-noto-sans-fonts so fontconfig resolves sans-serif for PDF text layout).
+# tesseract + tesseract-langpack-eng: OCR for scanned/image-only PDF pages.
 RUN dnf install -y \
     python3 \
     pango cairo gdk-pixbuf2 fontconfig \
     google-noto-sans-fonts \
+    tesseract tesseract-langpack-eng \
     && dnf clean all
 
 # Python packages built on amazonlinux:2023 (binary-compatible with Lambda image).
