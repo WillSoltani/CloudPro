@@ -23,6 +23,9 @@ type FileRow = {
   bucket: string;
   key: string;
   kind: FileKind;
+  outputFormat?: string;
+  sourceFileId?: string;
+  sourceContentType?: string;
 };
 
 type DbFileItem = FileRow & { PK: string; SK: string };
@@ -75,7 +78,7 @@ function toDbFileItem(raw: unknown): DbFileItem | null {
 
   const now = new Date().toISOString();
 
-  return {
+  const result: DbFileItem = {
     PK,
     SK,
     fileId,
@@ -90,6 +93,14 @@ function toDbFileItem(raw: unknown): DbFileItem | null {
     key,
     kind: parseKind(raw.kind),
   };
+  // Pass through optional output-file traceability fields
+  const outputFormat = str(raw.outputFormat);
+  if (outputFormat) result.outputFormat = outputFormat;
+  const sourceFileId = str(raw.sourceFileId);
+  if (sourceFileId) result.sourceFileId = sourceFileId;
+  const sourceContentType = str(raw.sourceContentType);
+  if (sourceContentType) result.sourceContentType = sourceContentType;
+  return result;
 }
 
 function awsHttpStatus(e: unknown): number | undefined {
@@ -182,6 +193,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
     }
 
     const checks = await mapLimit(items, 6, async (it) => {
+      // Output files in "processing" state haven't been uploaded to S3 yet — skip the check
+      if (it.kind === "output" && it.status === "processing") {
+        return { it, exists: true };
+      }
       const exists = await headExists(it.bucket, it.key);
       return { it, exists };
     });

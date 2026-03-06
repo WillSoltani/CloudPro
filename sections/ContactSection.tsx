@@ -8,7 +8,7 @@ export function ContactSection() {
   return (
     <Section id="contact" title="Contact">
       <ContactCTA
-        email="you@example.com"
+        email="will@soltani.org"
         githubUrl="https://github.com/WillSoltani"
         linkedinUrl="https://www.linkedin.com/in/will-soltani"
       />

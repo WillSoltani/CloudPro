@@ -28,8 +28,9 @@ export async function GET() {
   }
 
   const state = crypto.randomUUID();
+  const isProd = process.env.NODE_ENV === "production";
 
-  // PKCE: verifier stored in an httpOnly cookie (dev-friendly, not “perfect” but solid)
+  // PKCE: verifier stored in an httpOnly cookie so JS can't steal them
   const codeVerifier = randomBase64Url(32);
   const codeChallenge = await sha256Base64Url(codeVerifier);
 
@@ -45,12 +46,10 @@ export async function GET() {
 
   const res = NextResponse.redirect(url);
 
-  // Store state + verifier in httpOnly cookies so JS can’t steal them
-  // Dev settings: secure=false on localhost. In prod, set secure=true and sameSite appropriately.
   res.cookies.set("oauth_state", state, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: isProd,
     path: "/",
     maxAge: 10 * 60,
   });
@@ -58,7 +57,7 @@ export async function GET() {
   res.cookies.set("pkce_verifier", codeVerifier, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: isProd,
     path: "/",
     maxAge: 10 * 60,
   });

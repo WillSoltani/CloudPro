@@ -5,8 +5,6 @@ export const serverlessFilePipeline: Project = {
   title: "Serverless File Processing Pipeline",
   description:
     "Upload files, detect format, run a configurable pipeline (convert, extract, enrich), and deliver results with observable, secure AWS primitives.",
-  githubUrl: "https://github.com/WillSoltani/your-repo",
-  demoUrl: "https://your-domain.com",
   tags: ["Serverless", "IaC", "Security", "Observability"],
   featured: true,
 

@@ -1,7 +1,7 @@
 // app/app/projects/[projectId]/hooks/useServerFiles.ts
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FileRow } from "../../_lib/types";
 import { deleteFile as apiDeleteFile, listFiles } from "../_lib/api-client";
 import { normalizeStatus } from "../_lib/format";
@@ -76,6 +76,20 @@ export function useServerFiles(args: {
     () => files.filter((f) => readKind(f) === "output"),
     [files]
   );
+
+  // Auto-poll every 4s while any output file is still processing
+  const hasProcessing = useMemo(
+    () => outputFiles.some((f) => (f.status || "").toLowerCase() === "processing"),
+    [outputFiles]
+  );
+
+  useEffect(() => {
+    if (!hasProcessing) return;
+    const id = setInterval(() => {
+      void refreshFiles({ validate: false });
+    }, 4000);
+    return () => clearInterval(id);
+  }, [hasProcessing, refreshFiles]);
 
   const selectedReadyIds = useMemo(() => {
     // Only raw-ready can be selected (even if selectedReady has other keys)

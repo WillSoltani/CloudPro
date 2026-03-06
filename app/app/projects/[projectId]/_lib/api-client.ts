@@ -17,11 +17,16 @@ export type CreateUploadResponse = {
   };
 };
 
-export type ConvertRequest = {
-  fileIds: string[];
+export type ConversionJob = {
+  fileId: string;
   outputFormat: string;
-  quality: number;
-  preset: string;
+  quality: number | null;
+  preset: string | null;
+  resizePct: number | null;
+};
+
+export type ConvertRequest = {
+  conversions: ConversionJob[];
 };
 
 export type ConvertResultItem =
@@ -31,7 +36,6 @@ export type ConvertResultItem =
 export type ConvertResponse = {
   ok: boolean;
   projectId: string;
-  outputFormat: string;
   results: ConvertResultItem[];
 };
 
@@ -202,7 +206,6 @@ export async function convertFiles(projectId: string, payload: ConvertRequest): 
 
   const ok = Boolean(json.ok);
   const pid = getString(json, "projectId") ?? projectId;
-  const outFmt = getString(json, "outputFormat") ?? payload.outputFormat;
 
   const resultsRaw = json.results;
   const results: ConvertResultItem[] = Array.isArray(resultsRaw)
@@ -225,5 +228,5 @@ export async function convertFiles(projectId: string, payload: ConvertRequest): 
         .filter((x): x is ConvertResultItem => x !== null)
     : [];
 
-  return { ok, projectId: pid, outputFormat: outFmt, results };
+  return { ok, projectId: pid, results };
 }

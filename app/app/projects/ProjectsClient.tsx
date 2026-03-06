@@ -46,6 +46,33 @@ export default function ProjectsClient({ initialProjects, initialStats }: Props)
   useEffect(() => setProjects(initialProjects), [initialProjects]);
   useEffect(() => setStats(initialStats), [initialStats]);
 
+  // Refetch stats client-side on every mount so "Space saved" is fresh after
+  // navigating back from the conversion page (Next.js router cache may serve
+  // a stale server render).
+  useEffect(() => {
+    fetch("/app/api/me/stats", { cache: "no-store" })
+      .then((r) => (r.ok ? (r.json() as Promise<Record<string, unknown>>) : null))
+      .then((data) => {
+        if (!data || typeof data !== "object") return;
+        const totalProjects =
+          typeof data.totalProjects === "number" ? data.totalProjects : undefined;
+        const totalFiles =
+          typeof data.filesConverted === "number"
+            ? data.filesConverted
+            : typeof data.totalFiles === "number"
+              ? data.totalFiles
+              : undefined;
+        const spaceSavedBytes =
+          typeof data.spaceSavedBytes === "number" ? data.spaceSavedBytes : undefined;
+        setStats((prev) => ({
+          totalProjects: totalProjects ?? prev.totalProjects,
+          totalFiles: totalFiles ?? prev.totalFiles,
+          spaceSavedBytes: spaceSavedBytes ?? prev.spaceSavedBytes,
+        }));
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Open create modal if navigated from top bar: /app/projects?create=1
   useCreateModalFromQuery({ sp, router, open: setCreateOpen });
 

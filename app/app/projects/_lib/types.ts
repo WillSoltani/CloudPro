@@ -27,7 +27,11 @@ export type FileRow = {
   updatedAt: string;
   bucket: string;
   key: string;
-  kind: FileKind; // ✅ NEW
+  kind: FileKind;
+  // output-only traceability fields (present on kind=output rows)
+  outputFormat?: string;
+  sourceFileId?: string;
+  sourceContentType?: string;
 };
 
 export type ProjectMeta = {

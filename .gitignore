@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# CDK build artifacts — never commit generated output
+infra/cdk.out/
+infra/.cache/
+
+# Infra dependencies — installed locally, not versioned
+infra/node_modules/
+
+# Subpackage node_modules (lambda workers, etc.)
+infra/lib/lambdas/*/node_modules/

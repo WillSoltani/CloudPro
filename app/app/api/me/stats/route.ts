@@ -32,15 +32,38 @@ export async function GET() {
     const totalProjects = Number(projRes.Count ?? 0);
 
     const files = fileRes.Items ?? [];
-    const filesConverted = files.length; // “uploaded” for now (until pipeline exists)
-    const bytes = files.reduce((sum, it) => {
-      const n = it?.sizeBytes == null ? 0 : Number(it.sizeBytes);
-      return sum + (Number.isFinite(n) ? n : 0);
-    }, 0);
 
-    // “space saved” is unknown until conversion exists.
-    // For now show 0, but keep UI wired.
-    const spaceSavedBytes = 0;
+    // Build lookup: rawFileId → raw sizeBytes, and sum total uploaded bytes
+    const rawSizeByFileId: Record<string, number> = {};
+    let bytes = 0;
+    for (const it of files) {
+      const n = it?.sizeBytes == null ? 0 : Number(it.sizeBytes);
+      const sz = Number.isFinite(n) ? n : 0;
+      if (it?.kind === "raw") {
+        bytes += sz;
+        const fid = typeof it.fileId === "string" ? it.fileId : "";
+        if (fid) rawSizeByFileId[fid] = sz;
+      }
+    }
+
+    // filesConverted = number of output files with status "done"
+    const filesConverted = files.filter(
+      (it) => it?.kind === "output" && it?.status === "done"
+    ).length;
+
+    // spaceSavedBytes = sum of (rawSize - outputSize) for completed conversions
+    // where the output is actually smaller than the raw input
+    let spaceSavedBytes = 0;
+    for (const it of files) {
+      if (it?.kind !== "output" || it?.status !== "done") continue;
+      const srcId = typeof it.sourceFileId === "string" ? it.sourceFileId : "";
+      if (!srcId) continue;
+      const rawSz = rawSizeByFileId[srcId] ?? 0;
+      const outN = it?.sizeBytes == null ? 0 : Number(it.sizeBytes);
+      const outSz = Number.isFinite(outN) ? outN : 0;
+      const saved = rawSz - outSz;
+      if (saved > 0) spaceSavedBytes += saved;
+    }
 
     return NextResponse.json({
       totalProjects,

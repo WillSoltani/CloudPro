@@ -33,8 +33,16 @@ const itemVariants = {
   }),
 };
 
-export function NavbarClient() {
+type Props = { initialLoggedIn?: boolean };
+
+export function NavbarClient({ initialLoggedIn }: Props) {
   const { loggedIn, loading } = useAuthStatus();
+
+  // Use SSR-provided value while the client-side fetch is still in flight,
+  // then switch to the live hook result once it resolves.
+  const showLoggedIn = loading
+    ? (initialLoggedIn ?? false)
+    : loggedIn === true;
 
   const [active, setActive] = useState<string>("about");
   const [scrolled, setScrolled] = useState(false);
@@ -85,9 +93,6 @@ export function NavbarClient() {
     window.addEventListener("resize", onResize, { passive: true });
     return () => window.removeEventListener("resize", onResize);
   }, []);
-
-  // While auth is loading, avoid flashing the wrong button
-  const showLoggedIn = !loading && loggedIn === true;
 
   return (
     <header

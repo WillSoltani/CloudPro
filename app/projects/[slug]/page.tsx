@@ -129,10 +129,6 @@ function ServiceTile(props: { name: string }) {
           Included
         </span>
       </div>
-      <div className="mt-3 space-y-1 text-sm">
-        <p className="text-slate-400">Purpose</p>
-        <p className="text-slate-300">Add purpose here</p>
-      </div>
     </div>
   );
 }

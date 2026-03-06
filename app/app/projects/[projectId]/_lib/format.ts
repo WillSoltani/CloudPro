@@ -1,6 +1,6 @@
 // app/app/projects/[projectId]/_lib/format.ts
 import type { FileRow } from "../../_lib/types"
-import type { OutputFormat } from "../../_lib/ui-types";
+import type { OutputFormat } from "./ui-types";
 
 export function fmtBytes(bytes: number | null | undefined): string {
   if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return "—";
@@ -24,7 +24,7 @@ export function extFromName(name: string): string {
 export function formatFromFilenameOrContentType(
   filename: string,
   contentType?: string | null
-): OutputFormat | "IMG" {
+): OutputFormat | "SVG" | "ICO" | "BMP" | "HEIC" | "PDF" | "IMG" {
   const ext = extFromName(filename);
   const ct = (contentType ?? "").toLowerCase();
 
@@ -32,10 +32,14 @@ export function formatFromFilenameOrContentType(
   if (ext === "jpg" || ext === "jpeg" || ct.includes("jpeg") || ct.includes("jpg")) return "JPG";
   if (ext === "webp" || ct.includes("webp")) return "WebP";
   if (ext === "gif" || ct.includes("gif")) return "GIF";
-  if (ext === "svg" || ct.includes("svg")) return "SVG";
-  if (ext === "ico" || ct.includes("icon")) return "ICO";
-  if (ext === "bmp" || ct.includes("bmp")) return "BMP";
+  if (ext === "avif" || ct.includes("avif")) return "AVIF";
   if (ext === "tif" || ext === "tiff" || ct.includes("tiff")) return "TIFF";
+  if (ext === "heic" || ext === "heif" || ct.includes("heic") || ct.includes("heif")) return "HEIC";
+  if (ext === "bmp" || ct.includes("bmp")) return "BMP";
+  if (ext === "svg" || ct.includes("svg")) return "SVG";
+  if (ext === "ico" || ct.includes("x-icon") || ct.includes("vnd.microsoft.icon")) return "ICO";
+  if (ext === "pdf" || ct.includes("pdf")) return "PDF";
+  if (ext === "docx" || ext === "doc" || ct.includes("wordprocessingml") || ct.includes("msword")) return "DOCX";
   return "IMG";
 }
 

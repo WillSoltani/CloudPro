@@ -44,13 +44,13 @@ export function DropzoneCard(props: {
             Drop files to convert
           </h2>
           <p className="mt-2 text-sm text-slate-400">
-            PNG, JPG, SVG, WebP, GIF, ICO, BMP, TIFF
+            PNG, JPG, WebP, GIF, TIFF, AVIF, HEIC, BMP, SVG, ICO, PDF, DOCX
           </p>
 
           <input
             ref={inputRef}
             type="file"
-            accept="image/*,.svg"
+            accept="image/*,.svg,.heic,.heif,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             multiple
             className="hidden"
             onChange={(e) => {

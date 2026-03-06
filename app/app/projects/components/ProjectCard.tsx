@@ -45,10 +45,7 @@ export function ProjectCard(props: {
       >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-widest text-slate-400">
-              Your Project
-            </p>
-            <h3 className="mt-2 truncate text-lg font-semibold text-slate-100">
+            <h3 className="truncate text-lg font-semibold text-slate-100">
               {p.name}
             </h3>
             <p className="mt-3 text-xs text-slate-400">{activityLine}</p>

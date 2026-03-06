@@ -10,9 +10,9 @@ export async function GET() {
     return new NextResponse("Missing server env vars", { status: 500 });
   }
 
-  // ✅ FIX: await cookies()
   const cookieStore = await cookies();
   cookieStore.delete("id_token");
+  cookieStore.delete("access_token");
 
   const logoutUrl =
     `${domain.replace(/\/$/, "")}/logout` +

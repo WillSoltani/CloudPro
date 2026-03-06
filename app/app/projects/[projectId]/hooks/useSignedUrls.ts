@@ -23,12 +23,12 @@ export function useSignedUrls(projectId: string, files: FileRow[]) {
 
       for (const id of batch) {
         const url = await getInlineUrl(projectId, id);
+        inFlightRef.current.delete(id);
         if (cancelled) return;
 
         if (url) {
           setSignedUrls((prev) => ({ ...prev, [id]: url }));
         }
-        inFlightRef.current.delete(id);
       }
     }
 
