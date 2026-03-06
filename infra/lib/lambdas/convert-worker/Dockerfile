@@ -24,7 +24,14 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && npm ci --omit=dev
 
-# Stage 3: Lambda container image
+# Stage 3: Python package build — use amazonlinux:2023 (same OS/glibc as Lambda)
+# so compiled extensions (PyMuPDF, opencv) are binary-compatible.
+# amazonlinux:2023 has full SSL support unlike the stripped Lambda base image.
+FROM --platform=linux/amd64 amazonlinux:2023 AS python-deps
+RUN dnf install -y python3 python3-pip python3-devel gcc && dnf clean all
+RUN pip3 install --no-cache-dir --target /python-packages pdf2docx
+
+# Stage 4: Lambda container image
 FROM --platform=linux/amd64 public.ecr.aws/lambda/nodejs:20
 WORKDIR /var/task
 COPY --from=builder /app/dist/index.js ./
@@ -35,12 +42,12 @@ COPY --from=deps /app/node_modules ./node_modules
 RUN mkdir -p /var/task/fonts
 COPY --from=deps /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf /var/task/fonts/DejaVuSans.ttf
 
-# Python 3 + pdf2docx for PDF → DOCX layout-preserving conversion.
-# pdf2docx handles text-based PDFs with full layout fidelity (tables, columns,
-# images). For scanned PDFs (image-only pages) it embeds the rasters as images
-# so the DOCX is still visually faithful without requiring OCR.
-RUN dnf install -y python3 python3-pip && dnf clean all
-RUN pip3 install --no-cache-dir pdf2docx
+# Python 3 runtime (no pip needed — packages are pre-installed via --target).
+RUN dnf install -y python3 && dnf clean all
+
+# pdf2docx + dependencies built on amazonlinux:2023 (binary-compatible with Lambda).
+COPY --from=python-deps /python-packages /var/task/python-packages
+ENV PYTHONPATH=/var/task/python-packages
 
 # Copy the converter script so the Node.js handler can call it via subprocess.
 COPY pdf_to_docx.py /var/task/pdf_to_docx.py
