@@ -8,7 +8,6 @@ RUN esbuild index.ts \
     --external:"@aws-sdk/*" \
     --external:sharp \
     --external:"@napi-rs/canvas" \
-    --external:mupdf \
     --external:mammoth \
     --external:heic-convert \
     --outfile=dist/index.js
@@ -34,11 +33,9 @@ RUN dnf install -y \
     pango-devel cairo-devel gdk-pixbuf2-devel libffi-devel \
     && dnf clean all
 # PyMuPDF: PDF text extraction + page rendering (no OpenCV / libGL dependency).
-# python-docx: builds the output DOCX file.
 # mammoth: DOCX→HTML for WeasyPrint; weasyprint: HTML→PDF for DOCX→PDF output.
 RUN pip3 install --no-cache-dir --target /python-packages \
     "PyMuPDF>=1.23.0" \
-    "python-docx>=1.1.0" \
     mammoth weasyprint
 
 # Stage 4: Lambda container image
@@ -54,8 +51,7 @@ COPY --from=deps /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf /var/task/fonts
 
 # Python 3 + WeasyPrint runtime dependencies (pango, cairo, gdk-pixbuf2 for rendering;
 # google-noto-sans-fonts so fontconfig resolves sans-serif for PDF text layout).
-# Note: tesseract is not in the Lambda AL2023 repo; scanned PDF pages fall back
-# to embedded images via the _has_tesseract() guard in pdf_to_docx.py.
+# Note: tesseract is not in the Lambda AL2023 repo.
 RUN dnf install -y \
     python3 \
     pango cairo gdk-pixbuf2 fontconfig \
@@ -66,8 +62,8 @@ RUN dnf install -y \
 COPY --from=python-deps /python-packages /var/task/python-packages
 ENV PYTHONPATH=/var/task/python-packages
 
-# Converter scripts: pdf→docx and docx→pdf (called from Node.js via subprocess).
-COPY pdf_to_docx.py /var/task/pdf_to_docx.py
+# Converter scripts called from Node.js via subprocess.
 COPY docx_to_pdf.py /var/task/docx_to_pdf.py
+COPY pdf_page_to_png.py /var/task/pdf_page_to_png.py
 
 CMD ["index.handler"]

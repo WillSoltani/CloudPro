@@ -1,5 +1,5 @@
 // app/app/projects/[projectId]/_lib/ui-types.ts
-export type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "DOCX" | "PDF";
+export type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "PDF";
 
 /** Formats that produce image output (Quality/Resize/Presets apply). */
 export const IMAGE_OUTPUT_FORMATS: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"];
@@ -57,10 +57,10 @@ export const VALID_OUTPUT_FORMATS: Record<string, OutputFormat[]> = {
   HEIC: ["PNG", "JPG", "WebP", "AVIF"],
   SVG:  ["PNG", "JPG", "WebP"],
   ICO:  ["PNG", "JPG", "WebP"],
-  PDF:  ["PNG", "JPG", "WebP", "DOCX"], // rasterize page 1 OR export to editable DOCX
+  PDF:  ["PNG", "JPG", "WebP"], // rasterize page 1 for image outputs
   DOCX: ["PNG", "JPG", "WebP", "PDF"],  // render text preview as image OR export to PDF
   IMG:  ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
 };
 
 /** All selectable output formats (shown in the sidebar format picker). */
-export const ALL_OUTPUT_FORMATS: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "DOCX"];
+export const ALL_OUTPUT_FORMATS: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "PDF"];

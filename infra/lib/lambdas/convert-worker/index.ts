@@ -4,8 +4,8 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import sharp from "sharp";
 
-type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "DOCX" | "PDF";
-type ImageOutputFormat = Exclude<OutputFormat, "DOCX" | "PDF">;
+type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "PDF";
+type ImageOutputFormat = Exclude<OutputFormat, "PDF">;
 
 type ConvertEvent = {
   userSub: string;
@@ -72,7 +72,6 @@ function extForFormat(fmt: OutputFormat): string {
     GIF: "gif",
     TIFF: "tiff",
     AVIF: "avif",
-    DOCX: "docx",
     PDF: "pdf",
   };
   return map[fmt];
@@ -86,7 +85,6 @@ function contentTypeFor(fmt: OutputFormat): string {
     GIF: "image/gif",
     TIFF: "image/tiff",
     AVIF: "image/avif",
-    DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     PDF: "application/pdf",
   };
   return map[fmt];
@@ -161,67 +159,81 @@ async function heicToBuffer(buf: Buffer): Promise<Buffer> {
   return Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer);
 }
 
-/**
- * PDF page 0 → PNG buffer using mupdf (WASM).
- *
- * pdfjs-dist requires a NodeCanvasFactory to render in Node.js; without it
- * the default factory silently returns blank canvases. mupdf handles all
- * font/image rendering internally (embedded in WASM), is more reliable,
- * and is ~200 MB smaller than pdfjs-dist when unpacked.
- */
-async function pdfToImageBuffer(buf: Buffer): Promise<Buffer> {
-  type MuPDFPixmap = { asPNG(): Uint8Array; destroy(): void };
-  type MuPDFPage  = {
-    toPixmap(matrix: number[], cs: unknown, alpha: boolean, annots: boolean): MuPDFPixmap;
-    destroy(): void;
-  };
-  type MuPDFDoc   = { loadPage(n: number): MuPDFPage; destroy(): void };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mupdf = require("mupdf") as {
-    Document: { openDocument(data: Uint8Array, mime: string): MuPDFDoc };
-    ColorSpace: { DeviceRGB: unknown };
+function runPythonScript(
+  scriptPath: string,
+  args: string[],
+  timeoutMs: number,
+  label: string
+): void {
+  const parseStructuredPayload = (text: string): Record<string, unknown> | null => {
+    if (!text) return null;
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      const line = lines[i];
+      if (!line.startsWith("{") || !line.endsWith("}")) continue;
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        const hasErrorShape =
+          parsed.ok === false ||
+          typeof parsed.error_type === "string" ||
+          typeof parsed.message === "string";
+        if (hasErrorShape) return parsed;
+      } catch {
+        // ignore non-JSON log lines
+      }
+    }
+    return null;
   };
 
-  const doc     = mupdf.Document.openDocument(new Uint8Array(buf), "application/pdf");
-  const page    = doc.loadPage(0); // 0-indexed; first page
-  // 2× scale ≈ 144 DPI for a typical letter/A4 page
-  const pixmap  = page.toPixmap([2, 0, 0, 2, 0, 0], mupdf.ColorSpace.DeviceRGB, false, true);
-  const pngBytes = pixmap.asPNG();
-  pixmap.destroy();
-  page.destroy();
-  doc.destroy();
-  return Buffer.from(pngBytes);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { execFileSync } = require("child_process") as typeof import("child_process");
+  try {
+    execFileSync("python3", [scriptPath, ...args], {
+      timeout: timeoutMs,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  } catch (err: unknown) {
+    const ex = err as { stderr?: Buffer; stdout?: Buffer; message?: string };
+    const stderr = ex.stderr?.toString("utf8").trim() || "";
+    const stdout = ex.stdout?.toString("utf8").trim() || "";
+    const structured = parseStructuredPayload(stderr) ?? parseStructuredPayload(stdout);
+    if (structured) {
+      throw new Error(`${label} failed: ${JSON.stringify(structured)}`);
+    }
+    const details = [stderr, stdout].filter(Boolean).join(" | ");
+    const suffix = details ? `: ${details.slice(0, 900)}` : "";
+    throw new Error(`${label} failed${suffix}`);
+  }
 }
 
 /**
- * PDF → DOCX buffer using pdf2docx (Python, called via child_process).
+ * PDF page 0 → PNG buffer via Python (PyMuPDF).
  *
- * pdf2docx preserves text, tables, images, and multi-column layouts for
- * text-based PDFs. For scanned PDFs it embeds rasterised pages as images so
- * the document is visually faithful even without OCR.
+ * This avoids Node ESM/CJS compatibility issues from JS/WASM PDF runtimes
+ * inside a CommonJS Lambda handler.
  */
-async function pdfToDocxBuffer(buf: Buffer): Promise<Buffer> {
+async function pdfToImageBuffer(buf: Buffer): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require("fs") as typeof import("fs");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const os = require("os") as typeof import("os");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const path = require("path") as typeof import("path");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { execFileSync } = require("child_process") as typeof import("child_process");
 
-  const id = `pdf2docx-${Date.now()}-${process.pid}`;
-  const inPath  = path.join(os.tmpdir(), `${id}.pdf`);
-  const outPath = path.join(os.tmpdir(), `${id}.docx`);
+  const id = `pdf2png-${Date.now()}-${process.pid}`;
+  const inPath = path.join(os.tmpdir(), `${id}.pdf`);
+  const outPath = path.join(os.tmpdir(), `${id}.png`);
 
   try {
     fs.writeFileSync(inPath, buf);
-    execFileSync("python3", ["/var/task/pdf_to_docx.py", inPath, outPath], {
-      timeout: 90_000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    runPythonScript("/var/task/pdf_page_to_png.py", [inPath, outPath], 45_000, "PDF rasterization");
     const result = fs.readFileSync(outPath);
-    if (!result || result.length === 0) throw new Error("pdf2docx produced an empty output file");
+    if (!result || result.length === 0) {
+      throw new Error("PDF rasterization produced an empty PNG output file");
+    }
     return result;
   } finally {
     try { fs.unlinkSync(inPath); } catch { /* ignore */ }
@@ -243,19 +255,13 @@ async function docxToPdfBuffer(buf: Buffer): Promise<Buffer> {
   const os = require("os") as typeof import("os");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const path = require("path") as typeof import("path");
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { execFileSync } = require("child_process") as typeof import("child_process");
-
   const id = `docx2pdf-${Date.now()}-${process.pid}`;
   const inPath  = path.join(os.tmpdir(), `${id}.docx`);
   const outPath = path.join(os.tmpdir(), `${id}.pdf`);
 
   try {
     fs.writeFileSync(inPath, buf);
-    execFileSync("python3", ["/var/task/docx_to_pdf.py", inPath, outPath], {
-      timeout: 90_000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    runPythonScript("/var/task/docx_to_pdf.py", [inPath, outPath], 90_000, "DOCX→PDF conversion");
     const result = fs.readFileSync(outPath);
     if (!result || result.length === 0) throw new Error("docx_to_pdf produced an empty output file");
     return result;
@@ -558,7 +564,7 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
   const PK = `USER#${userSub}`;
   const outSK = `FILE#${projectId}#${outputFileId}`;
 
-  const validFormats: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "DOCX", "PDF"];
+  const validFormats: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "PDF"];
   if (!validFormats.includes(outputFormat)) {
     await updateOutputRow({
       pk: PK,
@@ -603,15 +609,7 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     const srcIsPdf = srcContentType.includes("pdf") || srcFilenameLow.endsWith(".pdf");
 
     let outputBuf: Buffer;
-    if (outputFormat === "DOCX") {
-      // PDF → DOCX: layout-preserving document conversion via pdf2docx (Python).
-      if (!srcIsPdf) {
-        throw new Error(
-          `DOCX output is only supported for PDF input (received content-type: ${srcContentType})`
-        );
-      }
-      outputBuf = await pdfToDocxBuffer(rawBuf);
-    } else if (outputFormat === "PDF") {
+    if (outputFormat === "PDF") {
       // DOCX → PDF: mammoth (DOCX→HTML) + WeasyPrint (HTML→PDF) via Python subprocess.
       const srcIsDocx =
         srcContentType.includes("wordprocessingml") ||

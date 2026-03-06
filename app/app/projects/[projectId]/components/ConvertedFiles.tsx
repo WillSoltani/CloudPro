@@ -134,7 +134,7 @@ function ReconvertPanel({
         </div>
       </div>
 
-      {fmt !== "DOCX" && fmt !== "PDF" && (
+      {fmt !== "PDF" && (
         <>
           <div>
             <div className="mb-1 flex items-center justify-between text-xs text-slate-400">

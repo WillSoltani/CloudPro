@@ -5,7 +5,7 @@ import { SlidersHorizontal, Bolt, Sparkles, Mail } from "lucide-react";
 import type { OutputFormat, PresetId } from "../_lib/ui-types";
 import { IMAGE_OUTPUT_FORMATS } from "../_lib/ui-types";
 
-// Image formats shown in a 3-column grid; DOCX appears as a full-width row below
+// Image formats shown in a 3-column grid.
 const IMAGE_FORMATS = IMAGE_OUTPUT_FORMATS;
 
 export function ConversionSettings(props: {
@@ -37,7 +37,7 @@ export function ConversionSettings(props: {
         <div className="text-lg font-semibold text-slate-100">Conversion Settings</div>
       </div>
 
-      {/* Format picker — image formats in a 3-column grid, DOCX as a full-width row */}
+      {/* Format picker — image formats in a 3-column grid */}
       <div className="mt-6">
         <div className="text-sm font-semibold text-slate-200">Output Format</div>
         <div className="mt-3 grid grid-cols-3 gap-2">
@@ -59,24 +59,11 @@ export function ConversionSettings(props: {
               </button>
             );
           })}
-          {/* DOCX spans full width — only meaningful for PDF inputs */}
-          <button
-            type="button"
-            onClick={() => props.onFormat("DOCX")}
-            className={[
-              "col-span-3 rounded-2xl px-3 py-2 text-sm font-semibold transition",
-              props.format === "DOCX"
-                ? "bg-sky-600/90 text-white shadow-[0_12px_30px_rgba(2,132,199,0.22)]"
-                : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10",
-            ].join(" ")}
-          >
-            DOCX <span className="text-xs font-normal opacity-60">(PDF input only)</span>
-          </button>
         </div>
       </div>
 
-      {/* Quality, Resize, and Presets do not apply to DOCX document conversion */}
-      {props.format !== "DOCX" && (
+      {/* Quality, Resize, and Presets do not apply to PDF document conversion */}
+      {props.format !== "PDF" && (
         <>
           <div className="mt-6">
             <div className="flex items-center justify-between">
@@ -162,12 +149,6 @@ export function ConversionSettings(props: {
             </div>
           </div>
         </>
-      )}
-
-      {props.format === "DOCX" && (
-        <div className="mt-4 rounded-xl border border-sky-400/15 bg-sky-400/5 px-4 py-3 text-sm text-sky-200/80">
-          Exports PDF pages to an editable DOCX file with preserved layout, tables, and images. Upload a PDF file to use this format.
-        </div>
       )}
       <div
         className="
