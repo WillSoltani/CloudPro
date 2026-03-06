@@ -24,7 +24,7 @@ export function extFromName(name: string): string {
 export function formatFromFilenameOrContentType(
   filename: string,
   contentType?: string | null
-): OutputFormat | "SVG" | "ICO" | "BMP" | "HEIC" | "PDF" | "IMG" {
+): OutputFormat | "SVG" | "ICO" | "BMP" | "HEIC" | "IMG" {
   const ext = extFromName(filename);
   const ct = (contentType ?? "").toLowerCase();
 
