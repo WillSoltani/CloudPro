@@ -6,6 +6,46 @@ import sharp from "sharp";
 
 type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "PDF";
 type ImageOutputFormat = Exclude<OutputFormat, "PDF">;
+type RasterImageOutputFormat = Extract<OutputFormat, "PNG" | "JPG" | "WebP">;
+type OutputPackaging = "single" | "zip";
+type SourceDocExt = "pdf" | "docx" | "doc";
+
+type DocxSanitizationMeta = {
+  applied: boolean;
+  normalizedSections: number;
+  normalizedParagraphSections: number;
+  normalizedBodySections: number;
+  inconsistentColumns: boolean;
+  minColumnWidthSeenTwips: number | null;
+  strategy: string;
+};
+
+type CanonicalPdfMeta = {
+  converter: string;
+  libreofficeVersion: string;
+  pageCount: number;
+  nonBlankPages: number;
+  narrowTextPages: number[];
+  conversionStrategy: string;
+  sanitization: DocxSanitizationMeta;
+};
+
+type CanonicalPdfResult = {
+  pdfBuffer: Buffer;
+  meta: CanonicalPdfMeta;
+};
+
+type ImageZipFidelity = {
+  threshold: number;
+  maxMae: number;
+  avgMae: number;
+};
+
+type DocumentImageZipResult = {
+  zipBuffer: Buffer;
+  pageCount: number;
+  fidelity?: ImageZipFidelity;
+};
 
 type ConvertEvent = {
   userSub: string;
@@ -95,6 +135,15 @@ function replaceExt(filename: string, ext: string): string {
   return (dot < 0 ? filename : filename.slice(0, dot)) + "." + ext;
 }
 
+function stripExt(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot < 0 ? filename : filename.slice(0, dot);
+}
+
+function isRasterImageFormat(fmt: OutputFormat): fmt is RasterImageOutputFormat {
+  return fmt === "PNG" || fmt === "JPG" || fmt === "WebP";
+}
+
 function isUint8Array(v: unknown): v is Uint8Array {
   return v instanceof Uint8Array;
 }
@@ -159,63 +208,63 @@ async function heicToBuffer(buf: Buffer): Promise<Buffer> {
   return Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer);
 }
 
+function parseLastJsonObject(text: string): Record<string, unknown> | null {
+  if (!text) return null;
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i];
+    if (!line.startsWith("{") || !line.endsWith("}")) continue;
+    try {
+      return JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      // ignore non-JSON lines
+    }
+  }
+  return null;
+}
+
 function runPythonScript(
   scriptPath: string,
   args: string[],
   timeoutMs: number,
   label: string
-): void {
-  const parseStructuredPayload = (text: string): Record<string, unknown> | null => {
-    if (!text) return null;
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    for (let i = lines.length - 1; i >= 0; i -= 1) {
-      const line = lines[i];
-      if (!line.startsWith("{") || !line.endsWith("}")) continue;
-      try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        const hasErrorShape =
-          parsed.ok === false ||
-          typeof parsed.error_type === "string" ||
-          typeof parsed.message === "string";
-        if (hasErrorShape) return parsed;
-      } catch {
-        // ignore non-JSON log lines
-      }
-    }
-    return null;
-  };
-
+): { stdout: string; stderr: string } {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { execFileSync } = require("child_process") as typeof import("child_process");
-  try {
-    execFileSync("python3", [scriptPath, ...args], {
-      timeout: timeoutMs,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (err: unknown) {
-    const ex = err as { stderr?: Buffer; stdout?: Buffer; message?: string };
-    const stderr = ex.stderr?.toString("utf8").trim() || "";
-    const stdout = ex.stdout?.toString("utf8").trim() || "";
-    const structured = parseStructuredPayload(stderr) ?? parseStructuredPayload(stdout);
-    if (structured) {
-      throw new Error(`${label} failed: ${JSON.stringify(structured)}`);
-    }
+  const { spawnSync } = require("child_process") as typeof import("child_process");
+  const result = spawnSync("python3", [scriptPath, ...args], {
+    timeout: timeoutMs,
+    encoding: "utf8",
+  });
+  if (result.error) {
+    throw new Error(`${label} failed: ${result.error.message}`);
+  }
+  const stdout = (result.stdout || "").trim();
+  const stderr = (result.stderr || "").trim();
+  if (result.status !== 0) {
+    const structured = parseLastJsonObject(stderr) ?? parseLastJsonObject(stdout);
+    if (structured) throw new Error(`${label} failed: ${JSON.stringify(structured)}`);
     const details = [stderr, stdout].filter(Boolean).join(" | ");
     const suffix = details ? `: ${details.slice(0, 900)}` : "";
     throw new Error(`${label} failed${suffix}`);
   }
+  return { stdout, stderr };
 }
 
 /**
- * PDF page 0 → PNG buffer via Python (PyMuPDF).
- *
- * This avoids Node ESM/CJS compatibility issues from JS/WASM PDF runtimes
- * inside a CommonJS Lambda handler.
+ * Convert PDF/DOCX to per-page images in a ZIP artifact.
  */
-async function pdfToImageBuffer(buf: Buffer): Promise<Buffer> {
+async function documentToImagesZip(args: {
+  buf: Buffer;
+  sourceExt: SourceDocExt;
+  sourceFilename: string;
+  outputFormat: RasterImageOutputFormat;
+  quality: number;
+  resizePct: number | null;
+  maxWidth: number | undefined;
+}): Promise<DocumentImageZipResult> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require("fs") as typeof import("fs");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -223,32 +272,70 @@ async function pdfToImageBuffer(buf: Buffer): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const path = require("path") as typeof import("path");
 
-  const id = `pdf2png-${Date.now()}-${process.pid}`;
-  const inPath = path.join(os.tmpdir(), `${id}.pdf`);
-  const outPath = path.join(os.tmpdir(), `${id}.png`);
+  const id = `doc2img-${Date.now()}-${process.pid}`;
+  const inPath = path.join(os.tmpdir(), `${id}.${args.sourceExt}`);
+  const outZipPath = path.join(os.tmpdir(), `${id}.zip`);
+  const baseName = stripExt(args.sourceFilename) || "document";
+  const resize = typeof args.resizePct === "number" ? Math.max(10, Math.min(100, Math.floor(args.resizePct))) : 100;
+  const maxWidth = resize < 100 ? 0 : Math.max(0, Math.floor(args.maxWidth ?? 0));
+  const fmtLower = args.outputFormat.toLowerCase();
 
   try {
-    fs.writeFileSync(inPath, buf);
-    runPythonScript("/var/task/pdf_page_to_png.py", [inPath, outPath], 45_000, "PDF rasterization");
-    const result = fs.readFileSync(outPath);
+    fs.writeFileSync(inPath, args.buf);
+    const run = runPythonScript(
+      "/var/task/document_to_images_zip.py",
+      [
+        inPath,
+        outZipPath,
+        baseName,
+        fmtLower,
+        "160", // consistent rasterization quality while keeping memory reasonable
+        String(Math.max(1, Math.min(100, Math.floor(args.quality)))),
+        String(resize),
+        String(maxWidth),
+      ],
+      120_000,
+      "Document image rendering"
+    );
+    const result = fs.readFileSync(outZipPath);
     if (!result || result.length === 0) {
-      throw new Error("PDF rasterization produced an empty PNG output file");
+      throw new Error("Document image rendering produced an empty ZIP output file");
     }
-    return result;
+    const meta = parseLastJsonObject(run.stdout) ?? parseLastJsonObject(run.stderr);
+    const pagesRaw = meta?.pages;
+    const pageCount =
+      typeof pagesRaw === "number" && Number.isFinite(pagesRaw) && pagesRaw > 0
+        ? Math.floor(pagesRaw)
+        : 0;
+    if (pageCount <= 0) {
+      throw new Error("Document image rendering did not report a valid page count");
+    }
+    const fidelityRaw = meta?.fidelity;
+    let fidelity: ImageZipFidelity | undefined;
+    if (typeof fidelityRaw === "object" && fidelityRaw !== null) {
+      const obj = fidelityRaw as Record<string, unknown>;
+      const threshold = obj.threshold;
+      const maxMae = obj.max_mae;
+      const avgMae = obj.avg_mae;
+      if (
+        typeof threshold === "number" && Number.isFinite(threshold) &&
+        typeof maxMae === "number" && Number.isFinite(maxMae) &&
+        typeof avgMae === "number" && Number.isFinite(avgMae)
+      ) {
+        fidelity = { threshold, maxMae, avgMae };
+      }
+    }
+    return { zipBuffer: result, pageCount, fidelity };
   } finally {
     try { fs.unlinkSync(inPath); } catch { /* ignore */ }
-    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+    try { fs.unlinkSync(outZipPath); } catch { /* ignore */ }
   }
 }
 
 /**
- * DOCX → PDF buffer using mammoth (DOCX→HTML) + WeasyPrint (HTML→PDF, Python).
- *
- * mammoth converts DOCX to semantic HTML preserving headings, paragraphs, tables,
- * and embedded images. WeasyPrint renders the HTML to a paginated PDF using
- * Pango/Cairo (system libraries installed in the Lambda container image).
+ * DOCX → canonical PDF via LibreOffice.
  */
-async function docxToPdfBuffer(buf: Buffer): Promise<Buffer> {
+async function docxToCanonicalPdf(buf: Buffer): Promise<CanonicalPdfResult> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require("fs") as typeof import("fs");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -261,100 +348,80 @@ async function docxToPdfBuffer(buf: Buffer): Promise<Buffer> {
 
   try {
     fs.writeFileSync(inPath, buf);
-    runPythonScript("/var/task/docx_to_pdf.py", [inPath, outPath], 90_000, "DOCX→PDF conversion");
+    const run = runPythonScript("/var/task/docx_to_pdf.py", [inPath, outPath], 120_000, "DOCX→PDF conversion");
     const result = fs.readFileSync(outPath);
     if (!result || result.length === 0) throw new Error("docx_to_pdf produced an empty output file");
-    return result;
+    const meta = parseLastJsonObject(run.stdout) ?? parseLastJsonObject(run.stderr) ?? {};
+    const converter = typeof meta.converter === "string" ? meta.converter : "libreoffice";
+    const libreofficeVersion =
+      typeof meta.libreoffice_version === "string" ? meta.libreoffice_version : "unknown";
+    const pageCount =
+      typeof meta.page_count === "number" && Number.isFinite(meta.page_count)
+        ? Math.max(0, Math.floor(meta.page_count))
+        : 0;
+    const nonBlankPages =
+      typeof meta.non_blank_pages === "number" && Number.isFinite(meta.non_blank_pages)
+        ? Math.max(0, Math.floor(meta.non_blank_pages))
+        : 0;
+    const narrowTextPagesRaw = meta.narrow_text_pages;
+    const narrowTextPages =
+      Array.isArray(narrowTextPagesRaw)
+        ? narrowTextPagesRaw
+            .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
+            .map((v) => Math.floor(v))
+        : [];
+    const conversionStrategy =
+      typeof meta.conversion_strategy === "string" ? meta.conversion_strategy : "baseline";
+    const sanitizeRaw = meta.sanitization;
+    let sanitization: DocxSanitizationMeta = {
+      applied: false,
+      normalizedSections: 0,
+      normalizedParagraphSections: 0,
+      normalizedBodySections: 0,
+      inconsistentColumns: false,
+      minColumnWidthSeenTwips: null,
+      strategy: "baseline",
+    };
+    if (typeof sanitizeRaw === "object" && sanitizeRaw !== null) {
+      const obj = sanitizeRaw as Record<string, unknown>;
+      sanitization = {
+        applied: obj.applied === true,
+        normalizedSections:
+          typeof obj.normalized_sections === "number" && Number.isFinite(obj.normalized_sections)
+            ? Math.max(0, Math.floor(obj.normalized_sections))
+            : 0,
+        normalizedParagraphSections:
+          typeof obj.normalized_paragraph_sections === "number" && Number.isFinite(obj.normalized_paragraph_sections)
+            ? Math.max(0, Math.floor(obj.normalized_paragraph_sections))
+            : 0,
+        normalizedBodySections:
+          typeof obj.normalized_body_sections === "number" && Number.isFinite(obj.normalized_body_sections)
+            ? Math.max(0, Math.floor(obj.normalized_body_sections))
+            : 0,
+        inconsistentColumns: obj.inconsistent_columns === true,
+        minColumnWidthSeenTwips:
+          typeof obj.min_column_width_seen_twips === "number" && Number.isFinite(obj.min_column_width_seen_twips)
+            ? Math.max(0, Math.floor(obj.min_column_width_seen_twips))
+            : null,
+        strategy: typeof obj.strategy === "string" ? obj.strategy : conversionStrategy,
+      };
+    }
+    return {
+      pdfBuffer: result,
+      meta: {
+        converter,
+        libreofficeVersion,
+        pageCount,
+        nonBlankPages,
+        narrowTextPages,
+        conversionStrategy,
+        sanitization,
+      },
+    };
   } finally {
     try { fs.unlinkSync(inPath); } catch { /* ignore */ }
     try { fs.unlinkSync(outPath); } catch { /* ignore */ }
   }
-}
-
-/**
- * DOCX → PNG buffer using mammoth (text extraction) + @napi-rs/canvas.
- *
- * Lambda has no system fonts, so `ctx.font = "24px sans-serif"` resolves to
- * nothing and fillText() draws invisible text, producing a blank white image.
- * Fix: register the DejaVu font bundled in the container image and use it
- * explicitly. The Dockerfile copies DejaVuSans.ttf to /var/task/fonts/.
- */
-async function docxToImageBuffer(buf: Buffer): Promise<Buffer> {
-  type Ctx2D = {
-    fillStyle: string;
-    font: string;
-    fillRect(x: number, y: number, w: number, h: number): void;
-    fillText(text: string, x: number, y: number): void;
-    measureText(text: string): { width: number };
-  };
-  type CanvasLike = { getContext(t: "2d"): Ctx2D; toBuffer(mime: string): Buffer };
-
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const mammoth = require("mammoth") as {
-    extractRawText: (opts: { buffer: Buffer }) => Promise<{ value: string }>;
-  };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { createCanvas, GlobalFonts } = require("@napi-rs/canvas") as {
-    createCanvas: (w: number, h: number) => CanvasLike;
-    GlobalFonts: { registerFromPath(path: string, family: string): boolean };
-  };
-
-  // Register the DejaVu font bundled in the container (see Dockerfile).
-  // This is idempotent — @napi-rs/canvas ignores duplicate registrations.
-  GlobalFonts.registerFromPath("/var/task/fonts/DejaVuSans.ttf", "DocFont");
-
-  const { value: text } = await mammoth.extractRawText({ buffer: buf });
-
-  const W = 1240;
-  const H = 1754; // A4-ish at 150 DPI
-  const canvas = createCanvas(W, H);
-  const ctx = canvas.getContext("2d");
-
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, W, H);
-
-  const MARGIN = 80;
-  const LINE_HEIGHT = 34;
-  const MAX_WIDTH = W - MARGIN * 2;
-  const MAX_Y = H - MARGIN;
-
-  // Use the registered font instead of "sans-serif" which fails in Lambda
-  ctx.font = "24px DocFont";
-  ctx.fillStyle = "#1a1a1a";
-
-  if (!text.trim()) {
-    ctx.fillStyle = "#888888";
-    ctx.font = "22px DocFont";
-    ctx.fillText("(No extractable text content in this document)", MARGIN, MARGIN + LINE_HEIGHT * 2);
-    return canvas.toBuffer("image/png");
-  }
-
-  let y = MARGIN + LINE_HEIGHT;
-  const paragraphs = text.split(/\n+/).filter((p) => p.trim());
-
-  outer: for (const para of paragraphs) {
-    const words = para.trim().split(/\s+/);
-    let line = "";
-    for (const word of words) {
-      const test = line ? `${line} ${word}` : word;
-      if (ctx.measureText(test).width > MAX_WIDTH && line) {
-        ctx.fillText(line, MARGIN, y);
-        y += LINE_HEIGHT;
-        if (y > MAX_Y) break outer;
-        line = word;
-      } else {
-        line = test;
-      }
-    }
-    if (line) {
-      ctx.fillText(line, MARGIN, y);
-      y += LINE_HEIGHT;
-      if (y > MAX_Y) break;
-    }
-    y += LINE_HEIGHT * 0.4; // paragraph gap
-  }
-
-  return canvas.toBuffer("image/png");
 }
 
 // ICO magic: bytes 0-3 = 00 00 01 00
@@ -506,6 +573,9 @@ async function updateOutputRow(args: {
   filename?: string;
   contentType?: string;
   sizeBytes?: number;
+  packaging?: OutputPackaging;
+  pageCount?: number;
+  outputCount?: number;
   errorMessage?: string | null;
 }) {
   const updatedAt = new Date().toISOString();
@@ -541,6 +611,18 @@ async function updateOutputRow(args: {
   if (args.sizeBytes !== undefined) {
     values[":sz"] = args.sizeBytes;
     setParts.push("sizeBytes = :sz");
+  }
+  if (args.packaging !== undefined) {
+    values[":pkging"] = args.packaging;
+    setParts.push("packaging = :pkging");
+  }
+  if (args.pageCount !== undefined) {
+    values[":pages"] = args.pageCount;
+    setParts.push("pageCount = :pages");
+  }
+  if (args.outputCount !== undefined) {
+    values[":outCount"] = args.outputCount;
+    setParts.push("outputCount = :outCount");
   }
   if (args.errorMessage !== undefined) {
     values[":em"] = args.errorMessage ?? null;
@@ -592,10 +674,6 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     const srcFilename = String(src.filename);
     const srcContentType = String(src.contentType || "").toLowerCase();
 
-    // 2. Compute output filename and S3 key (same formula used by the convert API route)
-    const outputFilename = replaceExt(srcFilename, extForFormat(outputFormat));
-    const outputKey = `private/${userSub}/${projectId}/output/${outputFileId}/${outputFilename}`;
-    const contentType = contentTypeFor(outputFormat);
     const config = presetConfig(preset);
 
     // 3. Download the raw file from S3
@@ -607,23 +685,117 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     // 3b & 4. Convert — branch on output format first.
     const srcFilenameLow = srcFilename.toLowerCase();
     const srcIsPdf = srcContentType.includes("pdf") || srcFilenameLow.endsWith(".pdf");
+    const srcIsDocx =
+      srcContentType.includes("wordprocessingml") ||
+      srcContentType.includes("msword") ||
+      srcFilenameLow.endsWith(".docx") ||
+      srcFilenameLow.endsWith(".doc");
+
+    if ((srcIsPdf || srcIsDocx) && outputFormat !== "PDF" && !isRasterImageFormat(outputFormat)) {
+      throw new Error(`For PDF/DOCX image conversion, only PNG/JPG/WebP are supported (requested ${outputFormat})`);
+    }
 
     let outputBuf: Buffer;
+    let outputFilename = replaceExt(srcFilename, extForFormat(outputFormat));
+    let contentType = contentTypeFor(outputFormat);
+    let packaging: OutputPackaging = "single";
+    let pageCount: number | undefined;
+    let outputCount: number | undefined;
+    let canonicalPdf: CanonicalPdfResult | undefined;
+
+    if (srcIsDocx) {
+      canonicalPdf = await docxToCanonicalPdf(rawBuf);
+      console.log(
+        JSON.stringify({
+          event: "docx_canonical_pdf_ready",
+          sourceFileId,
+          outputFileId,
+          converter: canonicalPdf.meta.converter,
+          libreofficeVersion: canonicalPdf.meta.libreofficeVersion,
+          pageCount: canonicalPdf.meta.pageCount,
+          nonBlankPages: canonicalPdf.meta.nonBlankPages,
+          narrowTextPages: canonicalPdf.meta.narrowTextPages,
+          conversionStrategy: canonicalPdf.meta.conversionStrategy,
+          sanitizationApplied: canonicalPdf.meta.sanitization.applied,
+          normalizedSections: canonicalPdf.meta.sanitization.normalizedSections,
+          normalizedParagraphSections: canonicalPdf.meta.sanitization.normalizedParagraphSections,
+          normalizedBodySections: canonicalPdf.meta.sanitization.normalizedBodySections,
+          inconsistentColumns: canonicalPdf.meta.sanitization.inconsistentColumns,
+          minColumnWidthSeenTwips: canonicalPdf.meta.sanitization.minColumnWidthSeenTwips,
+          sanitizationStrategy: canonicalPdf.meta.sanitization.strategy,
+        })
+      );
+    }
+
     if (outputFormat === "PDF") {
-      // DOCX → PDF: mammoth (DOCX→HTML) + WeasyPrint (HTML→PDF) via Python subprocess.
-      const srcIsDocx =
-        srcContentType.includes("wordprocessingml") ||
-        srcContentType.includes("msword") ||
-        srcFilenameLow.endsWith(".docx") ||
-        srcFilenameLow.endsWith(".doc");
       if (!srcIsDocx) {
         throw new Error(
           `PDF output is only supported for DOCX input (received content-type: ${srcContentType})`
         );
       }
-      outputBuf = await docxToPdfBuffer(rawBuf);
+      if (!canonicalPdf) {
+        throw new Error("DOCX canonical PDF renderer did not produce a PDF");
+      }
+      outputBuf = canonicalPdf.pdfBuffer;
+      pageCount = canonicalPdf.meta.pageCount;
+      outputCount = canonicalPdf.meta.pageCount;
+      console.log(
+        JSON.stringify({
+          event: "fidelity_metrics",
+          sourceType: "DOCX",
+          target: "PDF",
+          engine: canonicalPdf.meta.converter,
+          libreofficeVersion: canonicalPdf.meta.libreofficeVersion,
+          pageCount: canonicalPdf.meta.pageCount,
+          metric: "canonical_pdf_identity",
+          maxMae: 0,
+          avgMae: 0,
+          threshold: 0,
+        })
+      );
+    } else if ((srcIsPdf || srcIsDocx) && isRasterImageFormat(outputFormat)) {
+      const qualityForPages =
+        outputFormat === "JPG"
+          ? (typeof quality === "number" && Number.isFinite(quality)
+              ? Math.max(1, Math.min(100, Math.floor(quality)))
+              : config.jpegQuality)
+          : outputFormat === "WebP"
+            ? (typeof quality === "number" && Number.isFinite(quality)
+                ? Math.max(1, Math.min(100, Math.floor(quality)))
+                : config.webpQuality)
+            : 90;
+      const rendered = await documentToImagesZip({
+        buf: srcIsDocx ? canonicalPdf!.pdfBuffer : rawBuf,
+        sourceExt: "pdf",
+        sourceFilename: srcFilename,
+        outputFormat,
+        quality: qualityForPages,
+        resizePct,
+        maxWidth: config.maxWidth,
+      });
+      outputBuf = rendered.zipBuffer;
+      pageCount = rendered.pageCount;
+      outputCount = rendered.pageCount;
+      packaging = "zip";
+      contentType = "application/zip";
+      outputFilename = `${stripExt(srcFilename)}_${outputFormat.toLowerCase()}_pages.zip`;
+      if (srcIsDocx && rendered.fidelity) {
+        console.log(
+          JSON.stringify({
+            event: "fidelity_metrics",
+            sourceType: "DOCX",
+            target: outputFormat,
+            engine: canonicalPdf?.meta.converter ?? "libreoffice",
+            libreofficeVersion: canonicalPdf?.meta.libreofficeVersion ?? "unknown",
+            pageCount: rendered.pageCount,
+            threshold: rendered.fidelity.threshold,
+            maxMae: rendered.fidelity.maxMae,
+            avgMae: rendered.fidelity.avgMae,
+          })
+        );
+      }
     } else {
-      // Image output: optionally pre-rasterize special input types, then run Sharp.
+      // Image output for non-document inputs.
       let inputBuf: Buffer;
       if (
         srcContentType.includes("heic") ||
@@ -632,20 +804,13 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
         srcFilenameLow.endsWith(".heif")
       ) {
         inputBuf = await heicToBuffer(rawBuf);
-      } else if (srcIsPdf) {
-        inputBuf = await pdfToImageBuffer(rawBuf);
-      } else if (
-        srcContentType.includes("wordprocessingml") ||
-        srcContentType.includes("msword") ||
-        srcFilenameLow.endsWith(".docx") ||
-        srcFilenameLow.endsWith(".doc")
-      ) {
-        inputBuf = await docxToImageBuffer(rawBuf);
       } else {
         inputBuf = rawBuf;
       }
       outputBuf = await applyConversion(inputBuf, outputFormat, quality, resizePct, config);
     }
+
+    const outputKey = `private/${userSub}/${projectId}/output/${outputFileId}/${outputFilename}`;
 
     // 5. Upload converted file to OUTPUT_BUCKET
     await s3.send(
@@ -667,6 +832,9 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
       filename: outputFilename,
       contentType,
       sizeBytes: outputBuf.byteLength,
+      packaging,
+      pageCount,
+      outputCount,
       errorMessage: null,
     });
 
