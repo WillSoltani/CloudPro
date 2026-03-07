@@ -32,6 +32,9 @@ export type FileRow = {
   outputFormat?: string;
   sourceFileId?: string;
   sourceContentType?: string;
+  packaging?: "single" | "zip";
+  pageCount?: number;
+  outputCount?: number;
 };
 
 export type ProjectMeta = {

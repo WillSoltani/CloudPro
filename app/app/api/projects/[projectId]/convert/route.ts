@@ -5,40 +5,15 @@ import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 
 import { ddbDoc, TABLE_NAME, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
+import {
+  OUTPUT_FORMATS,
+  allowedOutputFormatsForContentType,
+  type OutputFormat,
+} from "@/app/app/_lib/conversion-support";
 
 export const runtime = "nodejs";
 
-type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "PDF";
 type FileKind = "raw" | "output";
-
-// Allowlist: source MIME prefix or extension keyword → permitted output formats.
-// Enforced server-side even if the UI is bypassed.
-const ALLOWED_OUTPUTS: Record<string, OutputFormat[]> = {
-  "image/png":           ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  "image/jpeg":          ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  "image/webp":          ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  "image/gif":           ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  "image/tiff":          ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  "image/avif":          ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  "image/heic":          ["PNG", "JPG", "WebP", "AVIF"],
-  "image/heif":          ["PNG", "JPG", "WebP", "AVIF"],
-  "image/bmp":           ["PNG", "JPG", "WebP", "TIFF", "AVIF"],
-  "image/x-bmp":         ["PNG", "JPG", "WebP", "TIFF", "AVIF"],
-  "image/svg+xml":       ["PNG", "JPG", "WebP"],
-  "image/x-icon":        ["PNG", "JPG", "WebP"],
-  "image/vnd.microsoft.icon": ["PNG", "JPG", "WebP"],
-  "application/pdf":     ["PNG", "JPG", "WebP"],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["PNG", "JPG", "WebP", "PDF"],
-  "application/msword":  ["PNG", "JPG", "WebP", "PDF"],
-};
-
-// Fallback: any image/* not listed above allows all outputs
-function allowedOutputFormats(contentType: string): OutputFormat[] {
-  const ct = (contentType || "").toLowerCase().split(";")[0].trim();
-  if (ALLOWED_OUTPUTS[ct]) return ALLOWED_OUTPUTS[ct];
-  if (ct.startsWith("image/")) return ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"];
-  return []; // non-image/document types: reject
-}
 
 type ConversionJobInput = {
   fileId: string;
@@ -95,8 +70,7 @@ function getErrorMessage(e: unknown): string {
 function parseOutputFormat(v: unknown): OutputFormat | null {
   if (typeof v !== "string") return null;
   const up = v.trim();
-  const allowed: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "PDF"];
-  return allowed.includes(up as OutputFormat) ? (up as OutputFormat) : null;
+  return OUTPUT_FORMATS.includes(up as OutputFormat) ? (up as OutputFormat) : null;
 }
 
 function normalizeKind(v: unknown): FileKind { return v === "output" ? "output" : "raw"; }
@@ -149,13 +123,49 @@ function isRawConvertibleStatus(status: string): boolean {
 }
 
 function extForFormat(fmt: OutputFormat): string {
-  const map: Record<OutputFormat, string> = { PNG: "png", JPG: "jpg", WebP: "webp", GIF: "gif", TIFF: "tiff", AVIF: "avif", PDF: "pdf" };
+  const map: Record<OutputFormat, string> = {
+    PNG: "png",
+    JPG: "jpg",
+    WebP: "webp",
+    GIF: "gif",
+    TIFF: "tiff",
+    AVIF: "avif",
+    BMP: "bmp",
+    ICO: "ico",
+    SVG: "svg",
+    PDF: "pdf",
+  };
+  return map[fmt];
+}
+
+function contentTypeFor(fmt: OutputFormat): string {
+  const map: Record<OutputFormat, string> = {
+    PNG: "image/png",
+    JPG: "image/jpeg",
+    WebP: "image/webp",
+    GIF: "image/gif",
+    TIFF: "image/tiff",
+    AVIF: "image/avif",
+    BMP: "image/bmp",
+    ICO: "image/x-icon",
+    SVG: "image/svg+xml",
+    PDF: "application/pdf",
+  };
   return map[fmt];
 }
 
 function replaceExt(filename: string, ext: string): string {
   const dot = filename.lastIndexOf(".");
   return (dot < 0 ? filename : filename.slice(0, dot)) + "." + ext;
+}
+
+function stripExt(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  return dot < 0 ? filename : filename.slice(0, dot);
+}
+
+function isRasterImageOutput(fmt: OutputFormat): fmt is "PNG" | "JPG" | "WebP" {
+  return fmt === "PNG" || fmt === "JPG" || fmt === "WebP";
 }
 
 function safeExecutionName(projectId: string, outFileId: string): string {
@@ -219,7 +229,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       if (src.projectId !== projectId || src.userSub !== user.sub) { results.push({ fileId, ok: false, error: "forbidden" }); continue; }
       if (src.kind !== "raw") { results.push({ fileId, ok: false, error: "cannot convert an output file" }); continue; }
       if (!isRawConvertibleStatus(src.status)) { results.push({ fileId, ok: false, error: `not convertible in status ${src.status}` }); continue; }
-      if (!allowedOutputFormats(src.contentType).includes(outputFormat)) {
+      if (!allowedOutputFormatsForContentType(src.contentType).includes(outputFormat)) {
         results.push({ fileId, ok: false, error: `unsupported conversion: ${src.contentType} cannot be converted to ${outputFormat}` });
         continue;
       }
@@ -227,17 +237,35 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       const outFileId = crypto.randomUUID();
       const outSK = `FILE#${projectId}#${outFileId}`;
       const createdAt = nowIso();
-      const outputFilename = replaceExt(src.filename, extForFormat(outputFormat));
+      const srcCt = (src.contentType || "").toLowerCase();
+      const srcName = src.filename.toLowerCase();
+      const srcIsPdf = srcCt.includes("pdf") || srcName.endsWith(".pdf");
+      const srcIsDocx =
+        srcCt.includes("wordprocessingml") ||
+        srcCt.includes("msword") ||
+        srcName.endsWith(".docx") ||
+        srcName.endsWith(".doc");
+      const srcIsPages =
+        srcCt.includes("apple.pages") ||
+        srcCt.includes("iwork-pages") ||
+        srcName.endsWith(".pages");
+      const isDocumentImageZip = (srcIsPdf || srcIsDocx || srcIsPages) && isRasterImageOutput(outputFormat);
+
+      const outputFilename = isDocumentImageZip
+        ? `${stripExt(src.filename)}_${outputFormat.toLowerCase()}_pages.zip`
+        : replaceExt(src.filename, extForFormat(outputFormat));
       const outputKey = `private/${user.sub}/${projectId}/output/${outFileId}/${outputFilename}`;
 
       const outItem = {
         PK, SK: outSK, entity: "FILE" as const, kind: "output" as const,
         fileId: outFileId, projectId, userSub: user.sub,
-        filename: outputFilename, contentType: src.contentType,
+        filename: outputFilename,
+        contentType: isDocumentImageZip ? "application/zip" : contentTypeFor(outputFormat),
         sizeBytes: null as number | null,
         bucket: outputBucketName, key: outputKey,
         status: "processing", createdAt, updatedAt: createdAt,
         sourceFileId: fileId, sourceContentType: src.contentType, outputFormat, quality, preset, resizePct,
+        packaging: isDocumentImageZip ? "zip" : "single",
       };
 
       try {

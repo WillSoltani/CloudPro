@@ -2,28 +2,36 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { StagedFile, SelectedItem } from "../_lib/local-types";
-import { fingerprintFile, fmtBytes, formatFromFilenameOrContentType } from "../_lib/format";
+import type { StagedFile, StagedListItem } from "../_lib/local-types";
+import { isSupportedUploadFile } from "@/app/app/_lib/conversion-support";
+import { extFromName, fingerprintFile, fmtBytes, formatFromFilenameOrContentType } from "../_lib/format";
+
+type PickFilesResult = {
+  unsupportedFileNames: string[];
+};
 
 export function useStagedFiles() {
   const [staged, setStaged] = useState<StagedFile[]>([]);
   const stagedUrlsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    const stagedUrls = stagedUrlsRef.current;
     return () => {
-      for (const url of stagedUrlsRef.current) URL.revokeObjectURL(url);
-      stagedUrlsRef.current.clear();
+      for (const url of stagedUrls) URL.revokeObjectURL(url);
+      stagedUrls.clear();
     };
   }, []);
 
-  const onPickFiles = useCallback((list: FileList) => {
+  const onPickFiles = useCallback((list: FileList): PickFilesResult => {
     const incoming = Array.from(list);
+    const unsupportedFileNames = incoming.filter((f) => !isSupportedUploadFile(f)).map((f) => f.name);
+    const accepted = incoming.filter((f) => isSupportedUploadFile(f));
 
     setStaged((prev) => {
       const existing = new Set(prev.map((p) => p.fingerprint));
       const next = [...prev];
 
-      for (const file of incoming) {
+      for (const file of accepted) {
         const fp = fingerprintFile(file);
         if (existing.has(fp)) continue;
         existing.add(fp);
@@ -38,66 +46,64 @@ export function useStagedFiles() {
           previewUrl,
           fromLabel: formatFromFilenameOrContentType(file.name, file.type),
           sizeLabel: fmtBytes(file.size),
-          selected: true,
           fingerprint: fp,
         });
       }
 
       return next;
     });
+    return { unsupportedFileNames };
   }, []);
 
-  const toggleOneStaged = useCallback((id: string) => {
-    setStaged((prev) => prev.map((f) => (f.id === id ? { ...f, selected: !f.selected } : f)));
-  }, []);
-
-  const toggleAllStaged = useCallback(() => {
-    setStaged((prev) => {
-      const allSelected = prev.length > 0 && prev.every((p) => p.selected);
-      const nextSelected = !allSelected;
-      return prev.map((p) => ({ ...p, selected: nextSelected }));
-    });
-  }, []);
-
-  const selectedItems: SelectedItem[] = useMemo(
-    () =>
-      staged.map((s) => ({
-        id: s.id,
-        name: s.file.name,
-        sizeLabel: s.sizeLabel,
-        selected: s.selected,
-      })),
-    [staged]
-  );
-
-  const uploadDisabled = useMemo(() => staged.length === 0 || staged.every((x) => !x.selected), [staged]);
-
-  const consumeSelected = useCallback(() => {
-    // remove selected staged items and revoke their object URLs
+  const removeStaged = useCallback((id: string) => {
     setStaged((prev) => {
       const keep: StagedFile[] = [];
       for (const f of prev) {
-        if (f.selected) {
+        if (f.id === id) {
           URL.revokeObjectURL(f.previewUrl);
           stagedUrlsRef.current.delete(f.previewUrl);
-        } else {
-          keep.push(f);
+          continue;
         }
+        keep.push(f);
       }
       return keep;
     });
   }, []);
 
-  const selectedFiles = useMemo(() => staged.filter((s) => s.selected), [staged]);
+  const stagedItems: StagedListItem[] = useMemo(
+    () =>
+      staged.map((s) => ({
+        id: s.id,
+        name: s.file.name,
+        sizeLabel: s.sizeLabel,
+        detectedType: s.fromLabel,
+        extension: extFromName(s.file.name).toUpperCase() || "—",
+      })),
+    [staged]
+  );
+
+  const uploadDisabled = useMemo(() => staged.length === 0, [staged]);
+
+  const consumeSelected = useCallback(() => {
+    // Remove all staged items after a successful upload and revoke URLs.
+    setStaged((prev) => {
+      for (const f of prev) {
+        URL.revokeObjectURL(f.previewUrl);
+        stagedUrlsRef.current.delete(f.previewUrl);
+      }
+      return [];
+    });
+  }, []);
+
+  const selectedFiles = useMemo(() => staged, [staged]);
 
   return {
     staged,
-    selectedItems,
+    stagedItems,
     uploadDisabled,
     selectedFiles,
     onPickFiles,
-    toggleOneStaged,
-    toggleAllStaged,
+    removeStaged,
     consumeSelected,
   };
 }

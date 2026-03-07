@@ -3,13 +3,12 @@
 import { useMemo } from "react";
 import { SlidersHorizontal, Bolt, Sparkles, Mail } from "lucide-react";
 import type { OutputFormat, PresetId } from "../_lib/ui-types";
-import { IMAGE_OUTPUT_FORMATS } from "../_lib/ui-types";
-
-// Image formats shown in a 3-column grid.
-const IMAGE_FORMATS = IMAGE_OUTPUT_FORMATS;
 
 export function ConversionSettings(props: {
   format: OutputFormat;
+  availableFormats: OutputFormat[];
+  inputOnlyFormats?: string[];
+  recommendedFormats: OutputFormat[];
   onFormat: (f: OutputFormat) => void;
   quality: number;
   onQuality: (q: number) => void;
@@ -28,6 +27,13 @@ export function ConversionSettings(props: {
     []
   );
 
+  const displayFormats = useMemo(() => {
+    const inputOnly = (props.inputOnlyFormats ?? []).filter(
+      (label) => !props.availableFormats.includes(label as OutputFormat)
+    );
+    return [...props.availableFormats, ...inputOnly];
+  }, [props.availableFormats, props.inputOnlyFormats]);
+
   return (
     <div className="rounded-[32px] border border-white/10 bg-white/3 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
       <div className="flex items-center gap-3">
@@ -37,22 +43,32 @@ export function ConversionSettings(props: {
         <div className="text-lg font-semibold text-slate-100">Conversion Settings</div>
       </div>
 
-      {/* Format picker — image formats in a 3-column grid */}
+      {/* Format picker — uses shared conversion matrix from backend allowlist */}
       <div className="mt-6">
-        <div className="text-sm font-semibold text-slate-200">Output Format</div>
+        <div className="text-sm font-semibold text-slate-200">Available Formats</div>
+        {props.recommendedFormats.length > 0 ? (
+          <div className="mt-2 text-xs text-slate-400">
+            Recommended: {props.recommendedFormats.join(", ")}
+          </div>
+        ) : null}
         <div className="mt-3 grid grid-cols-3 gap-2">
-          {IMAGE_FORMATS.map((opt: OutputFormat) => {
-            const active = opt === props.format;
+          {displayFormats.map((opt) => {
+            const selectable = props.availableFormats.includes(opt as OutputFormat);
+            const active = selectable && opt === props.format;
             return (
               <button
                 key={opt}
                 type="button"
-                onClick={() => props.onFormat(opt)}
+                onClick={() => selectable && props.onFormat(opt as OutputFormat)}
+                disabled={!selectable}
+                title={selectable ? `Convert to ${opt}` : `${opt} is currently input-only`}
                 className={[
                   "rounded-2xl px-3 py-2 text-sm font-semibold transition",
                   active
                     ? "bg-sky-600/90 text-white shadow-[0_12px_30px_rgba(2,132,199,0.22)]"
-                    : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10",
+                    : selectable
+                      ? "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                      : "cursor-not-allowed border border-white/10 bg-white/4 text-slate-500",
                 ].join(" ")}
               >
                 {opt}
@@ -60,6 +76,11 @@ export function ConversionSettings(props: {
             );
           })}
         </div>
+        {(props.inputOnlyFormats ?? []).length > 0 ? (
+          <div className="mt-2 text-[11px] text-slate-500">
+            Input-only formats are shown for visibility but cannot be selected as targets.
+          </div>
+        ) : null}
       </div>
 
       {/* Quality, Resize, and Presets do not apply to PDF document conversion */}

@@ -3,8 +3,14 @@
 
 import { Trash2, Play, Check } from "lucide-react";
 import type { LocalReadyFile, OutputFormat } from "../_lib/ui-types";
-import { VALID_OUTPUT_FORMATS, IMAGE_OUTPUT_FORMATS } from "../_lib/ui-types";
+import { VALID_OUTPUT_FORMATS, IMAGE_OUTPUT_FORMATS, ALL_OUTPUT_FORMATS } from "../_lib/ui-types";
 import { Thumb } from "./Thumb";
+import {
+  INPUT_ONLY_FORMAT_LABELS,
+  invalidTargetReasonForSourceLabel,
+  recommendedOutputsForSourceLabels,
+  sortOutputsByRecommendation,
+} from "@/app/app/_lib/conversion-support";
 
 type Props = {
   files: LocalReadyFile[];
@@ -13,11 +19,12 @@ type Props = {
   onRemoveSelected: () => void;
   onConvert: () => void;
   onSetItemFormat: (fileId: string, format: OutputFormat) => void;
+  onFillPdf: (item: { name: string; source: "uploaded"; fileId: string }) => void;
   convertBusy: boolean;
 };
 
 export function ReadyQueue({
-  files, onToggleAll, onToggleOne, onRemoveSelected, onConvert, onSetItemFormat, convertBusy,
+  files, onToggleAll, onToggleOne, onRemoveSelected, onConvert, onSetItemFormat, onFillPdf, convertBusy,
 }: Props) {
   const total = files.length;
   const selected = files.reduce((acc, f) => acc + (f.selected ? 1 : 0), 0);
@@ -86,9 +93,20 @@ export function ReadyQueue({
         <div className="divide-y divide-white/10">
           {files.map((f) => {
             const name = f.file?.name || f.id;
+            const isPdf = f.fromLabel.toUpperCase() === "PDF";
             // Only show formats valid for this file's source type (never render disabled chips)
             const validFormats: OutputFormat[] =
               VALID_OUTPUT_FORMATS[f.fromLabel] ?? IMAGE_OUTPUT_FORMATS;
+            const recommendedCandidates = recommendedOutputsForSourceLabels(
+              [f.fromLabel],
+              validFormats,
+              4
+            );
+            const fallbackCandidates = sortOutputsByRecommendation(validFormats, [f.fromLabel]);
+            const recommendedFormats: OutputFormat[] = [...recommendedCandidates, ...fallbackCandidates]
+              .filter((fmt, idx, arr) => arr.indexOf(fmt) === idx)
+              .filter((fmt) => !invalidTargetReasonForSourceLabel(f.fromLabel, fmt))
+              .slice(0, 4);
 
             return (
               <div key={f.id} className="flex flex-wrap items-center gap-3 px-5 py-4 sm:flex-nowrap">
@@ -117,32 +135,93 @@ export function ReadyQueue({
                 </div>
 
                 {/* Per-item format selector — only valid formats for this input type */}
-                {f.selected ? (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Badge>{f.fromLabel}</Badge>
-                    <span className="text-slate-600 text-xs">→</span>
-                    {validFormats.map((fmt: OutputFormat) => (
-                      <button
-                        key={fmt}
-                        type="button"
-                        onClick={() => onSetItemFormat(f.id, fmt)}
-                        className={[
-                          "rounded-full border px-2 py-0.5 text-xs font-semibold transition",
-                          f.toFormat === fmt
-                            ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
-                            : "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200",
-                        ].join(" ")}
-                      >
-                        {fmt}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Badge>{f.fromLabel}</Badge>
-                    <span className="text-xs text-slate-600">select to configure</span>
-                  </div>
-                )}
+                <div className="flex flex-col items-start gap-2 sm:items-end">
+                  {f.selected ? (
+                    <div className="w-full sm:w-[29rem]">
+                      <div className="mb-2 flex items-center gap-2">
+                        <Badge>{f.fromLabel}</Badge>
+                        <span className="text-slate-600 text-xs">→</span>
+                        <Badge tone="active">{f.toFormat}</Badge>
+                      </div>
+
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        Recommended
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {recommendedFormats.map((fmt: OutputFormat) => (
+                          <button
+                            key={`rec-${fmt}`}
+                            type="button"
+                            onClick={() => onSetItemFormat(f.id, fmt)}
+                            className={[
+                              "rounded-full border px-2 py-0.5 text-xs font-semibold transition",
+                              f.toFormat === fmt
+                                ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
+                                : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-slate-100",
+                            ].join(" ")}
+                          >
+                            {fmt}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                        All formats
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {[...ALL_OUTPUT_FORMATS, ...INPUT_ONLY_FORMAT_LABELS].map((fmt) => {
+                          const disabledReason = invalidTargetReasonForSourceLabel(f.fromLabel, fmt);
+                          const disabled = Boolean(disabledReason);
+                          const selectableOutput = ALL_OUTPUT_FORMATS.includes(fmt as OutputFormat);
+                          return (
+                            <button
+                              key={`all-${fmt}`}
+                              type="button"
+                              onClick={() =>
+                                !disabled &&
+                                selectableOutput &&
+                                onSetItemFormat(f.id, fmt as OutputFormat)
+                              }
+                              disabled={disabled}
+                              title={
+                                disabledReason ?? `Convert to ${fmt}`
+                              }
+                              className={[
+                                "rounded-full border px-2 py-0.5 text-xs font-semibold transition",
+                                f.toFormat === fmt && !disabled
+                                  ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
+                                  : !disabled
+                                    ? "border-white/10 bg-white/5 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+                                    : "cursor-not-allowed border-white/10 bg-white/3 text-slate-600",
+                              ].join(" ")}
+                            >
+                              {fmt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-1 text-[10px] text-slate-500">
+                        Disabled formats are unavailable or not meaningful for {f.fromLabel} source files.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Badge>{f.fromLabel}</Badge>
+                      <span className="text-xs text-slate-600">select to configure</span>
+                    </div>
+                  )}
+
+                  {isPdf ? (
+                    <button
+                      type="button"
+                      onClick={() => onFillPdf({ name, source: "uploaded", fileId: f.id })}
+                      className="inline-flex items-center rounded-xl border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/20"
+                      aria-label={`Fill PDF placeholder for ${name}`}
+                    >
+                      Fill & Sign
+                    </button>
+                  ) : null}
+                </div>
               </div>
             );
           })}
@@ -152,9 +231,17 @@ export function ReadyQueue({
   );
 }
 
-function Badge(props: { children: React.ReactNode }) {
+function Badge(props: { children: React.ReactNode; tone?: "active" }) {
+  const { tone } = props;
   return (
-    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-200">
+    <span
+      className={[
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold",
+        tone === "active"
+          ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
+          : "border-white/10 bg-white/5 text-slate-200",
+      ].join(" ")}
+    >
       {props.children}
     </span>
   );

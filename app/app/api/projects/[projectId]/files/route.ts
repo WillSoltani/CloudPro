@@ -26,6 +26,9 @@ type FileRow = {
   outputFormat?: string;
   sourceFileId?: string;
   sourceContentType?: string;
+  packaging?: "single" | "zip";
+  pageCount?: number;
+  outputCount?: number;
 };
 
 type DbFileItem = FileRow & { PK: string; SK: string };
@@ -55,6 +58,12 @@ function str(v: unknown): string {
 function numOrNull(v: unknown): number | null {
   if (typeof v !== "number") return null;
   if (!Number.isFinite(v) || v < 0) return null;
+  return Math.floor(v);
+}
+
+function intOrUndef(v: unknown): number | undefined {
+  if (typeof v !== "number") return undefined;
+  if (!Number.isFinite(v) || v < 0) return undefined;
   return Math.floor(v);
 }
 
@@ -100,6 +109,12 @@ function toDbFileItem(raw: unknown): DbFileItem | null {
   if (sourceFileId) result.sourceFileId = sourceFileId;
   const sourceContentType = str(raw.sourceContentType);
   if (sourceContentType) result.sourceContentType = sourceContentType;
+  const packaging = str(raw.packaging);
+  if (packaging === "single" || packaging === "zip") result.packaging = packaging;
+  const pageCount = intOrUndef(raw.pageCount);
+  if (pageCount !== undefined) result.pageCount = pageCount;
+  const outputCount = intOrUndef(raw.outputCount);
+  if (outputCount !== undefined) result.outputCount = outputCount;
   return result;
 }
 

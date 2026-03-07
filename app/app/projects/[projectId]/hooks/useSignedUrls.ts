@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FileRow } from "../../_lib/types";
 import { getInlineUrl } from "../_lib/api-client";
+import { isLikelyImage } from "../../_lib/ui";
 
 export function useSignedUrls(projectId: string, files: FileRow[]) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
@@ -13,7 +14,10 @@ export function useSignedUrls(projectId: string, files: FileRow[]) {
     let cancelled = false;
 
     async function run() {
-      const ids = files.map((f) => f.fileId).filter((x): x is string => Boolean(x));
+      const ids = files
+        .filter((f) => isLikelyImage(f.filename, f.contentType))
+        .map((f) => f.fileId)
+        .filter((x): x is string => Boolean(x));
 
       const need = ids.filter((id) => !signedUrls[id] && !inFlightRef.current.has(id));
       if (!need.length) return;

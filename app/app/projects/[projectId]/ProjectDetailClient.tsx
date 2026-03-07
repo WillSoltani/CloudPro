@@ -10,6 +10,14 @@ import { ConversionSettings } from "./components/ConversionSettings";
 
 import type { FileRow } from "../_lib/types";
 import type { ItemSettings, LocalConvertedFile, LocalReadyFile, OutputFormat, PresetId } from "./_lib/ui-types";
+import { ALL_OUTPUT_FORMATS, IMAGE_OUTPUT_FORMATS, VALID_OUTPUT_FORMATS } from "./_lib/ui-types";
+import {
+  FORMAT_CAPABILITIES,
+  INPUT_ONLY_FORMAT_LABELS,
+  invalidTargetReasonForSourceLabel,
+  recommendedOutputsForSourceLabels,
+  sortOutputsByRecommendation,
+} from "@/app/app/_lib/conversion-support";
 
 import { completeUpload, convertFiles, createUpload } from "./_lib/api-client";
 import { fmtBytes, formatFromFilenameOrContentType, safeFilenameFromRow } from "./_lib/format";
@@ -25,9 +33,15 @@ type Props = {
   initialFiles: FileRow[];
 };
 
+type FillPdfTarget = {
+  name: string;
+  source: "staged" | "uploaded";
+  fileId?: string;
+};
+
 const DEFAULT_SETTINGS: ItemSettings = {
   format: "JPG",
-  quality: 80,
+  quality: 100,
   preset: "web",
   resizePct: 100,
 };
@@ -46,7 +60,7 @@ function summarizeConvert(results: Array<{ ok: boolean; error?: string }>) {
 export default function ProjectDetailClient({ projectId, initialFiles }: Props) {
   // Global defaults shown in the sidebar
   const [globalFormat, setGlobalFormat] = useState<OutputFormat>("JPG");
-  const [globalQuality, setGlobalQuality] = useState(80);
+  const [globalQuality, setGlobalQuality] = useState(100);
   const [globalPreset, setGlobalPreset] = useState<PresetId>("web");
   const [globalResizePct, setGlobalResizePct] = useState(100);
 
@@ -57,6 +71,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
   const [convertBusy, setConvertBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [fillPdfTarget, setFillPdfTarget] = useState<FillPdfTarget | null>(null);
 
   const setFileCount = useSetFileCount();
   const staged = useStagedFiles();
@@ -76,24 +91,19 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
   // Effective settings for a file (per-item override or global defaults)
   const getSettings = useCallback(
     (fileId: string): ItemSettings =>
-      itemSettings[fileId] ?? {
-        format: globalFormat,
-        quality: globalQuality,
-        preset: globalPreset,
-        resizePct: globalResizePct,
-      },
-    [itemSettings, globalFormat, globalQuality, globalPreset, globalResizePct]
+      itemSettings[fileId] ?? { ...DEFAULT_SETTINGS },
+    [itemSettings]
   );
 
   // Per-item format override (inline selector in ReadyQueue row)
   const setItemFormat = useCallback(
     (fileId: string, fmt: OutputFormat) => {
       setItemSettings((prev) => {
-        const existing = prev[fileId] ?? { format: globalFormat, quality: globalQuality, preset: globalPreset, resizePct: globalResizePct };
+        const existing = prev[fileId] ?? { ...DEFAULT_SETTINGS };
         return { ...prev, [fileId]: { ...existing, format: fmt } };
       });
     },
-    [globalFormat, globalQuality, globalPreset, globalResizePct]
+    []
   );
 
   // Sidebar changes apply to all selected items + update global default
@@ -161,20 +171,35 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     [server.selectedReadyIds]
   );
 
-  // Clean up per-item settings when files are removed
+  // Keep per-item settings isolated:
+  // - remove settings for deleted files
+  // - initialize new raw files once using current global defaults
   const prevFileIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    const current = new Set(server.files.map((f) => f.fileId));
-    const removed = [...prevFileIdsRef.current].filter((id) => !current.has(id));
-    if (removed.length > 0) {
+    const currentRawIds = new Set(server.rawReadyFiles.map((f) => f.fileId));
+    const removed = [...prevFileIdsRef.current].filter((id) => !currentRawIds.has(id));
+    const added = [...currentRawIds].filter((id) => !prevFileIdsRef.current.has(id));
+
+    if (removed.length > 0 || added.length > 0) {
       setItemSettings((prev) => {
         const next = { ...prev };
         for (const id of removed) delete next[id];
+        for (const id of added) {
+          if (!next[id]) {
+            next[id] = {
+              format: globalFormat,
+              quality: globalQuality,
+              preset: globalPreset,
+              resizePct: globalResizePct,
+            };
+          }
+        }
         return next;
       });
     }
-    prevFileIdsRef.current = current;
-  }, [server.files]);
+
+    prevFileIdsRef.current = currentRawIds;
+  }, [server.rawReadyFiles, globalFormat, globalQuality, globalPreset, globalResizePct]);
 
   // ---- Upload ----
   const onUploadClick = useCallback(async () => {
@@ -264,9 +289,48 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         sizeLabel: fmtBytes(f.sizeBytes),
         whenLabel: f.updatedAt || f.createdAt || "",
         status,
+        packaging: f.packaging,
+        pageCount: f.pageCount,
+        outputCount: f.outputCount,
       };
     });
   }, [server.outputFiles, server.files, signed.signedUrls]);
+
+  const availableSidebarFormats = useMemo<OutputFormat[]>(() => {
+    const selectedReady = readyView.filter((f) => f.selected);
+    if (selectedReady.length === 0) {
+      return sortOutputsByRecommendation(FORMAT_CAPABILITIES.supportedOutputs, []);
+    }
+
+    const allowedSets = selectedReady.map((f) => VALID_OUTPUT_FORMATS[f.fromLabel] ?? IMAGE_OUTPUT_FORMATS);
+    const intersection = ALL_OUTPUT_FORMATS.filter((fmt) =>
+      allowedSets.every((list) => list.includes(fmt))
+    );
+    const sensibleIntersection = intersection.filter((fmt) =>
+      selectedReady.every((f) => !invalidTargetReasonForSourceLabel(f.fromLabel, fmt))
+    );
+    const selectedSourceLabels = selectedReady.map((f) => f.fromLabel);
+    return sortOutputsByRecommendation(
+      sensibleIntersection.length > 0 ? sensibleIntersection : intersection.length > 0 ? intersection : [...IMAGE_OUTPUT_FORMATS],
+      selectedSourceLabels
+    );
+  }, [readyView]);
+
+  const recommendedSidebarFormats = useMemo<OutputFormat[]>(() => {
+    const selectedReady = readyView.filter((f) => f.selected);
+    const sourceLabels = selectedReady.map((f) => f.fromLabel);
+    return recommendedOutputsForSourceLabels(sourceLabels, availableSidebarFormats);
+  }, [readyView, availableSidebarFormats]);
+
+  const inputOnlySidebarFormats = useMemo<string[]>(
+    () => [...INPUT_ONLY_FORMAT_LABELS],
+    []
+  );
+
+  useEffect(() => {
+    if (availableSidebarFormats.includes(globalFormat)) return;
+    setGlobalFormat(availableSidebarFormats[0] ?? "JPG");
+  }, [availableSidebarFormats, globalFormat]);
 
   // ---- Convert ----
   const onConvert = useCallback(async () => {
@@ -335,62 +399,109 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     [projectId, server]
   );
 
+  const openFillPdfPlaceholder = useCallback((target: FillPdfTarget) => {
+    setFillPdfTarget(target);
+  }, []);
+
+  const closeFillPdfPlaceholder = useCallback(() => {
+    setFillPdfTarget(null);
+  }, []);
+
   return (
-    <div className="mx-auto grid max-w-350 grid-cols-1 gap-6 px-6 py-6 lg:grid-cols-[1fr_420px]">
-      <div className="space-y-6">
-        {error ? (
-          <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
-            {error}
-          </div>
-        ) : null}
-        {notice ? (
-          <div className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-            {notice}
-          </div>
-        ) : null}
+    <>
+      <div className="mx-auto grid max-w-350 grid-cols-1 gap-6 px-6 py-6 lg:grid-cols-[1fr_420px]">
+        <div className="space-y-6">
+          {error ? (
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              {error}
+            </div>
+          ) : null}
+          {notice ? (
+            <div className="rounded-2xl border border-sky-400/20 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+              {notice}
+            </div>
+          ) : null}
 
-        <DropzoneCard
-          pendingCount={staged.staged.length}
-          onPickFiles={staged.onPickFiles}
-          onUploadClick={onUploadClick}
-          uploadDisabled={uploadBusy || staged.uploadDisabled}
-          selectedItems={staged.selectedItems}
-          onToggleSelectedItem={staged.toggleOneStaged}
-          onToggleAllSelected={staged.toggleAllStaged}
-        />
+          <DropzoneCard
+            pendingCount={staged.staged.length}
+            onPickFiles={staged.onPickFiles}
+            onUploadClick={onUploadClick}
+            uploadDisabled={uploadBusy || staged.uploadDisabled}
+            stagedItems={staged.stagedItems}
+            onRemoveStagedItem={staged.removeStaged}
+            onFillPdf={openFillPdfPlaceholder}
+          />
 
-        <ReadyQueue
-          files={readyView}
-          onToggleAll={server.onToggleAllReady}
-          onToggleOne={server.onToggleOneReady}
-          onRemoveSelected={server.onRemoveSelectedReady}
-          onConvert={onConvert}
-          onSetItemFormat={setItemFormat}
-          convertBusy={convertBusy}
-        />
+          <ReadyQueue
+            files={readyView}
+            onToggleAll={server.onToggleAllReady}
+            onToggleOne={server.onToggleOneReady}
+            onRemoveSelected={server.onRemoveSelectedReady}
+            onConvert={onConvert}
+            onSetItemFormat={setItemFormat}
+            onFillPdf={openFillPdfPlaceholder}
+            convertBusy={convertBusy}
+          />
 
-        <ConvertedFiles
-          files={convertedView}
-          projectId={projectId}
-          onDeleteFile={server.deleteOne}
-          onReconvert={onReconvert}
-          globalSettings={{ format: globalFormat, quality: globalQuality, preset: globalPreset, resizePct: globalResizePct }}
-        />
+          <ConvertedFiles
+            files={convertedView}
+            projectId={projectId}
+            onDeleteFile={server.deleteOne}
+            onReconvert={onReconvert}
+            globalSettings={{ format: globalFormat, quality: globalQuality, preset: globalPreset, resizePct: globalResizePct }}
+          />
+        </div>
+
+        <aside className="space-y-6">
+          <ConversionSettings
+            format={globalFormat}
+            availableFormats={availableSidebarFormats}
+            inputOnlyFormats={inputOnlySidebarFormats}
+            recommendedFormats={recommendedSidebarFormats}
+            onFormat={handleGlobalFormat}
+            quality={globalQuality}
+            onQuality={handleGlobalQuality}
+            preset={globalPreset}
+            onPreset={handleGlobalPreset}
+            resizePct={globalResizePct}
+            onResizePct={handleGlobalResizePct}
+            selectedCount={server.selectedReadyIds.length}
+          />
+        </aside>
       </div>
 
-      <aside className="space-y-6">
-        <ConversionSettings
-          format={globalFormat}
-          onFormat={handleGlobalFormat}
-          quality={globalQuality}
-          onQuality={handleGlobalQuality}
-          preset={globalPreset}
-          onPreset={handleGlobalPreset}
-          resizePct={globalResizePct}
-          onResizePct={handleGlobalResizePct}
-          selectedCount={server.selectedReadyIds.length}
-        />
-      </aside>
-    </div>
+      {fillPdfTarget ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Fill PDF placeholder"
+          onClick={closeFillPdfPlaceholder}
+        >
+          <div
+            className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900/95 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.65)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">Placeholder</div>
+            <h3 className="mt-2 text-xl font-semibold text-slate-100">Fill & Sign PDF</h3>
+            <p className="mt-3 text-sm text-slate-300">
+              This is a UI-only stub for now. No PDF fill logic runs yet.
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              File: <span className="font-semibold text-slate-200">{fillPdfTarget.name}</span> ({fillPdfTarget.source})
+            </p>
+            <div className="mt-6 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeFillPdfPlaceholder}
+                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

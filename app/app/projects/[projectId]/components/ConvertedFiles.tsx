@@ -69,6 +69,13 @@ function Badge(props: { children: React.ReactNode; tone?: "active" }) {
   );
 }
 
+function MultiOutputBadge({ file }: { file: LocalConvertedFile }) {
+  if (file.packaging !== "zip") return null;
+  const count = file.outputCount ?? file.pageCount ?? 0;
+  if (count <= 1) return <Badge>ZIP</Badge>;
+  return <Badge>{`${count} pages (ZIP)`}</Badge>;
+}
+
 function Checkbox({ checked, onClick, label }: { checked: boolean; onClick: () => void; label: string }) {
   return (
     <button
@@ -483,6 +490,7 @@ export function ConvertedFiles({
                   <Badge>{f.fromLabel}</Badge>
                   <span className="text-slate-600">→</span>
                   <Badge tone="active">{f.toLabel}</Badge>
+                  <MultiOutputBadge file={f} />
                   <StatusBadge status={f.status} />
                 </div>
 
@@ -591,6 +599,7 @@ export function ConvertedFiles({
                     <Badge>{f.fromLabel}</Badge>
                     <span className="text-slate-600 text-xs">→</span>
                     <Badge tone="active">{f.toLabel}</Badge>
+                    <MultiOutputBadge file={f} />
                   </div>
                 </div>
 

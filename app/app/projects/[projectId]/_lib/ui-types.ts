@@ -1,8 +1,15 @@
 // app/app/projects/[projectId]/_lib/ui-types.ts
-export type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "PDF";
+import {
+  IMAGE_OUTPUT_FORMATS as SHARED_IMAGE_OUTPUT_FORMATS,
+  OUTPUT_FORMATS as SHARED_OUTPUT_FORMATS,
+  SOURCE_LABEL_OUTPUT_FORMATS,
+  type OutputFormat,
+} from "@/app/app/_lib/conversion-support";
+
+export type { OutputFormat };
 
 /** Formats that produce image output (Quality/Resize/Presets apply). */
-export const IMAGE_OUTPUT_FORMATS: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"];
+export const IMAGE_OUTPUT_FORMATS: OutputFormat[] = [...SHARED_IMAGE_OUTPUT_FORMATS];
 
 export type PresetId = "web" | "hq" | "email";
 
@@ -43,24 +50,15 @@ export type LocalConvertedFile = {
   whenLabel?: string;
   status: "done" | "processing" | "failed";
   progress?: number;
+  packaging?: "single" | "zip";
+  pageCount?: number;
+  outputCount?: number;
 };
 
 // Valid output formats per source format label.
-export const VALID_OUTPUT_FORMATS: Record<string, OutputFormat[]> = {
-  PNG:  ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  JPG:  ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  WebP: ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  GIF:  ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  TIFF: ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  AVIF: ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-  BMP:  ["PNG", "JPG", "WebP", "TIFF", "AVIF"],
-  HEIC: ["PNG", "JPG", "WebP", "AVIF"],
-  SVG:  ["PNG", "JPG", "WebP"],
-  ICO:  ["PNG", "JPG", "WebP"],
-  PDF:  ["PNG", "JPG", "WebP"], // rasterize page 1 for image outputs
-  DOCX: ["PNG", "JPG", "WebP", "PDF"],  // render text preview as image OR export to PDF
-  IMG:  ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF"],
-};
+export const VALID_OUTPUT_FORMATS: Record<string, OutputFormat[]> = Object.fromEntries(
+  Object.entries(SOURCE_LABEL_OUTPUT_FORMATS).map(([source, formats]) => [source, [...formats]])
+) as Record<string, OutputFormat[]>;
 
 /** All selectable output formats (shown in the sidebar format picker). */
-export const ALL_OUTPUT_FORMATS: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "PDF"];
+export const ALL_OUTPUT_FORMATS: OutputFormat[] = [...SHARED_OUTPUT_FORMATS];

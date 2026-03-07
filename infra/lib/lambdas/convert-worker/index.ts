@@ -4,11 +4,37 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import sharp from "sharp";
 
-type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "PDF";
+type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "BMP" | "ICO" | "SVG" | "PDF";
 type ImageOutputFormat = Exclude<OutputFormat, "PDF">;
 type RasterImageOutputFormat = Extract<OutputFormat, "PNG" | "JPG" | "WebP">;
 type OutputPackaging = "single" | "zip";
 type SourceDocExt = "pdf" | "docx" | "doc";
+type SourceKind = "pdf" | "docx" | "pages" | "image";
+type SourceImageKind =
+  | "png"
+  | "jpeg"
+  | "webp"
+  | "gif"
+  | "tiff"
+  | "avif"
+  | "heic"
+  | "heif"
+  | "bmp"
+  | "svg"
+  | "ico"
+  | "unknown";
+
+type SourceInfo = {
+  kind: SourceKind;
+  imageKind: SourceImageKind;
+  mime: string;
+};
+
+type PagesPdfMeta = {
+  converter: string;
+  sourceEntry: string;
+  pageCount: number;
+};
 
 type DocxSanitizationMeta = {
   applied: boolean;
@@ -112,6 +138,9 @@ function extForFormat(fmt: OutputFormat): string {
     GIF: "gif",
     TIFF: "tiff",
     AVIF: "avif",
+    BMP: "bmp",
+    ICO: "ico",
+    SVG: "svg",
     PDF: "pdf",
   };
   return map[fmt];
@@ -125,6 +154,9 @@ function contentTypeFor(fmt: OutputFormat): string {
     GIF: "image/gif",
     TIFF: "image/tiff",
     AVIF: "image/avif",
+    BMP: "image/bmp",
+    ICO: "image/x-icon",
+    SVG: "image/svg+xml",
     PDF: "application/pdf",
   };
   return map[fmt];
@@ -183,6 +215,241 @@ async function asBuffer(body: unknown): Promise<Buffer> {
     body.on("end", () => resolve(Buffer.concat(chunks)));
     body.on("error", reject);
   });
+}
+
+const SVG_SCAN_MAX_BYTES = 1024 * 1024;
+const SVG_DEFAULT_DENSITY = 192;
+const NORMALIZED_PNG_COMPRESSION = 6;
+
+function startsWithBytes(buf: Buffer, bytes: number[]): boolean {
+  if (buf.length < bytes.length) return false;
+  for (let i = 0; i < bytes.length; i += 1) {
+    if (buf[i] !== bytes[i]) return false;
+  }
+  return true;
+}
+
+function extFromFilename(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  if (dot < 0) return "";
+  return filename.slice(dot + 1).toLowerCase();
+}
+
+function sniffIsoBmffKind(buf: Buffer): SourceImageKind | null {
+  if (buf.length < 16) return null;
+  if (buf.toString("ascii", 4, 8) !== "ftyp") return null;
+  const brands = buf.toString("ascii", 8, Math.min(buf.length, 64)).toLowerCase();
+  if (brands.includes("avif") || brands.includes("avis")) return "avif";
+  if (
+    brands.includes("heic") ||
+    brands.includes("heix") ||
+    brands.includes("hevc") ||
+    brands.includes("hevx") ||
+    brands.includes("heim") ||
+    brands.includes("heis")
+  ) {
+    return "heic";
+  }
+  if (brands.includes("heif") || brands.includes("mif1") || brands.includes("msf1")) return "heif";
+  return null;
+}
+
+function looksLikeSvg(buf: Buffer): boolean {
+  const snippet = buf.subarray(0, Math.min(buf.length, SVG_SCAN_MAX_BYTES)).toString("utf8");
+  const trimmed = snippet.replace(/^\uFEFF/, "").trimStart();
+  if (!trimmed) return false;
+  if (/^<svg[\s>]/i.test(trimmed)) return true;
+  if (/^<\?xml[\s\S]{0,2048}<svg[\s>]/i.test(trimmed)) return true;
+  return /<svg[\s>]/i.test(trimmed.slice(0, 4096));
+}
+
+function mimeForImageKind(kind: SourceImageKind): string {
+  switch (kind) {
+    case "png":
+      return "image/png";
+    case "jpeg":
+      return "image/jpeg";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    case "tiff":
+      return "image/tiff";
+    case "avif":
+      return "image/avif";
+    case "heic":
+      return "image/heic";
+    case "heif":
+      return "image/heif";
+    case "bmp":
+      return "image/bmp";
+    case "svg":
+      return "image/svg+xml";
+    case "ico":
+      return "image/x-icon";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function imageKindFromDeclaredOrFilename(declaredCt: string, filename: string): SourceImageKind {
+  const ct = declaredCt.toLowerCase();
+  const ext = extFromFilename(filename);
+  if (ct.includes("png") || ext === "png") return "png";
+  if (ct.includes("jpeg") || ct.includes("jpg") || ext === "jpg" || ext === "jpeg") return "jpeg";
+  if (ct.includes("webp") || ext === "webp") return "webp";
+  if (ct.includes("gif") || ext === "gif") return "gif";
+  if (ct.includes("tiff") || ext === "tif" || ext === "tiff") return "tiff";
+  if (ct.includes("avif") || ext === "avif") return "avif";
+  if (ct.includes("heic") || ext === "heic") return "heic";
+  if (ct.includes("heif") || ext === "heif") return "heif";
+  if (ct.includes("bmp") || ext === "bmp") return "bmp";
+  if (ct.includes("svg") || ext === "svg") return "svg";
+  if (ct.includes("x-icon") || ct.includes("vnd.microsoft.icon") || ext === "ico") return "ico";
+  return "unknown";
+}
+
+function looksLikeDocxZip(buf: Buffer): boolean {
+  if (!startsWithBytes(buf, [0x50, 0x4b, 0x03, 0x04])) return false;
+  const probe = buf.subarray(0, Math.min(buf.length, 512 * 1024)).toString("utf8");
+  return (
+    probe.includes("word/document.xml") ||
+    probe.includes("word/") ||
+    probe.includes("[Content_Types].xml")
+  );
+}
+
+function looksLikePagesZip(buf: Buffer, filename: string, declaredCt: string): boolean {
+  if (!startsWithBytes(buf, [0x50, 0x4b, 0x03, 0x04])) return false;
+  if (
+    filename.endsWith(".pages") ||
+    declaredCt.includes("apple.pages") ||
+    declaredCt.includes("iwork-pages")
+  ) {
+    return true;
+  }
+  const probe = buf.subarray(0, Math.min(buf.length, 512 * 1024)).toString("utf8").toLowerCase();
+  return (
+    probe.includes("index/document.iwa") ||
+    probe.includes("metadata/buildversionhistory.plist") ||
+    probe.includes("quicklook/preview.pdf")
+  );
+}
+
+function detectSourceInfo(rawBuf: Buffer, srcFilename: string, srcContentType: string): SourceInfo {
+  const filename = srcFilename.toLowerCase();
+  const declaredCt = (srcContentType || "").toLowerCase();
+
+  if (startsWithBytes(rawBuf, [0x25, 0x50, 0x44, 0x46, 0x2d])) {
+    return { kind: "pdf", imageKind: "unknown", mime: "application/pdf" };
+  }
+
+  if (looksLikePagesZip(rawBuf, filename, declaredCt)) {
+    return { kind: "pages", imageKind: "unknown", mime: "application/vnd.apple.pages" };
+  }
+
+  if (looksLikeDocxZip(rawBuf)) {
+    const mime = filename.endsWith(".doc")
+      ? "application/msword"
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    return { kind: "docx", imageKind: "unknown", mime };
+  }
+
+  if (startsWithBytes(rawBuf, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])) {
+    return { kind: "docx", imageKind: "unknown", mime: "application/msword" };
+  }
+
+  let imageKind: SourceImageKind = "unknown";
+  if (startsWithBytes(rawBuf, [0x89, 0x50, 0x4e, 0x47])) imageKind = "png";
+  else if (startsWithBytes(rawBuf, [0xff, 0xd8, 0xff])) imageKind = "jpeg";
+  else if (
+    rawBuf.length >= 12 &&
+    rawBuf.toString("ascii", 0, 4) === "RIFF" &&
+    rawBuf.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    imageKind = "webp";
+  } else if (startsWithBytes(rawBuf, [0x47, 0x49, 0x46, 0x38])) {
+    imageKind = "gif";
+  } else if (
+    startsWithBytes(rawBuf, [0x49, 0x49, 0x2a, 0x00]) ||
+    startsWithBytes(rawBuf, [0x4d, 0x4d, 0x00, 0x2a])
+  ) {
+    imageKind = "tiff";
+  } else if (startsWithBytes(rawBuf, [0x00, 0x00, 0x01, 0x00])) {
+    imageKind = "ico";
+  } else if (startsWithBytes(rawBuf, [0x42, 0x4d])) {
+    imageKind = "bmp";
+  } else {
+    const bmffKind = sniffIsoBmffKind(rawBuf);
+    if (bmffKind) imageKind = bmffKind;
+    else if (looksLikeSvg(rawBuf)) imageKind = "svg";
+    else imageKind = imageKindFromDeclaredOrFilename(declaredCt, filename);
+  }
+
+  // Extension/content-type fallback for document inputs if magic bytes were ambiguous.
+  if (
+    imageKind === "unknown" &&
+    (declaredCt.includes("pdf") || filename.endsWith(".pdf"))
+  ) {
+    return { kind: "pdf", imageKind: "unknown", mime: "application/pdf" };
+  }
+  if (
+    imageKind === "unknown" &&
+    (declaredCt.includes("apple.pages") ||
+      declaredCt.includes("iwork-pages") ||
+      filename.endsWith(".pages"))
+  ) {
+    return { kind: "pages", imageKind: "unknown", mime: "application/vnd.apple.pages" };
+  }
+  if (
+    imageKind === "unknown" &&
+    (declaredCt.includes("wordprocessingml") ||
+      declaredCt.includes("msword") ||
+      filename.endsWith(".docx") ||
+      filename.endsWith(".doc"))
+  ) {
+    const mime = filename.endsWith(".doc")
+      ? "application/msword"
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    return { kind: "docx", imageKind: "unknown", mime };
+  }
+
+  return {
+    kind: "image",
+    imageKind,
+    mime: imageKind === "unknown" ? (declaredCt || "application/octet-stream") : mimeForImageKind(imageKind),
+  };
+}
+
+function allowedOutputsForSourceInfo(sourceInfo: SourceInfo): OutputFormat[] {
+  if (sourceInfo.kind === "pdf") return ["PNG", "JPG", "WebP"];
+  if (sourceInfo.kind === "docx") return ["PNG", "JPG", "WebP", "PDF"];
+  if (sourceInfo.kind === "pages") return ["PNG", "JPG", "WebP", "PDF"];
+  if (sourceInfo.imageKind === "ico") {
+    return ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "BMP", "ICO", "PDF"];
+  }
+  return ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "BMP", "ICO", "SVG", "PDF"];
+}
+
+function assertSafeSvg(buf: Buffer): void {
+  const snippet = buf.subarray(0, Math.min(buf.length, SVG_SCAN_MAX_BYTES)).toString("utf8");
+  const trimmed = snippet.replace(/^\uFEFF/, "").trimStart();
+  if (!/<svg[\s>]/i.test(trimmed)) {
+    throw new Error("SVG input is invalid (missing <svg> root element)");
+  }
+
+  const blockedPatterns: Array<[RegExp, string]> = [
+    [/\b(?:xlink:)?href\s*=\s*["']\s*(?:https?:|\/\/|file:)/i, "external href reference"],
+    [/\bsrc\s*=\s*["']\s*(?:https?:|\/\/|file:)/i, "external src reference"],
+    [/@import\s+url\(\s*['"]?(?:https?:|\/\/|file:)/i, "external CSS import"],
+    [/<!DOCTYPE/i, "DOCTYPE declarations are blocked for SVG security"],
+    [/<!ENTITY/i, "XML entities are blocked for SVG security"],
+  ];
+  for (const [pattern, reason] of blockedPatterns) {
+    if (pattern.test(trimmed)) {
+      throw new Error(`SVG contains unsupported ${reason}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -424,6 +691,90 @@ async function docxToCanonicalPdf(buf: Buffer): Promise<CanonicalPdfResult> {
   }
 }
 
+async function pagesToCanonicalPdf(buf: Buffer): Promise<{ pdfBuffer: Buffer; meta: PagesPdfMeta }> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const os = require("os") as typeof import("os");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("path") as typeof import("path");
+  const id = `pages2pdf-${Date.now()}-${process.pid}`;
+  const inPath = path.join(os.tmpdir(), `${id}.pages`);
+  const outPath = path.join(os.tmpdir(), `${id}.pdf`);
+
+  try {
+    fs.writeFileSync(inPath, buf);
+    const run = runPythonScript(
+      "/var/task/pages_to_pdf.py",
+      [inPath, outPath],
+      120_000,
+      "PAGES→PDF conversion"
+    );
+    const result = fs.readFileSync(outPath);
+    if (!result || result.length === 0) throw new Error("pages_to_pdf produced an empty output file");
+    const meta = parseLastJsonObject(run.stdout) ?? parseLastJsonObject(run.stderr) ?? {};
+    const converter = typeof meta.converter === "string" ? meta.converter : "pages_preview";
+    const sourceEntry = typeof meta.source_entry === "string" ? meta.source_entry : "QuickLook/Preview.pdf";
+    const pageCount =
+      typeof meta.page_count === "number" && Number.isFinite(meta.page_count)
+        ? Math.max(0, Math.floor(meta.page_count))
+        : 0;
+    return {
+      pdfBuffer: result,
+      meta: {
+        converter,
+        sourceEntry,
+        pageCount,
+      },
+    };
+  } finally {
+    try { fs.unlinkSync(inPath); } catch { /* ignore */ }
+    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+  }
+}
+
+async function imageToPdfBuffer(args: {
+  rawBuf: Buffer;
+  sourceInfo: SourceInfo;
+  resizePct: number | null;
+  maxWidth: number | undefined;
+}): Promise<Buffer> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const os = require("os") as typeof import("os");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("path") as typeof import("path");
+  const id = `img2pdf-${Date.now()}-${process.pid}`;
+  const inPath = path.join(os.tmpdir(), `${id}.png`);
+  const outPath = path.join(os.tmpdir(), `${id}.pdf`);
+
+  try {
+    const preprocessed = await preprocessInput({
+      buf: args.rawBuf,
+      sourceInfo: args.sourceInfo,
+    });
+    // Normalize to PNG before Python conversion for consistent decoder behavior.
+    const normalizedPng = await renderNormalizedPng({
+      inputBuf: preprocessed,
+      sourceInfo: args.sourceInfo,
+      resizePct: args.resizePct,
+      maxWidth: args.maxWidth,
+    });
+
+    fs.writeFileSync(inPath, normalizedPng);
+    runPythonScript("/var/task/image_to_pdf.py", [inPath, outPath], 60_000, "Image→PDF conversion");
+    const result = fs.readFileSync(outPath);
+    if (!result || result.length === 0) {
+      throw new Error("Image→PDF conversion produced an empty output file");
+    }
+    return result;
+  } finally {
+    try { fs.unlinkSync(inPath); } catch { /* ignore */ }
+    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+  }
+}
+
 // ICO magic: bytes 0-3 = 00 00 01 00
 function isIco(buf: Buffer): boolean {
   return buf.length >= 6 && buf[0] === 0 && buf[1] === 0 && buf[2] === 1 && buf[3] === 0;
@@ -491,56 +842,162 @@ function extractLargestIcoFrame(buf: Buffer): Buffer {
   return bmpBuf;
 }
 
-async function preprocessInput(buf: Buffer): Promise<Buffer> {
-  if (isIco(buf)) {
+function sharpOptionsForSource(imageKind: SourceImageKind): { failOn: "none"; density?: number } {
+  if (imageKind === "svg") {
+    return { failOn: "none", density: SVG_DEFAULT_DENSITY };
+  }
+  return { failOn: "none" };
+}
+
+async function preprocessInput(args: { buf: Buffer; sourceInfo: SourceInfo }): Promise<Buffer> {
+  const { buf, sourceInfo } = args;
+  if (sourceInfo.imageKind === "svg") {
+    assertSafeSvg(buf);
+    return buf;
+  }
+  if (sourceInfo.imageKind === "ico" || isIco(buf)) {
     return extractLargestIcoFrame(buf);
+  }
+  if (sourceInfo.imageKind === "heic" || sourceInfo.imageKind === "heif") {
+    return heicToBuffer(buf);
   }
   return buf;
 }
 
-async function applyConversion(
-  rawBuf: Buffer,
-  fmt: ImageOutputFormat,
-  quality: number | null,
+async function applyResize(
+  pipeline: sharp.Sharp,
+  inputBuf: Buffer,
+  sourceInfo: SourceInfo,
   resizePct: number | null,
-  config: PresetConfig
-): Promise<Buffer> {
-  const inputBuf = await preprocessInput(rawBuf);
-
-  let pipeline = sharp(inputBuf, { failOn: "none" });
-
-  // Resize: explicit resizePct takes priority over preset maxWidth
+  maxWidth: number | undefined
+): Promise<sharp.Sharp> {
   if (typeof resizePct === "number" && resizePct < 100) {
-    const meta = await sharp(inputBuf).metadata();
+    const meta = await sharp(inputBuf, sharpOptionsForSource(sourceInfo.imageKind)).metadata();
     const origW = meta.width ?? 0;
     const origH = meta.height ?? 0;
     if (origW > 0 && origH > 0) {
       const newW = Math.max(1, Math.round(origW * resizePct / 100));
       const newH = Math.max(1, Math.round(origH * resizePct / 100));
-      pipeline = pipeline.resize(newW, newH, { fit: "fill" });
+      return pipeline.resize(newW, newH, { fit: "fill" });
     }
-  } else if (config.maxWidth) {
-    pipeline = pipeline.resize({ width: config.maxWidth, withoutEnlargement: true });
+    return pipeline;
+  }
+  if (maxWidth) {
+    return pipeline.resize({ width: maxWidth, withoutEnlargement: true });
+  }
+  return pipeline;
+}
+
+async function renderNormalizedPng(args: {
+  inputBuf: Buffer;
+  sourceInfo: SourceInfo;
+  resizePct: number | null;
+  maxWidth: number | undefined;
+}): Promise<Buffer> {
+  let pipeline = sharp(args.inputBuf, sharpOptionsForSource(args.sourceInfo.imageKind));
+  pipeline = await applyResize(pipeline, args.inputBuf, args.sourceInfo, args.resizePct, args.maxWidth);
+  return pipeline.png({ compressionLevel: NORMALIZED_PNG_COMPRESSION }).toBuffer();
+}
+
+async function convertWithPythonSpecialEncoder(inputPng: Buffer, target: "ico" | "bmp"): Promise<Buffer> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const os = require("os") as typeof import("os");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("path") as typeof import("path");
+  const id = `img-special-${Date.now()}-${process.pid}`;
+  const inPath = path.join(os.tmpdir(), `${id}.png`);
+  const outPath = path.join(os.tmpdir(), `${id}.${target}`);
+
+  try {
+    fs.writeFileSync(inPath, inputPng);
+    runPythonScript(
+      "/var/task/image_special_convert.py",
+      [inPath, outPath, target],
+      60_000,
+      `Image→${target.toUpperCase()} conversion`
+    );
+    const result = fs.readFileSync(outPath);
+    if (!result || result.length === 0) {
+      throw new Error(`Image→${target.toUpperCase()} conversion produced an empty output file`);
+    }
+    return result;
+  } finally {
+    try { fs.unlinkSync(inPath); } catch { /* ignore */ }
+    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+  }
+}
+
+function pngToEmbeddedSvg(pngBuf: Buffer, width: number, height: number): Buffer {
+  const w = Math.max(1, Math.floor(width));
+  const h = Math.max(1, Math.floor(height));
+  const b64 = pngBuf.toString("base64");
+  const xml =
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" version="1.1">` +
+    `<image width="${w}" height="${h}" href="data:image/png;base64,${b64}"/>` +
+    `</svg>\n`;
+  return Buffer.from(xml, "utf8");
+}
+
+async function applyConversion(args: {
+  rawBuf: Buffer;
+  sourceInfo: SourceInfo;
+  fmt: ImageOutputFormat;
+  quality: number | null;
+  resizePct: number | null;
+  config: PresetConfig;
+}): Promise<Buffer> {
+  const inputBuf = await preprocessInput({
+    buf: args.rawBuf,
+    sourceInfo: args.sourceInfo,
+  });
+
+  if (args.fmt === "ICO" || args.fmt === "BMP" || args.fmt === "SVG") {
+    const normalizedPng = await renderNormalizedPng({
+      inputBuf,
+      sourceInfo: args.sourceInfo,
+      resizePct: args.resizePct,
+      maxWidth: args.config.maxWidth,
+    });
+    if (args.fmt === "ICO") {
+      return convertWithPythonSpecialEncoder(normalizedPng, "ico");
+    }
+    if (args.fmt === "BMP") {
+      return convertWithPythonSpecialEncoder(normalizedPng, "bmp");
+    }
+    const meta = await sharp(normalizedPng, { failOn: "none" }).metadata();
+    return pngToEmbeddedSvg(normalizedPng, meta.width ?? 1, meta.height ?? 1);
   }
 
-  switch (fmt) {
+  let pipeline = sharp(inputBuf, sharpOptionsForSource(args.sourceInfo.imageKind));
+  pipeline = await applyResize(
+    pipeline,
+    inputBuf,
+    args.sourceInfo,
+    args.resizePct,
+    args.config.maxWidth
+  );
+
+  switch (args.fmt) {
     case "PNG":
-      pipeline = pipeline.png({ compressionLevel: config.pngCompressionLevel });
+      pipeline = pipeline.png({ compressionLevel: args.config.pngCompressionLevel });
       break;
     case "JPG": {
-      const jpegQ = typeof quality === "number" && Number.isFinite(quality)
-        ? Math.max(1, Math.min(100, Math.floor(quality))) : config.jpegQuality;
-      pipeline = pipeline.jpeg({
+      const jpegQ = typeof args.quality === "number" && Number.isFinite(args.quality)
+        ? Math.max(1, Math.min(100, Math.floor(args.quality))) : args.config.jpegQuality;
+      pipeline = pipeline.flatten({ background: "#ffffff" }).jpeg({
         quality: jpegQ,
-        progressive: config.jpegProgressive,
-        chromaSubsampling: config.jpegChromaSubsampling,
+        progressive: args.config.jpegProgressive,
+        chromaSubsampling: args.config.jpegChromaSubsampling,
         mozjpeg: true,
       });
       break;
     }
     case "WebP": {
-      const webpQ = typeof quality === "number" && Number.isFinite(quality)
-        ? Math.max(1, Math.min(100, Math.floor(quality))) : config.webpQuality;
+      const webpQ = typeof args.quality === "number" && Number.isFinite(args.quality)
+        ? Math.max(1, Math.min(100, Math.floor(args.quality))) : args.config.webpQuality;
       pipeline = pipeline.webp({ quality: webpQ });
       break;
     }
@@ -548,14 +1005,14 @@ async function applyConversion(
       pipeline = pipeline.gif();
       break;
     case "TIFF": {
-      const tiffQ = typeof quality === "number" && Number.isFinite(quality)
-        ? Math.max(1, Math.min(100, Math.floor(quality))) : config.tiffQuality;
+      const tiffQ = typeof args.quality === "number" && Number.isFinite(args.quality)
+        ? Math.max(1, Math.min(100, Math.floor(args.quality))) : args.config.tiffQuality;
       pipeline = pipeline.tiff({ quality: tiffQ });
       break;
     }
     case "AVIF": {
-      const avifQ = typeof quality === "number" && Number.isFinite(quality)
-        ? Math.max(1, Math.min(100, Math.floor(quality))) : config.webpQuality;
+      const avifQ = typeof args.quality === "number" && Number.isFinite(args.quality)
+        ? Math.max(1, Math.min(100, Math.floor(args.quality))) : args.config.webpQuality;
       pipeline = pipeline.avif({ quality: avifQ });
       break;
     }
@@ -646,7 +1103,7 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
   const PK = `USER#${userSub}`;
   const outSK = `FILE#${projectId}#${outputFileId}`;
 
-  const validFormats: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "PDF"];
+  const validFormats: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "BMP", "ICO", "SVG", "PDF"];
   if (!validFormats.includes(outputFormat)) {
     await updateOutputRow({
       pk: PK,
@@ -682,17 +1139,39 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     );
     const rawBuf = await asBuffer(getRes.Body);
 
-    // 3b & 4. Convert — branch on output format first.
-    const srcFilenameLow = srcFilename.toLowerCase();
-    const srcIsPdf = srcContentType.includes("pdf") || srcFilenameLow.endsWith(".pdf");
-    const srcIsDocx =
-      srcContentType.includes("wordprocessingml") ||
-      srcContentType.includes("msword") ||
-      srcFilenameLow.endsWith(".docx") ||
-      srcFilenameLow.endsWith(".doc");
+    // 3b. Detect source type by content, not only filename/content-type metadata.
+    const sourceInfo = detectSourceInfo(rawBuf, srcFilename, srcContentType);
+    const srcIsPdf = sourceInfo.kind === "pdf";
+    const srcIsDocx = sourceInfo.kind === "docx";
+    const srcIsPages = sourceInfo.kind === "pages";
+    const allowedOutputs = allowedOutputsForSourceInfo(sourceInfo);
 
-    if ((srcIsPdf || srcIsDocx) && outputFormat !== "PDF" && !isRasterImageFormat(outputFormat)) {
-      throw new Error(`For PDF/DOCX image conversion, only PNG/JPG/WebP are supported (requested ${outputFormat})`);
+    if (sourceInfo.kind === "image" && sourceInfo.imageKind === "unknown") {
+      throw new Error(
+        `Unsupported or unrecognized source media type (declared content-type: ${srcContentType || "unknown"})`
+      );
+    }
+    if (!allowedOutputs.includes(outputFormat)) {
+      throw new Error(
+        `Unsupported conversion for detected source type ${sourceInfo.kind}/${sourceInfo.imageKind}: ${outputFormat}`
+      );
+    }
+
+    if (sourceInfo.mime && sourceInfo.mime !== srcContentType) {
+      console.log(
+        JSON.stringify({
+          event: "source_mime_normalized",
+          sourceFileId,
+          declaredContentType: srcContentType || "unknown",
+          detectedContentType: sourceInfo.mime,
+          detectedKind: sourceInfo.kind,
+          detectedImageKind: sourceInfo.imageKind,
+        })
+      );
+    }
+
+    if ((srcIsPdf || srcIsDocx || srcIsPages) && outputFormat !== "PDF" && !isRasterImageFormat(outputFormat)) {
+      throw new Error(`For PDF/DOCX/PAGES image conversion, only PNG/JPG/WebP are supported (requested ${outputFormat})`);
     }
 
     let outputBuf: Buffer;
@@ -702,6 +1181,8 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     let pageCount: number | undefined;
     let outputCount: number | undefined;
     let canonicalPdf: CanonicalPdfResult | undefined;
+    let pagesCanonicalPdf: Buffer | undefined;
+    let pagesCanonicalMeta: PagesPdfMeta | undefined;
 
     if (srcIsDocx) {
       canonicalPdf = await docxToCanonicalPdf(rawBuf);
@@ -726,34 +1207,64 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
         })
       );
     }
-
-    if (outputFormat === "PDF") {
-      if (!srcIsDocx) {
-        throw new Error(
-          `PDF output is only supported for DOCX input (received content-type: ${srcContentType})`
-        );
-      }
-      if (!canonicalPdf) {
-        throw new Error("DOCX canonical PDF renderer did not produce a PDF");
-      }
-      outputBuf = canonicalPdf.pdfBuffer;
-      pageCount = canonicalPdf.meta.pageCount;
-      outputCount = canonicalPdf.meta.pageCount;
+    if (srcIsPages) {
+      const pages = await pagesToCanonicalPdf(rawBuf);
+      pagesCanonicalPdf = pages.pdfBuffer;
+      pagesCanonicalMeta = pages.meta;
       console.log(
         JSON.stringify({
-          event: "fidelity_metrics",
-          sourceType: "DOCX",
-          target: "PDF",
-          engine: canonicalPdf.meta.converter,
-          libreofficeVersion: canonicalPdf.meta.libreofficeVersion,
-          pageCount: canonicalPdf.meta.pageCount,
-          metric: "canonical_pdf_identity",
-          maxMae: 0,
-          avgMae: 0,
-          threshold: 0,
+          event: "pages_canonical_pdf_ready",
+          sourceFileId,
+          outputFileId,
+          converter: pages.meta.converter,
+          sourceEntry: pages.meta.sourceEntry,
+          pageCount: pages.meta.pageCount,
         })
       );
-    } else if ((srcIsPdf || srcIsDocx) && isRasterImageFormat(outputFormat)) {
+    }
+
+    if (outputFormat === "PDF") {
+      if (srcIsDocx) {
+        if (!canonicalPdf) {
+          throw new Error("DOCX canonical PDF renderer did not produce a PDF");
+        }
+        outputBuf = canonicalPdf.pdfBuffer;
+        pageCount = canonicalPdf.meta.pageCount;
+        outputCount = canonicalPdf.meta.pageCount;
+        console.log(
+          JSON.stringify({
+            event: "fidelity_metrics",
+            sourceType: "DOCX",
+            target: "PDF",
+            engine: canonicalPdf.meta.converter,
+            libreofficeVersion: canonicalPdf.meta.libreofficeVersion,
+            pageCount: canonicalPdf.meta.pageCount,
+            metric: "canonical_pdf_identity",
+            maxMae: 0,
+            avgMae: 0,
+            threshold: 0,
+          })
+        );
+      } else if (srcIsPages) {
+        if (!pagesCanonicalPdf || !pagesCanonicalMeta) {
+          throw new Error("PAGES canonical PDF renderer did not produce a PDF");
+        }
+        outputBuf = pagesCanonicalPdf;
+        pageCount = pagesCanonicalMeta.pageCount;
+        outputCount = pagesCanonicalMeta.pageCount;
+      } else if (srcIsPdf) {
+        throw new Error(
+          `PDF output for PDF source is not supported (received content-type: ${sourceInfo.mime || srcContentType})`
+        );
+      } else {
+        outputBuf = await imageToPdfBuffer({
+          rawBuf,
+          sourceInfo,
+          resizePct,
+          maxWidth: config.maxWidth,
+        });
+      }
+    } else if ((srcIsPdf || srcIsDocx || srcIsPages) && isRasterImageFormat(outputFormat)) {
       const qualityForPages =
         outputFormat === "JPG"
           ? (typeof quality === "number" && Number.isFinite(quality)
@@ -764,8 +1275,13 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
                 ? Math.max(1, Math.min(100, Math.floor(quality)))
                 : config.webpQuality)
             : 90;
+      const sourcePdfBuffer =
+        srcIsDocx ? canonicalPdf?.pdfBuffer : srcIsPages ? pagesCanonicalPdf : rawBuf;
+      if (!sourcePdfBuffer) {
+        throw new Error("Document image rendering did not receive canonical PDF bytes");
+      }
       const rendered = await documentToImagesZip({
-        buf: srcIsDocx ? canonicalPdf!.pdfBuffer : rawBuf,
+        buf: sourcePdfBuffer,
         sourceExt: "pdf",
         sourceFilename: srcFilename,
         outputFormat,
@@ -796,18 +1312,14 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
       }
     } else {
       // Image output for non-document inputs.
-      let inputBuf: Buffer;
-      if (
-        srcContentType.includes("heic") ||
-        srcContentType.includes("heif") ||
-        srcFilenameLow.endsWith(".heic") ||
-        srcFilenameLow.endsWith(".heif")
-      ) {
-        inputBuf = await heicToBuffer(rawBuf);
-      } else {
-        inputBuf = rawBuf;
-      }
-      outputBuf = await applyConversion(inputBuf, outputFormat, quality, resizePct, config);
+      outputBuf = await applyConversion({
+        rawBuf,
+        sourceInfo,
+        fmt: outputFormat,
+        quality,
+        resizePct,
+        config,
+      });
     }
 
     const outputKey = `private/${userSub}/${projectId}/output/${outputFileId}/${outputFilename}`;

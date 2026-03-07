@@ -72,7 +72,10 @@ RUN fc-cache -f
 # Converter scripts called from Node via subprocess.
 COPY docx_sanitize.py /var/task/docx_sanitize.py
 COPY docx_to_pdf.py /var/task/docx_to_pdf.py
+COPY pages_to_pdf.py /var/task/pages_to_pdf.py
 COPY document_to_images_zip.py /var/task/document_to_images_zip.py
+COPY image_to_pdf.py /var/task/image_to_pdf.py
+COPY image_special_convert.py /var/task/image_special_convert.py
 
 ENTRYPOINT ["/usr/local/bin/npx", "aws-lambda-ric"]
 CMD ["index.handler"]
