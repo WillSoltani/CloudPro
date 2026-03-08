@@ -2,6 +2,7 @@
 FROM node:20-slim AS builder
 WORKDIR /app
 COPY index.ts package*.json ./
+COPY lib ./lib
 RUN npm install -g esbuild
 RUN esbuild index.ts \
     --bundle --platform=node --target=node20 \

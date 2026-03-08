@@ -3,21 +3,16 @@ import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import sharp from "sharp";
+import {
+  contentTypeFor,
+  extForFormat,
+  isImageOutputFormat,
+  replaceExt,
+  stripExt,
+  type ImageOutputFormat,
+  type OutputFormat,
+} from "./lib/formats";
 
-type OutputFormat =
-  | "PNG"
-  | "JPG"
-  | "WebP"
-  | "GIF"
-  | "TIFF"
-  | "AVIF"
-  | "HEIC"
-  | "HEIF"
-  | "BMP"
-  | "ICO"
-  | "SVG"
-  | "PDF";
-type ImageOutputFormat = Exclude<OutputFormat, "PDF">;
 type DocumentImageOutputFormat = ImageOutputFormat;
 type OutputPackaging = "single" | "zip";
 type SourceDocExt = "pdf" | "docx" | "doc";
@@ -144,56 +139,6 @@ function presetConfig(preset: string | null): PresetConfig {
         jpegProgressive: false, jpegChromaSubsampling: "4:2:0",
       };
   }
-}
-
-function extForFormat(fmt: OutputFormat): string {
-  const map: Record<OutputFormat, string> = {
-    PNG: "png",
-    JPG: "jpg",
-    WebP: "webp",
-    GIF: "gif",
-    TIFF: "tiff",
-    AVIF: "avif",
-    HEIC: "heic",
-    HEIF: "heif",
-    BMP: "bmp",
-    ICO: "ico",
-    SVG: "svg",
-    PDF: "pdf",
-  };
-  return map[fmt];
-}
-
-function contentTypeFor(fmt: OutputFormat): string {
-  const map: Record<OutputFormat, string> = {
-    PNG: "image/png",
-    JPG: "image/jpeg",
-    WebP: "image/webp",
-    GIF: "image/gif",
-    TIFF: "image/tiff",
-    AVIF: "image/avif",
-    HEIC: "image/heic",
-    HEIF: "image/heif",
-    BMP: "image/bmp",
-    ICO: "image/x-icon",
-    SVG: "image/svg+xml",
-    PDF: "application/pdf",
-  };
-  return map[fmt];
-}
-
-function replaceExt(filename: string, ext: string): string {
-  const dot = filename.lastIndexOf(".");
-  return (dot < 0 ? filename : filename.slice(0, dot)) + "." + ext;
-}
-
-function stripExt(filename: string): string {
-  const dot = filename.lastIndexOf(".");
-  return dot < 0 ? filename : filename.slice(0, dot);
-}
-
-function isImageOutputFormat(fmt: OutputFormat): fmt is DocumentImageOutputFormat {
-  return fmt !== "PDF";
 }
 
 function isUint8Array(v: unknown): v is Uint8Array {

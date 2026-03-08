@@ -6,42 +6,31 @@ import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 import { ddbDoc, TABLE_NAME, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 import {
-  OUTPUT_FORMATS,
   allowedOutputFormatsForFile,
   sourceLabelFromFilenameOrContentType,
-  type OutputFormat,
 } from "@/app/app/_lib/conversion-support";
+import {
+  type ConversionJobInput,
+  type ConvertBody,
+  type ConvertResult,
+  contentTypeFor,
+  extForFormat,
+  getErrorMessage,
+  isImageOutput,
+  isRawConvertibleStatus,
+  nowIso,
+  parseConversionJob,
+  replaceExt,
+  safeExecutionName,
+  str,
+  stripExt,
+  toDbFileItem,
+  isRecord,
+} from "./_lib/convert-route-utils";
 
 export const runtime = "nodejs";
 
-type FileKind = "raw" | "output";
-
-type ConversionJobInput = {
-  fileId: string;
-  outputFormat: OutputFormat;
-  quality: number | null;
-  preset: string | null;
-  resizePct: number | null;
-};
-
-type ConvertBody = {
-  conversions?: unknown[];
-};
-
 type ProjectLookup = { status: string };
-
-type DbFileItem = {
-  PK: string; SK: string; entity: "FILE"; kind: FileKind;
-  fileId: string; projectId: string; userSub: string;
-  filename: string; contentType: string; sizeBytes: number | null;
-  bucket: string; key: string; status: string; createdAt: string; updatedAt: string;
-};
-
-type ConvertResult =
-  | { fileId: string; ok: true; outputFileId: string }
-  | { fileId: string; ok: false; error: string };
-
-function nowIso() { return new Date().toISOString(); }
 
 function jsonError(status: number, error: string, detail?: string) {
   return NextResponse.json(
@@ -50,49 +39,6 @@ function jsonError(status: number, error: string, detail?: string) {
   );
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
-function str(v: unknown): string { return typeof v === "string" ? v : ""; }
-
-function numOrNull(v: unknown): number | null {
-  if (typeof v !== "number") return null;
-  if (!Number.isFinite(v) || v < 0) return null;
-  return Math.floor(v);
-}
-
-function getErrorMessage(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  if (typeof e === "string") return e;
-  try { return JSON.stringify(e); } catch { return "unknown error"; }
-}
-
-function parseOutputFormat(v: unknown): OutputFormat | null {
-  if (typeof v !== "string") return null;
-  const up = v.trim();
-  return OUTPUT_FORMATS.includes(up as OutputFormat) ? (up as OutputFormat) : null;
-}
-
-function normalizeKind(v: unknown): FileKind { return v === "output" ? "output" : "raw"; }
-
-function toDbFileItem(raw: unknown): DbFileItem | null {
-  if (!isRecord(raw)) return null;
-  const PK = str(raw.PK); const SK = str(raw.SK);
-  const fileId = str(raw.fileId); const projectId = str(raw.projectId);
-  const userSub = str(raw.userSub); const filename = str(raw.filename);
-  const bucket = str(raw.bucket); const key = str(raw.key);
-  if (!PK || !SK || !fileId || !projectId || !userSub || !filename || !bucket || !key) return null;
-  const createdAt = str(raw.createdAt) || nowIso();
-  return {
-    PK, SK, entity: "FILE", kind: normalizeKind(raw.kind),
-    fileId, projectId, userSub, filename,
-    contentType: str(raw.contentType) || "application/octet-stream",
-    sizeBytes: numOrNull(raw.sizeBytes), bucket, key,
-    status: str(raw.status) || "queued",
-    createdAt, updatedAt: str(raw.updatedAt) || createdAt,
-  };
-}
 
 async function fetchProjectById(userSub: string, projectId: string): Promise<ProjectLookup | null> {
   const PK = `USER#${userSub}`;
@@ -118,80 +64,6 @@ async function fetchProjectById(userSub: string, projectId: string): Promise<Pro
   return null;
 }
 
-function isRawConvertibleStatus(status: string): boolean {
-  const v = (status || "").toLowerCase();
-  return v === "queued" || v === "done";
-}
-
-function extForFormat(fmt: OutputFormat): string {
-  const map: Record<OutputFormat, string> = {
-    PNG: "png",
-    JPG: "jpg",
-    WebP: "webp",
-    GIF: "gif",
-    TIFF: "tiff",
-    AVIF: "avif",
-    HEIC: "heic",
-    HEIF: "heif",
-    BMP: "bmp",
-    ICO: "ico",
-    SVG: "svg",
-    PDF: "pdf",
-  };
-  return map[fmt];
-}
-
-function contentTypeFor(fmt: OutputFormat): string {
-  const map: Record<OutputFormat, string> = {
-    PNG: "image/png",
-    JPG: "image/jpeg",
-    WebP: "image/webp",
-    GIF: "image/gif",
-    TIFF: "image/tiff",
-    AVIF: "image/avif",
-    HEIC: "image/heic",
-    HEIF: "image/heif",
-    BMP: "image/bmp",
-    ICO: "image/x-icon",
-    SVG: "image/svg+xml",
-    PDF: "application/pdf",
-  };
-  return map[fmt];
-}
-
-function replaceExt(filename: string, ext: string): string {
-  const dot = filename.lastIndexOf(".");
-  return (dot < 0 ? filename : filename.slice(0, dot)) + "." + ext;
-}
-
-function stripExt(filename: string): string {
-  const dot = filename.lastIndexOf(".");
-  return dot < 0 ? filename : filename.slice(0, dot);
-}
-
-function isImageOutput(fmt: OutputFormat): fmt is Exclude<OutputFormat, "PDF"> {
-  return fmt !== "PDF";
-}
-
-function safeExecutionName(projectId: string, outFileId: string): string {
-  return `p-${projectId}-o-${outFileId}`.replace(/[^0-9A-Za-z-_]/g, "_").slice(0, 80);
-}
-
-function parseConversionJob(raw: unknown): ConversionJobInput | null {
-  if (!isRecord(raw)) return null;
-  const fileId = str(raw.fileId);
-  if (!fileId.trim()) return null;
-  const outputFormat = parseOutputFormat(raw.outputFormat);
-  if (!outputFormat) return null;
-  const quality =
-    typeof raw.quality === "number" && Number.isFinite(raw.quality)
-      ? Math.max(1, Math.min(100, Math.floor(raw.quality))) : null;
-  const preset = typeof raw.preset === "string" ? raw.preset.slice(0, 40) : null;
-  const resizePct =
-    typeof raw.resizePct === "number" && Number.isFinite(raw.resizePct)
-      ? Math.max(10, Math.min(100, Math.floor(raw.resizePct))) : null;
-  return { fileId: fileId.trim(), outputFormat, quality, preset, resizePct };
-}
 
 export async function POST(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {

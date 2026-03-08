@@ -40,11 +40,16 @@ const dynamodb = __importStar(require("aws-cdk-lib/aws-dynamodb"));
 const s3 = __importStar(require("aws-cdk-lib/aws-s3"));
 const kms = __importStar(require("aws-cdk-lib/aws-kms"));
 const lambda = __importStar(require("aws-cdk-lib/aws-lambda"));
-const lambdaNodejs = __importStar(require("aws-cdk-lib/aws-lambda-nodejs"));
 const sfn = __importStar(require("aws-cdk-lib/aws-stepfunctions"));
 const sfnTasks = __importStar(require("aws-cdk-lib/aws-stepfunctions-tasks"));
 const path = __importStar(require("path"));
 class StorageStack extends cdk.Stack {
+    table;
+    rawBucket;
+    outputBucket;
+    kmsKey;
+    convertWorker;
+    convertStateMachine;
     constructor(scope, id, props) {
         super(scope, id, props);
         // KMS key for both buckets
@@ -70,7 +75,7 @@ class StorageStack extends cdk.Stack {
             versioned: true,
             cors: [
                 {
-                    allowedOrigins: ["http://localhost:3000"],
+                    allowedOrigins: ["http://localhost:3000", "https://soltani.org", "https://www.soltani.org"],
                     allowedMethods: [
                         s3.HttpMethods.PUT,
                         s3.HttpMethods.POST,
@@ -95,7 +100,7 @@ class StorageStack extends cdk.Stack {
             versioned: true,
             cors: [
                 {
-                    allowedOrigins: ["http://localhost:3000"],
+                    allowedOrigins: ["http://localhost:3000", "https://soltani.org", "https://www.soltani.org"],
                     allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD],
                     allowedHeaders: ["*"],
                     exposedHeaders: ["ETag"],
@@ -106,47 +111,21 @@ class StorageStack extends cdk.Stack {
             removalPolicy: cdk.RemovalPolicy.DESTROY,
             autoDeleteObjects: true,
         });
-        /**
-         * IMPORTANT:
-         * When CDK executes, it runs the compiled JS from infra/dist/.
-         * __dirname will be ".../infra/dist/lib" at synth time.
-         * So we hop back up to ".../infra" and reference the *source* TS file.
-         */
-        const infraRoot = path.resolve(__dirname, "..", ".."); // -> infra/
-        const workerEntry = path.join(infraRoot, "lib", "lambdas", "convert-worker", "index.ts");
-        const lockFile = path.join(infraRoot, "lib", "lambdas", "convert-worker", "package-lock.json"); // Convert Worker Lambda (Sharp)
+        // With ts-node, __dirname is infra/lib — go up one level to reach infra/
+        const infraRoot = path.resolve(__dirname, "..");
+        const workerDir = path.join(infraRoot, "lib", "lambdas", "convert-worker");
+        // Convert Worker Lambda — container image to support large native deps
+        // (pdfjs-dist alone is ~220 MB unzipped, exceeding the 250 MB zip limit)
         // --------------------------
-        this.convertWorker = new lambdaNodejs.NodejsFunction(this, "ConvertWorker", {
-            runtime: lambda.Runtime.NODEJS_20_X,
+        this.convertWorker = new lambda.DockerImageFunction(this, "ConvertWorker", {
+            code: lambda.DockerImageCode.fromImageAsset(workerDir),
             /**
-             * Keep x86_64 for now to avoid sharp-linux-arm64 packaging pain.
-             * (You can switch to ARM later once everything is stable.)
+             * x86_64 matches the linux/amd64 platform in the Dockerfile.
+             * Native packages (sharp, @napi-rs/canvas) are compiled for linux-x64-gnu.
              */
             architecture: lambda.Architecture.X86_64,
-            entry: workerEntry,
-            handler: "handler",
-            /**
-             * NodejsFunction will run `npm ci` during bundling using this lockfile.
-             * If sharp versions drift, bundling will fail. We will fix that next.
-             */
-            depsLockFilePath: lockFile,
-            memorySize: 1024,
+            memorySize: 2048,
             timeout: cdk.Duration.minutes(2),
-            bundling: {
-                forceDockerBundling: true,
-                /**
-                 * Force bundling for Amazon Linux x86_64 so sharp matches Lambda.
-                 */
-                platform: "linux/amd64",
-                /**
-                 * Don't bundle AWS SDK (provided in Lambda runtime). Keep bundle small.
-                 */
-                externalModules: ["@aws-sdk/*"],
-                /**
-                 * Install sharp in the bundle so native binary exists in /var/task/node_modules/sharp
-                 */
-                nodeModules: ["sharp"],
-            },
             environment: {
                 SECURE_DOC_TABLE: this.table.tableName,
                 RAW_BUCKET: this.rawBucket.bucketName,
@@ -166,7 +145,15 @@ class StorageStack extends cdk.Stack {
             payloadResponseOnly: true,
             retryOnServiceExceptions: true,
         });
+        // Retry transient Lambda failures (throttling, service errors) up to 2 times
+        invokeWorker.addRetry({
+            errors: ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException", "Lambda.TooManyRequestsException"],
+            maxAttempts: 2,
+            interval: cdk.Duration.seconds(2),
+            backoffRate: 2,
+        });
         this.convertStateMachine = new sfn.StateMachine(this, "ConvertStateMachine", {
+            stateMachineType: sfn.StateMachineType.STANDARD,
             definitionBody: sfn.DefinitionBody.fromChainable(invokeWorker),
             timeout: cdk.Duration.minutes(5),
         });
