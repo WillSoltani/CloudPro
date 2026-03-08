@@ -26,12 +26,12 @@ export function CreateProjectModal(props: {
           />
 
           <motion.div
-            className="fixed left-1/2 top-1/2 z-60 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2"
+            className="fixed inset-x-3 bottom-3 z-60 sm:left-1/2 sm:top-1/2 sm:inset-x-auto sm:w-[92vw] sm:max-w-lg sm:-translate-x-1/2 sm:-translate-y-1/2"
             initial={{ opacity: 0, y: 10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.98 }}
           >
-            <div className="rounded-[32px] border border-white/10 bg-[#0b1224]/95 p-6 shadow-[0_30px_90px_rgba(0,0,0,0.65)] backdrop-blur">
+            <div className="rounded-[28px] border border-white/10 bg-[#0b1224]/95 p-4 shadow-[0_30px_90px_rgba(0,0,0,0.65)] backdrop-blur sm:rounded-[32px] sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
                   <div className="grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/6">

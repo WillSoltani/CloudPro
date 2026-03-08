@@ -225,7 +225,7 @@ export async function uploadFilledPdfBytes(
       method: "POST",
       headers: { "Content-Type": "application/pdf" },
       cache: "no-store",
-      body: bytes,
+      body: bytes as unknown as BodyInit,
     }
   );
   if (!res.ok) {

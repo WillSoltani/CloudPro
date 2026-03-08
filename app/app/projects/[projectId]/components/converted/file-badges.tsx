@@ -50,7 +50,7 @@ export function Checkbox({ checked, onClick, label }: { checked: boolean; onClic
       onClick={onClick}
       aria-label={label}
       className={[
-        "grid h-5 w-5 shrink-0 place-items-center rounded-md border transition",
+        "grid h-6 w-6 shrink-0 place-items-center rounded-md border transition",
         checked
           ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
           : "border-white/15 bg-white/5 text-transparent hover:bg-white/10",

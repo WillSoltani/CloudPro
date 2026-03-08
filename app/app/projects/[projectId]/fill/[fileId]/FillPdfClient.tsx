@@ -10,6 +10,7 @@ import {
   type CSSProperties,
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   ChevronLeft,
@@ -22,6 +23,7 @@ import {
   Search,
   Signature,
   Undo2,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -206,6 +208,7 @@ type GroupBuilder = {
 type DrawMode = "draw" | "type" | "upload";
 
 type FieldFilter = "all" | "required" | "completed";
+type MobilePanel = "tools" | "fields" | "inspect";
 
 type SignatureModalProps = {
   kind: SignatureKind | null;
@@ -897,25 +900,32 @@ function SignatureModal({ kind, onClose, onSave }: SignatureModalProps) {
     });
   }, [kind, onSave, typedValue]);
 
-  const startDrawing = useCallback((event: ReactMouseEvent<HTMLCanvasElement>) => {
+  const canvasPointFromEvent = useCallback((event: { clientX: number; clientY: number }) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const rect = canvas.getBoundingClientRect();
     const x = ((event.clientX - rect.left) * canvas.width) / Math.max(rect.width, 1);
     const y = ((event.clientY - rect.top) * canvas.height) / Math.max(rect.height, 1);
-
-    drawingRef.current = { active: true, x, y };
+    return { x, y };
   }, []);
 
-  const moveDrawing = useCallback((event: ReactMouseEvent<HTMLCanvasElement>) => {
+  const startDrawing = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    const point = canvasPointFromEvent(event);
+    if (!point) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drawingRef.current = { active: true, x: point.x, y: point.y };
+  }, [canvasPointFromEvent]);
+
+  const moveDrawing = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current.active) return;
+    event.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) * canvas.width) / Math.max(rect.width, 1);
-    const y = ((event.clientY - rect.top) * canvas.height) / Math.max(rect.height, 1);
+    const point = canvasPointFromEvent(event);
+    if (!point) return;
 
     ctx.strokeStyle = "#0f172a";
     ctx.lineWidth = 2.5;
@@ -923,14 +933,17 @@ function SignatureModal({ kind, onClose, onSave }: SignatureModalProps) {
     ctx.lineJoin = "round";
     ctx.beginPath();
     ctx.moveTo(drawingRef.current.x, drawingRef.current.y);
-    ctx.lineTo(x, y);
+    ctx.lineTo(point.x, point.y);
     ctx.stroke();
 
-    drawingRef.current.x = x;
-    drawingRef.current.y = y;
-  }, []);
+    drawingRef.current.x = point.x;
+    drawingRef.current.y = point.y;
+  }, [canvasPointFromEvent]);
 
-  const endDrawing = useCallback(() => {
+  const endDrawing = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     drawingRef.current.active = false;
   }, []);
 
@@ -938,14 +951,14 @@ function SignatureModal({ kind, onClose, onSave }: SignatureModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4"
+      className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/75 p-2 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={kind === "signature" ? "Create signature" : "Create initials"}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-900/95 p-5 shadow-[0_30px_90px_rgba(0,0,0,0.65)]"
+        className="max-h-[92dvh] w-full max-w-2xl overflow-auto rounded-[26px] border border-white/10 bg-slate-900/95 p-4 shadow-[0_30px_90px_rgba(0,0,0,0.65)] sm:rounded-3xl sm:p-5"
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="text-lg font-semibold text-slate-100">
@@ -955,7 +968,7 @@ function SignatureModal({ kind, onClose, onSave }: SignatureModalProps) {
           Draw directly or upload an image. Everything stays in your browser.
         </p>
 
-        <div className="mt-4 inline-flex rounded-xl border border-white/10 bg-white/5 p-1 text-sm">
+        <div className="mt-4 inline-flex flex-wrap rounded-xl border border-white/10 bg-white/5 p-1 text-sm">
           <button
             type="button"
             onClick={() => setMode("draw")}
@@ -1000,11 +1013,11 @@ function SignatureModal({ kind, onClose, onSave }: SignatureModalProps) {
               ref={canvasRef}
               width={980}
               height={260}
-              onMouseDown={startDrawing}
-              onMouseMove={moveDrawing}
-              onMouseUp={endDrawing}
-              onMouseLeave={endDrawing}
-              className="w-full rounded-2xl border border-slate-300/30 bg-white"
+              onPointerDown={startDrawing}
+              onPointerMove={moveDrawing}
+              onPointerUp={endDrawing}
+              onPointerCancel={endDrawing}
+              className="h-40 w-full touch-none rounded-2xl border border-slate-300/30 bg-white sm:h-auto"
             />
             <div className="flex items-center justify-between gap-2">
               <button
@@ -1143,14 +1156,14 @@ function SignatureChooserModal({
 
   return (
     <div
-      className="fixed inset-0 z-[82] flex items-center justify-center bg-slate-950/75 p-4"
+      className="fixed inset-0 z-[82] flex items-end justify-center bg-slate-950/75 p-2 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={kind === "signature" ? "Choose signature" : "Choose initials"}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl rounded-3xl border border-white/10 bg-slate-900/95 p-5 shadow-[0_30px_90px_rgba(0,0,0,0.65)]"
+        className="max-h-[92dvh] w-full max-w-xl overflow-auto rounded-[26px] border border-white/10 bg-slate-900/95 p-4 shadow-[0_30px_90px_rgba(0,0,0,0.65)] sm:rounded-3xl sm:p-5"
         onClick={(event) => event.stopPropagation()}
       >
         <h3 className="text-lg font-semibold text-slate-100">
@@ -1426,6 +1439,7 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
   const [flashWidgetId, setFlashWidgetId] = useState<string | null>(null);
   const [fieldSearch, setFieldSearch] = useState("");
   const [fieldFilter, setFieldFilter] = useState<FieldFilter>("all");
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel | null>(null);
   const [fieldIssues, setFieldIssues] = useState<Record<string, ValidationIssue[]>>({});
   const [groupJumpCursor, setGroupJumpCursor] = useState<Record<string, number>>({});
 
@@ -2045,7 +2059,7 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
         setSaveBusy(false);
       }
 
-      const blob = new Blob([stableBytes], { type: "application/pdf" });
+      const blob = new Blob([stableBytes as unknown as BlobPart], { type: "application/pdf" });
       const href = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = href;
@@ -2369,6 +2383,17 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
   }, [signaturePlacementMode]);
 
   useEffect(() => {
+    if (!mobilePanel) return;
+    const onResize = () => {
+      if (window.innerWidth >= 1280) {
+        setMobilePanel(null);
+      }
+    };
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
+  }, [mobilePanel]);
+
+  useEffect(() => {
     if (loading) return;
     const id = window.setTimeout(() => {
       try {
@@ -2454,11 +2479,54 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
         }),
     [fieldIssues, groupByName]
   );
+  const toolsCardVisible = !mobilePanel || mobilePanel === "tools";
+  const fieldsCardVisible = !mobilePanel || mobilePanel === "fields";
+  const inspectorCardVisible = !mobilePanel || mobilePanel === "inspect";
 
   return (
-    <div className="mx-auto grid max-w-[1900px] grid-cols-1 gap-5 px-6 py-6 xl:grid-cols-[340px_minmax(0,1fr)]">
-      <aside className="space-y-4">
-        <div className="rounded-3xl border border-white/10 bg-white/3 p-4">
+    <div className="mx-auto grid max-w-[1900px] grid-cols-1 gap-4 px-3 pb-5 pt-3 sm:gap-5 sm:px-5 sm:pt-5 xl:grid-cols-[340px_minmax(0,1fr)] xl:px-6 xl:py-6">
+      {mobilePanel ? (
+        <button
+          type="button"
+          onClick={() => setMobilePanel(null)}
+          className="fixed inset-0 z-[65] bg-slate-950/65 backdrop-blur-sm xl:hidden"
+          aria-label="Close mobile panel"
+        />
+      ) : null}
+
+      <aside
+        className={[
+          mobilePanel
+            ? "fixed inset-x-0 bottom-0 top-24 z-[70] overflow-auto rounded-t-[26px] border-t border-white/10 bg-[#081025] p-3 pb-6 shadow-[0_-24px_70px_rgba(0,0,0,0.65)]"
+            : "hidden xl:block",
+          "xl:static xl:z-auto xl:block xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none",
+        ].join(" ")}
+      >
+        {mobilePanel ? (
+          <div className="mb-3 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2 xl:hidden">
+            <div>
+              <p className="text-xs uppercase tracking-[0.14em] text-sky-200/85">Fill PDF</p>
+              <p className="text-sm font-semibold text-slate-100">
+                {mobilePanel === "tools"
+                  ? "Tools"
+                  : mobilePanel === "fields"
+                    ? "Fields"
+                    : "Overlay Inspector"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setMobilePanel(null)}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-white/8 text-slate-200 hover:bg-white/12"
+              aria-label="Close panel"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ) : null}
+
+        {toolsCardVisible ? (
+          <div className="rounded-3xl border border-white/10 bg-white/3 p-4">
           <p className="truncate text-sm font-semibold text-slate-100">{filename}</p>
           <p className="mt-1 text-xs text-slate-400">{projectName}</p>
 
@@ -2600,8 +2668,10 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
             {downloadBusy ? "Preparing…" : saveBusy ? "Saving to Filled PDFs…" : "Save and download PDF"}
           </button>
         </div>
+        ) : null}
 
-        <div className="rounded-3xl border border-white/10 bg-white/3 p-4">
+        {fieldsCardVisible ? (
+          <div className="rounded-3xl border border-white/10 bg-white/3 p-4">
           <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-100">
             <Search className="h-4 w-4 text-slate-300" />
             Fields
@@ -2831,8 +2901,10 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
             )}
           </div>
         </div>
+        ) : null}
 
-        <div className="rounded-3xl border border-white/10 bg-white/3 p-4">
+        {inspectorCardVisible ? (
+          <div className="rounded-3xl border border-white/10 bg-white/3 p-4">
           <div className="text-sm font-semibold text-slate-100">Overlay inspector</div>
           {selectedOverlay ? (
             <div className="mt-3 space-y-3">
@@ -2887,9 +2959,34 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
             </p>
           )}
         </div>
+        ) : null}
       </aside>
 
       <section className="min-w-0 space-y-4">
+        <div className="grid grid-cols-3 gap-2 xl:hidden">
+          <button
+            type="button"
+            onClick={() => setMobilePanel("tools")}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-2 text-xs font-semibold text-slate-100 hover:bg-white/10"
+          >
+            Tools
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePanel("fields")}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-2 text-xs font-semibold text-slate-100 hover:bg-white/10"
+          >
+            Fields
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobilePanel("inspect")}
+            className="inline-flex min-h-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 px-2 text-xs font-semibold text-slate-100 hover:bg-white/10"
+          >
+            Inspect
+          </button>
+        </div>
+
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/3 px-4 py-3">
           <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 p-1">
             <button
@@ -2940,7 +3037,7 @@ export default function FillPdfClient({ projectId, projectName, fileId, filename
 
         <div
           ref={scrollRef}
-          className="max-h-[calc(100vh-11rem)] overflow-auto rounded-2xl border border-white/10 bg-slate-950/35 p-4"
+          className="max-h-[68dvh] overflow-auto rounded-2xl border border-white/10 bg-slate-950/35 p-2 sm:max-h-[calc(100vh-11rem)] sm:p-4"
         >
           {loading ? (
             <div className="grid min-h-72 place-items-center text-sm text-slate-300">Loading PDF…</div>

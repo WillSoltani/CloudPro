@@ -77,10 +77,10 @@ export function DropzoneCard(props: {
   }, [stageFiles]);
 
   return (
-    <div className="rounded-[32px] border border-white/10 bg-white/3 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
+    <div className="rounded-[26px] border border-white/10 bg-white/3 p-4 shadow-[0_20px_80px_rgba(0,0,0,0.45)] sm:rounded-[32px] sm:p-6">
       <div
         className={[
-          "rounded-[28px] border border-dashed p-10 transition",
+          "rounded-[22px] border border-dashed p-6 transition sm:rounded-[28px] sm:p-10",
           isDragActive
             ? "border-sky-300/70 bg-sky-500/10 ring-2 ring-sky-300/35"
             : "border-white/15 bg-white/2",
@@ -95,7 +95,7 @@ export function DropzoneCard(props: {
             <Upload className="h-7 w-7 text-sky-200" />
           </div>
 
-          <h2 className="mt-6 text-xl font-semibold text-slate-100">
+          <h2 className="mt-5 text-lg font-semibold text-slate-100 sm:mt-6 sm:text-xl">
             Drop files to convert
           </h2>
           <p className="mt-2 text-sm text-slate-400">
@@ -117,11 +117,11 @@ export function DropzoneCard(props: {
             }}
           />
 
-          <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row">
+          <div className="mt-6 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center">
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-100 hover:bg-white/10"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-100 hover:bg-white/10"
             >
               <span className="grid h-6 w-6 place-items-center rounded-lg border border-white/10 bg-white/5">
                 <Upload className="h-4 w-4 text-slate-200" />
@@ -134,7 +134,7 @@ export function DropzoneCard(props: {
               onClick={onUploadClick}
               disabled={uploadDisabled}
               className={[
-                "inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition",
+                "inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition",
                 uploadDisabled
                   ? "cursor-not-allowed border border-white/10 bg-white/5 text-slate-500"
                   : "bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.25)] hover:bg-sky-500",
@@ -177,12 +177,12 @@ export function DropzoneCard(props: {
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 self-start sm:self-center">
                         {isPdf ? (
                           <button
                             type="button"
                             onClick={() => onFillPdf({ name: it.name, source: "staged" })}
-                            className="inline-flex items-center rounded-xl border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/20"
+                            className="inline-flex min-h-9 items-center rounded-xl border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/20"
                             aria-label={`Fill PDF for ${it.name}`}
                             title="Fill PDF"
                           >
@@ -193,7 +193,7 @@ export function DropzoneCard(props: {
                         <button
                           type="button"
                           onClick={() => onRemoveStagedItem(it.id)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-rose-500/15 hover:text-rose-200"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-300 hover:bg-rose-500/15 hover:text-rose-200"
                           aria-label={`Remove ${it.name} from upload staging`}
                           title="Remove"
                         >

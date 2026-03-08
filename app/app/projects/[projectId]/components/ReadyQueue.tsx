@@ -37,14 +37,14 @@ export function ReadyQueue({
 
   return (
     <>
-      <div className="overflow-hidden rounded-[32px] border border-white/10 bg-white/3 shadow-[0_18px_70px_rgba(0,0,0,0.45)]">
-        <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/2 px-5 py-4">
+      <div className="overflow-hidden rounded-[26px] border border-white/10 bg-white/3 shadow-[0_18px_70px_rgba(0,0,0,0.45)] sm:rounded-[32px]">
+        <div className="flex flex-col gap-3 border-b border-white/10 bg-white/2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={onToggleAll}
               className={[
-                "grid h-5 w-5 place-items-center rounded-md border transition",
+                "grid h-6 w-6 place-items-center rounded-md border transition",
                 allSelected
                   ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
                   : "border-white/15 bg-white/5 text-transparent hover:bg-white/10",
@@ -53,19 +53,19 @@ export function ReadyQueue({
             >
               <Check className="h-3.5 w-3.5" />
             </button>
-            <div className="text-base font-semibold text-slate-100">
+            <div className="text-sm font-semibold text-slate-100 sm:text-base">
               Ready to Convert{" "}
               <span className="ml-2 text-sm font-normal text-slate-400">({total} files)</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             <button
               type="button"
               onClick={onRemoveSelected}
               disabled={removeDisabled}
               className={[
-                "inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm transition",
+                "inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-2xl px-3 py-2 text-sm transition sm:flex-none",
                 removeDisabled ? "cursor-not-allowed text-slate-500" : "text-rose-200 hover:bg-rose-500/10",
               ].join(" ")}
             >
@@ -77,7 +77,7 @@ export function ReadyQueue({
               onClick={onConvert}
               disabled={convertDisabled}
               className={[
-                "inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition",
+                "inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none",
                 convertDisabled
                   ? "cursor-not-allowed border border-white/10 bg-white/5 text-slate-500"
                   : "bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.25)] hover:bg-sky-500",
@@ -90,7 +90,7 @@ export function ReadyQueue({
         </div>
 
         {total === 0 ? (
-          <div className="px-5 py-8 text-sm text-slate-400">
+          <div className="px-4 py-8 text-sm text-slate-400 sm:px-5">
             No files uploaded yet. Click <span className="text-slate-200">Browse Files</span>.
           </div>
         ) : (
@@ -128,13 +128,13 @@ export function ReadyQueue({
               );
 
               return (
-                <div key={f.id} className="flex flex-wrap items-center gap-3 px-5 py-4 sm:flex-nowrap">
+                <div key={f.id} className="flex flex-wrap items-start gap-3 px-4 py-4 sm:flex-nowrap sm:items-center sm:px-5">
                   {/* Checkbox */}
                   <button
                     type="button"
                     onClick={() => onToggleOne(f.id)}
                     className={[
-                      "grid h-5 w-5 shrink-0 place-items-center rounded-md border transition",
+                      "grid h-6 w-6 shrink-0 place-items-center rounded-md border transition",
                       f.selected
                         ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
                         : "border-white/15 bg-white/5 text-transparent hover:bg-white/10",
@@ -148,13 +148,13 @@ export function ReadyQueue({
                   <Thumb src={f.previewUrl} alt={name} fallbackLabel={f.fromLabel} />
 
                   {/* File info */}
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-1 basis-[calc(100%-72px)] sm:basis-auto">
                     <div className="truncate text-sm font-semibold text-slate-100">{name || "Untitled"}</div>
                     <div className="text-xs text-slate-400">{f.sizeLabel}</div>
                   </div>
 
                   {/* Per-item format selector — only valid formats for this input type */}
-                  <div className="flex flex-col items-start gap-2 sm:items-end">
+                  <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
                     {f.selected ? (
                       <div className="w-full sm:w-[29rem]">
                         <div className="mb-2 flex items-center gap-2">
@@ -210,7 +210,7 @@ export function ReadyQueue({
                               hasLocalSource: f.previewUrl.startsWith("blob:"),
                             })
                           }
-                          className="inline-flex items-center gap-1 rounded-xl border border-white/20 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-white/10"
+                          className="inline-flex min-h-9 items-center gap-1 rounded-xl border border-white/20 bg-white/5 px-2.5 py-1 text-xs font-semibold text-slate-200 hover:bg-white/10"
                           aria-label={`Preview ${name}`}
                         >
                           <Eye className="h-3.5 w-3.5" />
@@ -222,7 +222,7 @@ export function ReadyQueue({
                         <button
                           type="button"
                           onClick={() => onFillPdf({ name, source: "uploaded", fileId: f.id })}
-                          className="inline-flex items-center rounded-xl border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/20"
+                          className="inline-flex min-h-9 items-center rounded-xl border border-amber-300/30 bg-amber-400/10 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/20"
                           aria-label={`Fill PDF for ${name}`}
                         >
                           Fill & Sign

@@ -89,27 +89,27 @@ export function FilePreviewModal(props: {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-2 backdrop-blur-sm sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-label={`Preview ${preview.filename}`}
       onClick={onClose}
     >
       <div
-        className="flex h-[90vh] w-full max-w-6xl flex-col rounded-2xl border border-white/15 bg-slate-950/95 shadow-[0_20px_70px_rgba(0,0,0,0.55)]"
+        className="flex h-[92dvh] w-full max-w-6xl flex-col rounded-2xl border border-white/15 bg-slate-950/95 shadow-[0_20px_70px_rgba(0,0,0,0.55)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-slate-100">{preview.filename}</div>
             <div className="text-xs text-slate-400">Format: {preview.format}</div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 self-end sm:self-auto">
             <button
               type="button"
               onClick={onZoomOut}
               disabled={preview.loading || Boolean(preview.error)}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+              className="grid h-9 w-9 place-items-center rounded-lg border border-white/15 text-slate-200 hover:bg-white/10 disabled:opacity-40"
               aria-label="Zoom out"
             >
               <ZoomOut className="h-4 w-4" />
@@ -121,7 +121,7 @@ export function FilePreviewModal(props: {
               type="button"
               onClick={onZoomIn}
               disabled={preview.loading || Boolean(preview.error)}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 text-slate-200 hover:bg-white/10 disabled:opacity-40"
+              className="grid h-9 w-9 place-items-center rounded-lg border border-white/15 text-slate-200 hover:bg-white/10 disabled:opacity-40"
               aria-label="Zoom in"
             >
               <ZoomIn className="h-4 w-4" />
@@ -129,7 +129,7 @@ export function FilePreviewModal(props: {
             <button
               type="button"
               onClick={onClose}
-              className="ml-1 grid h-8 w-8 place-items-center rounded-lg border border-white/15 text-slate-200 hover:bg-white/10"
+              className="ml-1 grid h-9 w-9 place-items-center rounded-lg border border-white/15 text-slate-200 hover:bg-white/10"
               aria-label="Close preview"
             >
               <X className="h-4 w-4" />
@@ -138,7 +138,7 @@ export function FilePreviewModal(props: {
         </div>
 
         <PreviewErrorBoundary onClose={onClose}>
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/30 p-4">
+          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/30 p-2 sm:p-4">
             {preview.loading ? (
               <div className="flex flex-col items-center gap-3 text-slate-300">
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -171,4 +171,3 @@ export function FilePreviewModal(props: {
     </div>
   );
 }
-

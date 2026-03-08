@@ -40,7 +40,7 @@ export function ProjectCard(props: {
 
       <Link
         href={`/app/projects/${encodeURIComponent(p.projectId)}`}
-        className="relative block rounded-[30px] border border-white/10 bg-white/5 p-7 shadow-[0_14px_40px_rgba(0,0,0,0.40)]
+        className="relative block rounded-[26px] border border-white/10 bg-white/5 p-5 shadow-[0_14px_40px_rgba(0,0,0,0.40)] sm:rounded-[30px] sm:p-7
           transition group-hover:border-white/15 group-hover:bg-white/7"
       >
         <div className="flex items-start justify-between gap-4">
@@ -54,7 +54,7 @@ export function ProjectCard(props: {
           <button
             type="button"
             onClick={props.onMenu}
-            className="opacity-0 transition group-hover:opacity-100"
+            className="opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
             aria-label="Project options"
             title="Options"
           >

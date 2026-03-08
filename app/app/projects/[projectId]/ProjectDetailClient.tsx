@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SlidersHorizontal, X } from "lucide-react";
 
 import { DropzoneCard } from "./components/DropzoneCard";
 import { ReadyQueue } from "./components/ReadyQueue";
@@ -70,6 +71,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
   const [convertBusy, setConvertBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
 
   const setFileCount = useSetFileCount();
   const staged = useStagedFiles();
@@ -359,6 +361,17 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     setGlobalFormat(allSidebarFormats[0] ?? "JPG");
   }, [allSidebarFormats, globalFormat]);
 
+  useEffect(() => {
+    if (!mobileSettingsOpen) return;
+    const onResize = () => {
+      if (window.innerWidth >= 1280) {
+        setMobileSettingsOpen(false);
+      }
+    };
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
+  }, [mobileSettingsOpen]);
+
   const onConvert = useCallback(async () => {
     if (convertBusy || !server.anyReadySelected) return;
     setConvertBusy(true);
@@ -441,7 +454,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
 
   return (
     <>
-      <div className="mx-auto grid max-w-350 grid-cols-1 gap-6 px-6 py-6 lg:grid-cols-[1fr_420px]">
+      <div className="mx-auto grid max-w-[1900px] grid-cols-1 gap-4 px-3 pb-24 pt-3 sm:gap-6 sm:px-5 sm:pb-12 sm:pt-5 xl:grid-cols-[minmax(0,1fr)_390px] xl:px-6 xl:pb-8">
         <div className="space-y-6">
           {error ? (
             <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
@@ -496,24 +509,79 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
           ) : null}
         </div>
 
-        <aside className="space-y-6">
-          <ConversionSettings
-            format={globalFormat}
-            allFormats={allSidebarFormats}
-            enabledFormats={enabledSidebarFormats}
-            inputOnlyFormats={inputOnlySidebarFormats}
-            recommendedFormats={recommendedSidebarFormats}
-            onFormat={handleGlobalFormat}
-            quality={globalQuality}
-            onQuality={handleGlobalQuality}
-            preset={globalPreset}
-            onPreset={handleGlobalPreset}
-            resizePct={globalResizePct}
-            onResizePct={handleGlobalResizePct}
-            selectedCount={server.selectedReadyIds.length}
-          />
+        <aside className="hidden xl:block">
+          <div className="sticky top-24">
+            <ConversionSettings
+              format={globalFormat}
+              allFormats={allSidebarFormats}
+              enabledFormats={enabledSidebarFormats}
+              inputOnlyFormats={inputOnlySidebarFormats}
+              recommendedFormats={recommendedSidebarFormats}
+              onFormat={handleGlobalFormat}
+              quality={globalQuality}
+              onQuality={handleGlobalQuality}
+              preset={globalPreset}
+              onPreset={handleGlobalPreset}
+              resizePct={globalResizePct}
+              onResizePct={handleGlobalResizePct}
+              selectedCount={server.selectedReadyIds.length}
+            />
+          </div>
         </aside>
       </div>
+
+      <button
+        type="button"
+        onClick={() => setMobileSettingsOpen(true)}
+        className="fixed bottom-4 right-4 z-40 inline-flex items-center gap-2 rounded-full border border-sky-300/30 bg-sky-500/90 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_20px_50px_rgba(2,132,199,0.45)] transition hover:bg-sky-400 xl:hidden"
+      >
+        <SlidersHorizontal className="h-4 w-4" />
+        Settings
+      </button>
+
+      {mobileSettingsOpen ? (
+        <div className="fixed inset-0 z-50 xl:hidden" role="dialog" aria-modal="true">
+          <button
+            type="button"
+            aria-label="Close settings"
+            className="absolute inset-0 bg-slate-950/65 backdrop-blur-sm"
+            onClick={() => setMobileSettingsOpen(false)}
+          />
+
+          <div className="absolute inset-x-0 bottom-0 top-24 overflow-auto rounded-t-[28px] border-t border-white/10 bg-[#081025] p-3 pb-5 shadow-[0_-20px_60px_rgba(0,0,0,0.6)]">
+            <div className="mb-3 flex items-center justify-between px-1">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-200/80">Conversion</p>
+                <p className="text-base font-semibold text-slate-100">Settings</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileSettingsOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
+                aria-label="Close settings panel"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <ConversionSettings
+              format={globalFormat}
+              allFormats={allSidebarFormats}
+              enabledFormats={enabledSidebarFormats}
+              inputOnlyFormats={inputOnlySidebarFormats}
+              recommendedFormats={recommendedSidebarFormats}
+              onFormat={handleGlobalFormat}
+              quality={globalQuality}
+              onQuality={handleGlobalQuality}
+              preset={globalPreset}
+              onPreset={handleGlobalPreset}
+              resizePct={globalResizePct}
+              onResizePct={handleGlobalResizePct}
+              selectedCount={server.selectedReadyIds.length}
+            />
+          </div>
+        </div>
+      ) : null}
 
     </>
   );

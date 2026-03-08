@@ -213,7 +213,7 @@ export function ConvertedFiles({
     <div className="space-y-3">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xl font-semibold text-slate-100">
+        <div className="text-lg font-semibold text-slate-100 sm:text-xl">
           {title}
           {files.length > 0 && (
             <span className="ml-2 text-sm font-normal text-slate-400">({files.length})</span>
@@ -226,7 +226,7 @@ export function ConvertedFiles({
                 type="button"
                 onClick={() => void handleBulkDownload()}
                 disabled={bulkDownloading || selectedDoneIds.length === 0}
-                className="inline-flex items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-40"
+                className="inline-flex min-h-10 items-center gap-1.5 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 hover:bg-white/10 disabled:opacity-40"
               >
                 {bulkDownloading
                   ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -238,7 +238,7 @@ export function ConvertedFiles({
                   type="button"
                   onClick={() => void handleBulkDelete()}
                   disabled={bulkDeleting}
-                  className="inline-flex items-center gap-1.5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/15 disabled:opacity-40"
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/15 disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />Delete ({selectedIds.size})
                 </button>
@@ -250,7 +250,7 @@ export function ConvertedFiles({
             type="button"
             onClick={() => void handleDownloadAll()}
             disabled={downloadingAll || doneFiles.length === 0}
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
             <Download className="h-4 w-4" />
             {downloadingAll ? "Downloading…" : "All"}
@@ -280,7 +280,7 @@ export function ConvertedFiles({
       {/* Search + Sort */}
       {files.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 min-w-[180px]">
+          <div className="relative min-w-[180px] flex-1">
             <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500 pointer-events-none" />
             <input
               type="text"
@@ -299,7 +299,7 @@ export function ConvertedFiles({
               </button>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-slate-500">Sort:</span>
             <SortButton field="name" label="Name" current={sortBy} onChange={setSortBy} />
             <SortButton field="size" label="Size" current={sortBy} onChange={setSortBy} />
@@ -332,7 +332,7 @@ export function ConvertedFiles({
                 key={f.id}
                 className="overflow-hidden rounded-[24px] border border-white/10 bg-white/3 shadow-[0_14px_60px_rgba(0,0,0,0.35)]"
               >
-              <div className="flex items-center gap-3 px-5 py-4">
+              <div className="flex flex-wrap items-center gap-3 px-4 py-4 sm:px-5">
                 <Checkbox
                   checked={selectedIds.has(f.id)}
                   onClick={() => toggleOne(f.id)}
@@ -350,6 +350,13 @@ export function ConvertedFiles({
                         <span>{formatTime(f.whenLabel)}</span>
                       </>
                     )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 md:hidden">
+                    <Badge>{f.fromLabel}</Badge>
+                    <span className="text-slate-600">→</span>
+                    <Badge tone="active">{f.toLabel}</Badge>
+                    <MultiOutputBadge file={f} />
+                    <StatusBadge status={f.status} />
                   </div>
                 </div>
 
@@ -378,7 +385,7 @@ export function ConvertedFiles({
                         })
                       }
                       title="Preview"
-                      className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
+                      className="grid h-9 w-9 place-items-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
                     >
                       <Eye className="h-4 w-4" />
                     </button>
@@ -389,7 +396,7 @@ export function ConvertedFiles({
                       onClick={() => void handleDownloadOne(f.id)}
                       disabled={downloadingId === f.id}
                       title="Download"
-                      className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-slate-200 disabled:opacity-40"
+                      className="grid h-9 w-9 place-items-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-slate-200 disabled:opacity-40"
                     >
                       {downloadingId === f.id
                         ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -402,7 +409,7 @@ export function ConvertedFiles({
                       onClick={() => setExpandedReconvert(expandedReconvert === f.id ? null : f.id)}
                       title="Reconvert"
                       className={[
-                        "grid h-8 w-8 place-items-center rounded-xl transition",
+                        "grid h-9 w-9 place-items-center rounded-xl transition",
                         expandedReconvert === f.id
                           ? "bg-sky-500/20 text-sky-300"
                           : "text-slate-500 hover:bg-white/10 hover:text-slate-200",
@@ -416,7 +423,7 @@ export function ConvertedFiles({
                       type="button"
                       onClick={() => void onDeleteFile(f.id)}
                       title="Remove"
-                      className="grid h-8 w-8 place-items-center rounded-xl text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-300"
+                      className="grid h-9 w-9 place-items-center rounded-xl text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-300"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -445,7 +452,7 @@ export function ConvertedFiles({
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {displayFiles.map((f) => {
               const previewEligibility = previewEligibilityById.get(f.id) ?? { canPreview: false as const, reason: "missing_url" as const };
               return (

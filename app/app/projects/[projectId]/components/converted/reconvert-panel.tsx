@@ -112,7 +112,7 @@ export function ReconvertPanel({
         </>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => {
@@ -121,14 +121,14 @@ export function ReconvertPanel({
             onClose();
           }}
           disabled={!enabledOutputFormats.includes(fmt)}
-          className="inline-flex items-center gap-2 rounded-2xl bg-sky-600/90 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
+          className="inline-flex min-h-10 items-center gap-2 rounded-2xl bg-sky-600/90 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
         >
           <RefreshCw className="h-3.5 w-3.5" />Reconvert
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300 hover:bg-white/10"
+          className="min-h-10 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300 hover:bg-white/10"
         >
           Cancel
         </button>

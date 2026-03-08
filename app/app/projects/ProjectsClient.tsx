@@ -198,12 +198,12 @@ export default function ProjectsClient({ initialProjects, initialStats }: Props)
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-8 sm:space-y-10">
       {/* Header / Stats */}
-      <div className="space-y-5">
+      <div className="space-y-4 sm:space-y-5">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Portfolio</p>
-          <h1 className="mt-2 text-3xl font-semibold text-slate-100">Serverless File Converter</h1>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-100 sm:text-3xl">Serverless File Converter</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-300">
             Projects are isolated per-user. Uploads go direct-to-S3 via presigned URLs, metadata
             lives in DynamoDB, and outputs become artifacts.
@@ -234,7 +234,7 @@ export default function ProjectsClient({ initialProjects, initialStats }: Props)
             </p>
           </div>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2">
+          <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
             {sorted.map((p) => (
               <ProjectCard
                 key={p.projectId}

@@ -37,12 +37,12 @@ export function ConversionSettings(props: {
   const canSelectTargets = props.selectedCount > 0;
 
   return (
-    <div className="rounded-[32px] border border-white/10 bg-white/3 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
+    <div className="rounded-[28px] border border-white/10 bg-white/3 p-4 shadow-[0_20px_80px_rgba(0,0,0,0.45)] sm:rounded-[32px] sm:p-6">
       <div className="flex items-center gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-2xl border border-white/10 bg-white/5">
           <SlidersHorizontal className="h-5 w-5 text-sky-200" />
         </div>
-        <div className="text-lg font-semibold text-slate-100">Conversion Settings</div>
+        <div className="text-base font-semibold text-slate-100 sm:text-lg">Conversion Settings</div>
       </div>
 
       {/* Format picker — uses shared conversion matrix from backend allowlist */}
@@ -53,7 +53,7 @@ export function ConversionSettings(props: {
             Recommended: {props.recommendedFormats.join(", ")}
           </div>
         ) : null}
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-3">
           {displayFormats.map((opt) => {
             const outputTarget = props.allFormats.includes(opt as OutputFormat);
             const enabledForSelection =
@@ -75,7 +75,7 @@ export function ConversionSettings(props: {
                 disabled={!selectable}
                 title={tooltip}
                 className={[
-                  "rounded-2xl px-3 py-2 text-sm font-semibold transition",
+                  "min-h-10 rounded-2xl px-2.5 py-2 text-xs font-semibold transition sm:px-3 sm:text-sm",
                   active
                     ? "bg-sky-600/90 text-white shadow-[0_12px_30px_rgba(2,132,199,0.22)]"
                     : selectable
