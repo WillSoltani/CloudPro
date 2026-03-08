@@ -12,6 +12,15 @@ import {
 export function useSignedUrls(projectId: string, files: FileRow[]) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const inFlightRef = useRef<Set<string>>(new Set());
+  // Mirror of signedUrls as a ref so the fetch effect can read current values
+  // without including signedUrls in its dependency array (which would cause a
+  // self-triggering feedback loop: fetch → setState → re-run effect → fetch…).
+  const signedUrlsRef = useRef<Record<string, string>>({});
+
+  // Keep the ref in sync with state.
+  useEffect(() => {
+    signedUrlsRef.current = signedUrls;
+  }, [signedUrls]);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,9 +35,10 @@ export function useSignedUrls(projectId: string, files: FileRow[]) {
         .map((f) => f.fileId)
         .filter((x): x is string => Boolean(x));
 
+      // Use the ref (not state) so this check doesn't re-trigger the effect.
       const need = ids.filter((id) => {
         if (inFlightRef.current.has(id)) return false;
-        const current = signedUrls[id];
+        const current = signedUrlsRef.current[id];
         if (!current) return true;
         return isPresignedUrlExpired(current);
       });
@@ -37,14 +47,24 @@ export function useSignedUrls(projectId: string, files: FileRow[]) {
       const batch = need.slice(0, 10);
       for (const id of batch) inFlightRef.current.add(id);
 
-      for (const id of batch) {
-        const url = await getInlineUrl(projectId, id);
-        inFlightRef.current.delete(id);
-        if (cancelled) return;
+      // Fetch all URLs in parallel instead of sequentially.
+      const results = await Promise.all(
+        batch.map(async (id) => {
+          const url = await getInlineUrl(projectId, id);
+          inFlightRef.current.delete(id);
+          return { id, url };
+        })
+      );
 
-        if (url) {
-          setSignedUrls((prev) => ({ ...prev, [id]: url }));
-        }
+      if (cancelled) return;
+
+      // Batch all new URLs into a single setState call → single re-render.
+      const updates: Record<string, string> = {};
+      for (const { id, url } of results) {
+        if (url) updates[id] = url;
+      }
+      if (Object.keys(updates).length > 0) {
+        setSignedUrls((prev) => ({ ...prev, ...updates }));
       }
     }
 
@@ -52,7 +72,7 @@ export function useSignedUrls(projectId: string, files: FileRow[]) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, files, signedUrls]);
+  }, [projectId, files]); // signedUrls intentionally omitted — read via ref
 
   function dropSignedUrl(fileId: string) {
     setSignedUrls((prev) => {

@@ -1081,13 +1081,13 @@ async function preprocessInput(args: { buf: Buffer; sourceInfo: SourceInfo }): P
 
 async function applyResize(
   pipeline: sharp.Sharp,
-  inputBuf: Buffer,
-  sourceInfo: SourceInfo,
   resizePct: number | null,
   maxWidth: number | undefined
 ): Promise<sharp.Sharp> {
   if (typeof resizePct === "number" && resizePct < 100) {
-    const meta = await sharp(inputBuf, sharpOptionsForSource(sourceInfo.imageKind)).metadata();
+    // Reuse the existing pipeline instance for metadata instead of creating a
+    // second sharp instance backed by the same input buffer (double decode).
+    const meta = await pipeline.metadata();
     const origW = meta.width ?? 0;
     const origH = meta.height ?? 0;
     if (origW > 0 && origH > 0) {
@@ -1110,7 +1110,7 @@ async function renderNormalizedPng(args: {
   maxWidth: number | undefined;
 }): Promise<Buffer> {
   let pipeline = sharp(args.inputBuf, sharpOptionsForSource(args.sourceInfo.imageKind));
-  pipeline = await applyResize(pipeline, args.inputBuf, args.sourceInfo, args.resizePct, args.maxWidth);
+  pipeline = await applyResize(pipeline, args.resizePct, args.maxWidth);
   return pipeline.png({ compressionLevel: NORMALIZED_PNG_COMPRESSION }).toBuffer();
 }
 
@@ -1219,13 +1219,7 @@ async function applyConversion(args: {
   }
 
   let pipeline = sharp(inputBuf, sharpOptionsForSource(args.sourceInfo.imageKind));
-  pipeline = await applyResize(
-    pipeline,
-    inputBuf,
-    args.sourceInfo,
-    args.resizePct,
-    args.config.maxWidth
-  );
+  pipeline = await applyResize(pipeline, args.resizePct, args.config.maxWidth);
 
   switch (args.fmt) {
     case "PNG":
@@ -1391,7 +1385,7 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     const getRes = await s3.send(
       new GetObjectCommand({ Bucket: srcBucket, Key: srcKey })
     );
-    const rawBuf = await asBuffer(getRes.Body);
+    let rawBuf = await asBuffer(getRes.Body);
 
     // 3b. Detect source type by content, not only filename/content-type metadata.
     const sourceInfo = detectSourceInfo(rawBuf, srcFilename, srcContentType);
@@ -1588,6 +1582,12 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     }
 
     const outputKey = `private/${userSub}/${projectId}/output/${outputFileId}/${outputFilename}`;
+
+    // Free large source/intermediate buffers before the upload — this is peak
+    // memory: both input and output are otherwise live simultaneously.
+    rawBuf = Buffer.alloc(0);
+    if (canonicalPdf) canonicalPdf = { ...canonicalPdf, pdfBuffer: Buffer.alloc(0) };
+    pagesCanonicalPdf = undefined;
 
     // 5. Upload converted file to OUTPUT_BUCKET
     await s3.send(
