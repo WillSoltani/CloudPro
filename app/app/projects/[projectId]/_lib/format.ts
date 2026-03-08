@@ -24,7 +24,7 @@ export function extFromName(name: string): string {
 export function formatFromFilenameOrContentType(
   filename: string,
   contentType?: string | null
-): OutputFormat | "DOCX" | "PAGES" | "HEIC" | "IMG" {
+): OutputFormat | "DOCX" | "PAGES" | "IMG" {
   const ext = extFromName(filename);
   const ct = (contentType ?? "").toLowerCase();
 
@@ -34,7 +34,8 @@ export function formatFromFilenameOrContentType(
   if (ext === "gif" || ct.includes("gif")) return "GIF";
   if (ext === "avif" || ct.includes("avif")) return "AVIF";
   if (ext === "tif" || ext === "tiff" || ct.includes("tiff")) return "TIFF";
-  if (ext === "heic" || ext === "heif" || ct.includes("heic") || ct.includes("heif")) return "HEIC";
+  if (ext === "heic" || ct.includes("heic")) return "HEIC";
+  if (ext === "heif" || ct.includes("heif")) return "HEIF";
   if (ext === "bmp" || ct.includes("bmp")) return "BMP";
   if (ext === "svg" || ct.includes("svg")) return "SVG";
   if (ext === "ico" || ct.includes("x-icon") || ct.includes("vnd.microsoft.icon")) return "ICO";

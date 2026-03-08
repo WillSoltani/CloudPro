@@ -2,6 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { DropzoneCard } from "./components/DropzoneCard";
 import { ReadyQueue } from "./components/ReadyQueue";
@@ -10,7 +11,7 @@ import { ConversionSettings } from "./components/ConversionSettings";
 
 import type { FileRow } from "../_lib/types";
 import type { ItemSettings, LocalConvertedFile, LocalReadyFile, OutputFormat, PresetId } from "./_lib/ui-types";
-import { ALL_OUTPUT_FORMATS, IMAGE_OUTPUT_FORMATS, VALID_OUTPUT_FORMATS } from "./_lib/ui-types";
+import { ALL_OUTPUT_FORMATS, VALID_OUTPUT_FORMATS } from "./_lib/ui-types";
 import {
   FORMAT_CAPABILITIES,
   INPUT_ONLY_FORMAT_LABELS,
@@ -58,6 +59,7 @@ function summarizeConvert(results: Array<{ ok: boolean; error?: string }>) {
 }
 
 export default function ProjectDetailClient({ projectId, initialFiles }: Props) {
+  const router = useRouter();
   // Global defaults shown in the sidebar
   const [globalFormat, setGlobalFormat] = useState<OutputFormat>("JPG");
   const [globalQuality, setGlobalQuality] = useState(100);
@@ -71,7 +73,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
   const [convertBusy, setConvertBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [fillPdfTarget, setFillPdfTarget] = useState<FillPdfTarget | null>(null);
 
   const setFileCount = useSetFileCount();
   const staged = useStagedFiles();
@@ -242,6 +243,8 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         id: f.fileId,
         file: buildFakeFile(filename, f.contentType),
         previewUrl: signed.signedUrls[f.fileId] || "",
+        contentType: f.contentType,
+        status: f.status,
         fromLabel: String(from),
         toFormat: s.format,
         quality: s.quality,
@@ -282,6 +285,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         filename,
         name: filename,
         previewUrl: signed.signedUrls[f.fileId] || "",
+        contentType: f.contentType,
         fromLabel: String(from),
         toLabel,
         sourceFileId: f.sourceFileId,
@@ -296,31 +300,74 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     });
   }, [server.outputFiles, server.files, signed.signedUrls]);
 
-  const availableSidebarFormats = useMemo<OutputFormat[]>(() => {
-    const selectedReady = readyView.filter((f) => f.selected);
-    if (selectedReady.length === 0) {
-      return sortOutputsByRecommendation(FORMAT_CAPABILITIES.supportedOutputs, []);
-    }
+  const filledPdfView: LocalConvertedFile[] = useMemo(() => {
+    return server.filledPdfFiles.map((f) => {
+      const filename = safeFilenameFromRow(f);
+      const sourceFile = f.sourceFileId
+        ? server.files.find((sf) => sf.fileId === f.sourceFileId)
+        : undefined;
+      const from = sourceFile
+        ? formatFromFilenameOrContentType(safeFilenameFromRow(sourceFile), sourceFile.contentType)
+        : "PDF";
+      const st = String(f.status || "").toLowerCase();
+      const status: "done" | "processing" | "failed" =
+        st === "done" ? "done" : st === "failed" ? "failed" : "processing";
 
-    const allowedSets = selectedReady.map((f) => VALID_OUTPUT_FORMATS[f.fromLabel] ?? IMAGE_OUTPUT_FORMATS);
+      return {
+        id: f.fileId,
+        filename,
+        name: filename,
+        previewUrl: signed.signedUrls[f.fileId] || "",
+        contentType: f.contentType,
+        fromLabel: String(from),
+        toLabel: "PDF",
+        sourceFileId: f.sourceFileId,
+        sizeBytes: f.sizeBytes ?? undefined,
+        sizeLabel: fmtBytes(f.sizeBytes),
+        whenLabel: f.updatedAt || f.createdAt || "",
+        status,
+        packaging: f.packaging,
+        pageCount: f.pageCount,
+        outputCount: f.outputCount,
+      };
+    });
+  }, [server.filledPdfFiles, server.files, signed.signedUrls]);
+
+  const selectedReadyView = useMemo(
+    () => readyView.filter((f) => f.selected),
+    [readyView]
+  );
+
+  const selectedReadySourceLabels = useMemo(
+    () => selectedReadyView.map((f) => f.fromLabel),
+    [selectedReadyView]
+  );
+
+  // Always show every output format in the sidebar. Selection/disabled state is handled separately.
+  const allSidebarFormats = useMemo<OutputFormat[]>(
+    () => sortOutputsByRecommendation(FORMAT_CAPABILITIES.supportedOutputs, selectedReadySourceLabels),
+    [selectedReadySourceLabels]
+  );
+
+  const enabledSidebarFormats = useMemo<OutputFormat[]>(() => {
+    if (selectedReadyView.length === 0) return [];
+    const allowedSets = selectedReadyView.map((f) => VALID_OUTPUT_FORMATS[f.fromLabel] ?? []);
     const intersection = ALL_OUTPUT_FORMATS.filter((fmt) =>
       allowedSets.every((list) => list.includes(fmt))
     );
-    const sensibleIntersection = intersection.filter((fmt) =>
-      selectedReady.every((f) => !invalidTargetReasonForSourceLabel(f.fromLabel, fmt))
+    return intersection.filter((fmt) =>
+      selectedReadyView.every((f) => !invalidTargetReasonForSourceLabel(f.fromLabel, fmt))
     );
-    const selectedSourceLabels = selectedReady.map((f) => f.fromLabel);
-    return sortOutputsByRecommendation(
-      sensibleIntersection.length > 0 ? sensibleIntersection : intersection.length > 0 ? intersection : [...IMAGE_OUTPUT_FORMATS],
-      selectedSourceLabels
-    );
-  }, [readyView]);
+  }, [selectedReadyView]);
 
   const recommendedSidebarFormats = useMemo<OutputFormat[]>(() => {
-    const selectedReady = readyView.filter((f) => f.selected);
-    const sourceLabels = selectedReady.map((f) => f.fromLabel);
-    return recommendedOutputsForSourceLabels(sourceLabels, availableSidebarFormats);
-  }, [readyView, availableSidebarFormats]);
+    if (selectedReadyView.length === 0) return [];
+    return recommendedOutputsForSourceLabels(
+      selectedReadySourceLabels,
+      enabledSidebarFormats,
+      3
+    );
+  }, [selectedReadyView.length, selectedReadySourceLabels, enabledSidebarFormats]);
 
   const inputOnlySidebarFormats = useMemo<string[]>(
     () => [...INPUT_ONLY_FORMAT_LABELS],
@@ -328,9 +375,9 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
   );
 
   useEffect(() => {
-    if (availableSidebarFormats.includes(globalFormat)) return;
-    setGlobalFormat(availableSidebarFormats[0] ?? "JPG");
-  }, [availableSidebarFormats, globalFormat]);
+    if (allSidebarFormats.includes(globalFormat)) return;
+    setGlobalFormat(allSidebarFormats[0] ?? "JPG");
+  }, [allSidebarFormats, globalFormat]);
 
   // ---- Convert ----
   const onConvert = useCallback(async () => {
@@ -399,13 +446,20 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     [projectId, server]
   );
 
-  const openFillPdfPlaceholder = useCallback((target: FillPdfTarget) => {
-    setFillPdfTarget(target);
-  }, []);
-
-  const closeFillPdfPlaceholder = useCallback(() => {
-    setFillPdfTarget(null);
-  }, []);
+  const openFillPdf = useCallback(
+    (target: FillPdfTarget) => {
+      if (target.source !== "uploaded" || !target.fileId) {
+        setNotice(`Upload "${target.name}" first to open Fill PDF.`);
+        return;
+      }
+      setError(null);
+      setNotice(null);
+      router.push(
+        `/app/projects/${encodeURIComponent(projectId)}/fill/${encodeURIComponent(target.fileId)}`
+      );
+    },
+    [projectId, router]
+  );
 
   return (
     <>
@@ -429,17 +483,18 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
             uploadDisabled={uploadBusy || staged.uploadDisabled}
             stagedItems={staged.stagedItems}
             onRemoveStagedItem={staged.removeStaged}
-            onFillPdf={openFillPdfPlaceholder}
+            onFillPdf={openFillPdf}
           />
 
           <ReadyQueue
+            projectId={projectId}
             files={readyView}
             onToggleAll={server.onToggleAllReady}
             onToggleOne={server.onToggleOneReady}
             onRemoveSelected={server.onRemoveSelectedReady}
             onConvert={onConvert}
             onSetItemFormat={setItemFormat}
-            onFillPdf={openFillPdfPlaceholder}
+            onFillPdf={openFillPdf}
             convertBusy={convertBusy}
           />
 
@@ -450,12 +505,24 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
             onReconvert={onReconvert}
             globalSettings={{ format: globalFormat, quality: globalQuality, preset: globalPreset, resizePct: globalResizePct }}
           />
+
+          {filledPdfView.length > 0 ? (
+            <ConvertedFiles
+              files={filledPdfView}
+              projectId={projectId}
+              onDeleteFile={server.deleteOne}
+              title="Filled PDFs"
+              emptyMessage="No filled PDFs yet."
+              globalSettings={{ format: globalFormat, quality: globalQuality, preset: globalPreset, resizePct: globalResizePct }}
+            />
+          ) : null}
         </div>
 
         <aside className="space-y-6">
           <ConversionSettings
             format={globalFormat}
-            availableFormats={availableSidebarFormats}
+            allFormats={allSidebarFormats}
+            enabledFormats={enabledSidebarFormats}
             inputOnlyFormats={inputOnlySidebarFormats}
             recommendedFormats={recommendedSidebarFormats}
             onFormat={handleGlobalFormat}
@@ -470,38 +537,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         </aside>
       </div>
 
-      {fillPdfTarget ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Fill PDF placeholder"
-          onClick={closeFillPdfPlaceholder}
-        >
-          <div
-            className="w-full max-w-lg rounded-3xl border border-white/10 bg-slate-900/95 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.65)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-xs font-semibold uppercase tracking-wide text-amber-200/90">Placeholder</div>
-            <h3 className="mt-2 text-xl font-semibold text-slate-100">Fill & Sign PDF</h3>
-            <p className="mt-3 text-sm text-slate-300">
-              This is a UI-only stub for now. No PDF fill logic runs yet.
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              File: <span className="font-semibold text-slate-200">{fillPdfTarget.name}</span> ({fillPdfTarget.source})
-            </p>
-            <div className="mt-6 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={closeFillPdfPlaceholder}
-                className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-200 hover:bg-white/10"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }

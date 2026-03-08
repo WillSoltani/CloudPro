@@ -48,7 +48,10 @@ export async function GET() {
 
     // filesConverted = number of output files with status "done"
     const filesConverted = files.filter(
-      (it) => it?.kind === "output" && it?.status === "done"
+      (it) =>
+        it?.kind === "output" &&
+        it?.status === "done" &&
+        (it?.artifactType == null || it?.artifactType === "conversion")
     ).length;
 
     // spaceSavedBytes = sum of (rawSize - outputSize) for completed conversions
@@ -56,6 +59,7 @@ export async function GET() {
     let spaceSavedBytes = 0;
     for (const it of files) {
       if (it?.kind !== "output" || it?.status !== "done") continue;
+      if (it?.artifactType && it?.artifactType !== "conversion") continue;
       const srcId = typeof it.sourceFileId === "string" ? it.sourceFileId : "";
       if (!srcId) continue;
       const rawSz = rawSizeByFileId[srcId] ?? 0;

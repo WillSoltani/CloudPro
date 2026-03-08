@@ -5,6 +5,8 @@ export const OUTPUT_FORMATS = [
   "GIF",
   "TIFF",
   "AVIF",
+  "HEIC",
+  "HEIF",
   "BMP",
   "ICO",
   "SVG",
@@ -19,6 +21,8 @@ export const IMAGE_OUTPUT_FORMATS = [
   "GIF",
   "TIFF",
   "AVIF",
+  "HEIC",
+  "HEIF",
   "BMP",
   "ICO",
   "SVG",
@@ -33,6 +37,7 @@ export type SourceFormatLabel =
   | "AVIF"
   | "BMP"
   | "HEIC"
+  | "HEIF"
   | "SVG"
   | "ICO"
   | "PDF"
@@ -40,7 +45,7 @@ export type SourceFormatLabel =
   | "PAGES"
   | "IMG";
 
-export const INPUT_ONLY_FORMAT_LABELS = ["DOCX", "PAGES"] as const;
+export const INPUT_ONLY_FORMAT_LABELS = ["DOC", "DOCX", "PAGES"] as const;
 export type InputOnlyFormatLabel = (typeof INPUT_ONLY_FORMAT_LABELS)[number];
 
 const IMAGE_OUTPUTS_WITH_PDF: readonly OutputFormat[] = [
@@ -50,13 +55,15 @@ const IMAGE_OUTPUTS_WITH_PDF: readonly OutputFormat[] = [
   "GIF",
   "TIFF",
   "AVIF",
+  "HEIC",
+  "HEIF",
   "BMP",
   "ICO",
   "SVG",
   "PDF",
 ];
 
-const ICON_OUTPUTS_WITH_PDF: readonly OutputFormat[] = [
+const DOCUMENT_IMAGE_OUTPUTS: readonly OutputFormat[] = [
   "PNG",
   "JPG",
   "WebP",
@@ -65,6 +72,11 @@ const ICON_OUTPUTS_WITH_PDF: readonly OutputFormat[] = [
   "AVIF",
   "BMP",
   "ICO",
+  "SVG",
+];
+
+const DOCUMENT_OUTPUTS_WITH_PDF: readonly OutputFormat[] = [
+  ...DOCUMENT_IMAGE_OUTPUTS,
   "PDF",
 ];
 
@@ -77,11 +89,12 @@ export const SOURCE_LABEL_OUTPUT_FORMATS: Record<SourceFormatLabel, readonly Out
   AVIF: IMAGE_OUTPUTS_WITH_PDF,
   BMP: IMAGE_OUTPUTS_WITH_PDF,
   HEIC: IMAGE_OUTPUTS_WITH_PDF,
+  HEIF: IMAGE_OUTPUTS_WITH_PDF,
   SVG: IMAGE_OUTPUTS_WITH_PDF,
-  ICO: ICON_OUTPUTS_WITH_PDF,
-  PDF: ["PNG", "JPG", "WebP"],
-  DOCX: ["PNG", "JPG", "WebP", "PDF"],
-  PAGES: ["PNG", "JPG", "WebP", "PDF"],
+  ICO: IMAGE_OUTPUTS_WITH_PDF,
+  PDF: DOCUMENT_IMAGE_OUTPUTS,
+  DOCX: DOCUMENT_OUTPUTS_WITH_PDF,
+  PAGES: DOCUMENT_OUTPUTS_WITH_PDF,
   IMG: IMAGE_OUTPUTS_WITH_PDF,
 };
 
@@ -101,14 +114,14 @@ export const CONTENT_TYPE_OUTPUT_FORMATS: Record<string, readonly OutputFormat[]
   "image/bmp": IMAGE_OUTPUTS_WITH_PDF,
   "image/x-bmp": IMAGE_OUTPUTS_WITH_PDF,
   "image/svg+xml": IMAGE_OUTPUTS_WITH_PDF,
-  "image/x-icon": ICON_OUTPUTS_WITH_PDF,
-  "image/vnd.microsoft.icon": ICON_OUTPUTS_WITH_PDF,
-  "image/icon": ICON_OUTPUTS_WITH_PDF,
-  "application/pdf": ["PNG", "JPG", "WebP"],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ["PNG", "JPG", "WebP", "PDF"],
-  "application/msword": ["PNG", "JPG", "WebP", "PDF"],
-  "application/vnd.apple.pages": ["PNG", "JPG", "WebP", "PDF"],
-  "application/x-iwork-pages-sffpages": ["PNG", "JPG", "WebP", "PDF"],
+  "image/x-icon": IMAGE_OUTPUTS_WITH_PDF,
+  "image/vnd.microsoft.icon": IMAGE_OUTPUTS_WITH_PDF,
+  "image/icon": IMAGE_OUTPUTS_WITH_PDF,
+  "application/pdf": DOCUMENT_IMAGE_OUTPUTS,
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DOCUMENT_OUTPUTS_WITH_PDF,
+  "application/msword": DOCUMENT_OUTPUTS_WITH_PDF,
+  "application/vnd.apple.pages": DOCUMENT_OUTPUTS_WITH_PDF,
+  "application/x-iwork-pages-sffpages": DOCUMENT_OUTPUTS_WITH_PDF,
 };
 
 export const UPLOAD_FILE_INPUT_ACCEPT =
@@ -142,6 +155,8 @@ const DEFAULT_RECOMMENDATION_PRIORITY: readonly OutputFormat[] = [
   "PNG",
   "JPG",
   "WebP",
+  "HEIC",
+  "HEIF",
   "AVIF",
   "BMP",
   "TIFF",
@@ -151,50 +166,39 @@ const DEFAULT_RECOMMENDATION_PRIORITY: readonly OutputFormat[] = [
 ];
 
 const SOURCE_RECOMMENDATION_PRIORITY: Record<SourceFormatLabel, readonly OutputFormat[]> = {
-  PNG: ["JPG", "WebP", "PDF", "ICO", "AVIF", "TIFF", "GIF", "BMP", "SVG", "PNG"],
-  JPG: ["PNG", "WebP", "PDF", "TIFF", "AVIF", "GIF", "BMP", "ICO", "SVG", "JPG"],
-  WebP: ["JPG", "PNG", "PDF", "TIFF", "AVIF", "GIF", "BMP", "ICO", "SVG", "WebP"],
-  GIF: ["PNG", "WebP", "JPG", "PDF", "AVIF", "TIFF", "BMP", "ICO", "SVG", "GIF"],
-  TIFF: ["PDF", "JPG", "PNG", "WebP", "AVIF", "GIF", "BMP", "ICO", "SVG", "TIFF"],
-  AVIF: ["JPG", "PNG", "PDF", "WebP", "TIFF", "BMP", "GIF", "ICO", "SVG", "AVIF"],
-  BMP: ["PNG", "JPG", "WebP", "PDF", "AVIF", "TIFF", "GIF", "ICO", "SVG", "BMP"],
-  HEIC: ["PDF", "JPG", "PNG", "WebP", "ICO", "BMP", "AVIF", "SVG"],
-  SVG: ["PNG", "PDF", "WebP", "JPG", "ICO", "AVIF", "TIFF", "GIF", "BMP", "SVG"],
-  ICO: ["PNG", "WebP", "JPG", "PDF", "BMP", "AVIF", "TIFF", "GIF", "ICO"],
-  PDF: ["PNG", "JPG", "WebP"],
-  DOCX: ["PDF", "PNG", "JPG", "WebP"],
-  PAGES: ["PDF", "PNG", "JPG", "WebP"],
-  IMG: ["PDF", "PNG", "JPG", "WebP", "AVIF", "BMP", "TIFF", "GIF", "SVG", "ICO"],
+  PNG: ["JPG", "WebP", "PDF", "HEIC", "HEIF", "ICO", "AVIF", "TIFF", "GIF", "BMP", "SVG", "PNG"],
+  JPG: ["PNG", "WebP", "PDF", "HEIC", "HEIF", "TIFF", "AVIF", "GIF", "BMP", "ICO", "SVG", "JPG"],
+  WebP: ["JPG", "PNG", "PDF", "HEIC", "HEIF", "TIFF", "AVIF", "GIF", "BMP", "ICO", "SVG", "WebP"],
+  GIF: ["PNG", "WebP", "JPG", "PDF", "HEIC", "HEIF", "AVIF", "TIFF", "BMP", "ICO", "SVG", "GIF"],
+  TIFF: ["PDF", "JPG", "PNG", "WebP", "HEIC", "HEIF", "AVIF", "GIF", "BMP", "ICO", "SVG", "TIFF"],
+  AVIF: ["JPG", "PNG", "PDF", "WebP", "HEIC", "HEIF", "TIFF", "BMP", "GIF", "ICO", "SVG", "AVIF"],
+  BMP: ["PNG", "JPG", "WebP", "PDF", "HEIC", "HEIF", "AVIF", "TIFF", "GIF", "ICO", "SVG", "BMP"],
+  HEIC: ["PDF", "JPG", "PNG", "WebP", "HEIF", "ICO", "BMP", "AVIF", "SVG", "HEIC"],
+  HEIF: ["PDF", "JPG", "PNG", "WebP", "HEIC", "ICO", "BMP", "AVIF", "SVG", "HEIF"],
+  SVG: ["PNG", "PDF", "WebP", "JPG", "HEIC", "HEIF", "ICO", "AVIF", "TIFF", "GIF", "BMP", "SVG"],
+  ICO: ["PNG", "WebP", "JPG", "PDF", "HEIC", "HEIF", "BMP", "AVIF", "TIFF", "GIF", "SVG", "ICO"],
+  PDF: ["PNG", "JPG", "WebP", "AVIF", "TIFF", "GIF", "BMP", "ICO", "SVG", "PDF"],
+  DOCX: ["PDF", "PNG", "JPG", "WebP", "AVIF", "TIFF", "GIF", "BMP", "ICO", "SVG"],
+  PAGES: ["PDF", "PNG", "JPG", "WebP", "AVIF", "TIFF", "GIF", "BMP", "ICO", "SVG"],
+  IMG: ["PDF", "PNG", "JPG", "WebP", "HEIC", "HEIF", "AVIF", "BMP", "TIFF", "GIF", "SVG", "ICO"],
 };
 
 const POPULAR_TARGETS_BY_SOURCE: Record<SourceFormatLabel, readonly OutputFormat[]> = {
-  PNG: ["JPG", "WebP", "PDF", "ICO"],
-  JPG: ["PNG", "WebP", "PDF", "TIFF"],
-  WebP: ["JPG", "PNG", "PDF", "TIFF"],
-  GIF: ["PNG", "WebP", "JPG", "PDF"],
-  TIFF: ["PDF", "JPG", "PNG", "WebP"],
-  AVIF: ["JPG", "PNG", "PDF", "WebP"],
-  BMP: ["PNG", "JPG", "WebP", "PDF"],
-  HEIC: ["PDF", "JPG", "PNG", "WebP"],
-  SVG: ["PNG", "PDF", "WebP", "JPG"],
-  ICO: ["PNG", "WebP", "JPG", "PDF"],
-  PDF: ["PNG", "JPG", "WebP"],
-  DOCX: ["PDF", "PNG", "JPG", "WebP"],
-  PAGES: ["PDF", "PNG", "JPG", "WebP"],
-  IMG: ["PDF", "PNG", "JPG", "WebP"],
-};
-
-const NO_OP_TARGET_BY_SOURCE: Partial<Record<SourceFormatLabel, OutputFormat>> = {
-  PNG: "PNG",
-  JPG: "JPG",
-  WebP: "WebP",
-  GIF: "GIF",
-  TIFF: "TIFF",
-  AVIF: "AVIF",
-  BMP: "BMP",
-  SVG: "SVG",
-  ICO: "ICO",
-  PDF: "PDF",
+  PNG: ["JPG", "WebP", "PDF"],
+  JPG: ["PNG", "WebP", "PDF"],
+  WebP: ["JPG", "PNG", "PDF"],
+  GIF: ["PNG", "WebP", "JPG"],
+  TIFF: ["PNG", "JPG", "PDF"],
+  AVIF: ["JPG", "PNG", "WebP"],
+  BMP: ["PNG", "JPG", "PDF"],
+  HEIC: ["JPG", "PNG", "PDF"],
+  HEIF: ["JPG", "PNG", "PDF"],
+  SVG: ["PNG", "PDF", "JPG"],
+  ICO: ["PNG", "JPG", "WebP"],
+  PDF: ["JPG", "PNG", "WebP"],
+  DOCX: ["PDF", "JPG", "PNG"],
+  PAGES: ["PDF", "JPG", "PNG"],
+  IMG: ["JPG", "PNG", "PDF"],
 };
 
 export const FORMAT_CAPABILITIES = {
@@ -204,6 +208,51 @@ export const FORMAT_CAPABILITIES = {
 } as const;
 
 const SUPPORTED_UPLOAD_EXT_SET = new Set<string>(SUPPORTED_UPLOAD_EXTENSIONS);
+const SOURCE_LABEL_BY_EXTENSION: Record<string, SourceFormatLabel> = {
+  png: "PNG",
+  jpg: "JPG",
+  jpeg: "JPG",
+  webp: "WebP",
+  gif: "GIF",
+  tif: "TIFF",
+  tiff: "TIFF",
+  avif: "AVIF",
+  heic: "HEIC",
+  heif: "HEIF",
+  bmp: "BMP",
+  svg: "SVG",
+  ico: "ICO",
+  pdf: "PDF",
+  doc: "DOCX",
+  docx: "DOCX",
+  pages: "PAGES",
+};
+
+const SOURCE_LABEL_BY_CONTENT_TYPE: Record<string, SourceFormatLabel> = {
+  "image/png": "PNG",
+  "image/x-png": "PNG",
+  "image/jpeg": "JPG",
+  "image/jpg": "JPG",
+  "image/pjpeg": "JPG",
+  "image/webp": "WebP",
+  "image/gif": "GIF",
+  "image/tiff": "TIFF",
+  "image/x-tiff": "TIFF",
+  "image/avif": "AVIF",
+  "image/heic": "HEIC",
+  "image/heif": "HEIF",
+  "image/bmp": "BMP",
+  "image/x-bmp": "BMP",
+  "image/svg+xml": "SVG",
+  "image/x-icon": "ICO",
+  "image/vnd.microsoft.icon": "ICO",
+  "image/icon": "ICO",
+  "application/pdf": "PDF",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+  "application/msword": "DOCX",
+  "application/vnd.apple.pages": "PAGES",
+  "application/x-iwork-pages-sffpages": "PAGES",
+};
 
 function extFromFilename(name: string): string {
   const base = (name || "").split("?")[0].split("#")[0];
@@ -230,6 +279,28 @@ export function allowedOutputFormatsForContentType(contentType: string): OutputF
   return [];
 }
 
+export function sourceLabelFromFilenameOrContentType(
+  filename: string,
+  contentType?: string | null
+): SourceFormatLabel {
+  const ext = extFromFilename(filename);
+  if (ext && SOURCE_LABEL_BY_EXTENSION[ext]) return SOURCE_LABEL_BY_EXTENSION[ext];
+
+  const ct = normalizeContentType(contentType);
+  if (ct && SOURCE_LABEL_BY_CONTENT_TYPE[ct]) return SOURCE_LABEL_BY_CONTENT_TYPE[ct];
+  if (ct.startsWith("image/")) return "IMG";
+
+  return "IMG";
+}
+
+export function allowedOutputFormatsForFile(
+  filename: string,
+  contentType?: string | null
+): OutputFormat[] {
+  const sourceLabel = sourceLabelFromFilenameOrContentType(filename, contentType);
+  return allowedOutputFormatsForSourceLabel(sourceLabel);
+}
+
 export function allowedOutputFormatsForSourceLabel(sourceLabel: string): OutputFormat[] {
   const mapped = SOURCE_LABEL_OUTPUT_FORMATS[asSourceLabel(sourceLabel)];
   return mapped ? [...mapped] : [...SOURCE_LABEL_OUTPUT_FORMATS.IMG];
@@ -252,10 +323,8 @@ export function invalidTargetReasonForSourceLabel(
     return `${normalized} cannot convert to ${outputTarget}`;
   }
 
-  const noOpTarget = NO_OP_TARGET_BY_SOURCE[normalized];
-  if (noOpTarget && noOpTarget === outputTarget) {
-    return `Already ${outputTarget}; choose a different target format`;
-  }
+  // Same-format conversions are intentionally allowed: users may want to re-encode
+  // with different quality/compression settings or resize the image.
 
   return null;
 }
@@ -295,7 +364,7 @@ export function sortOutputsByRecommendation(
 export function recommendedOutputsForSourceLabels(
   sourceLabels: readonly string[],
   availableOutputs: readonly OutputFormat[],
-  maxCount: number = 4
+  maxCount: number = 3
 ): OutputFormat[] {
   const labels = sourceLabels.map((s) => asSourceLabel(s));
   const availableSet = new Set(availableOutputs);

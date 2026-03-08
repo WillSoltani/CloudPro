@@ -3,12 +3,16 @@
 
 import {
   Download, List, Grid2X2, Check, Loader2, AlertCircle, Trash2, RefreshCw,
-  Search, X, ChevronUp, ChevronDown,
+  Search, X, ChevronUp, ChevronDown, Eye,
 } from "lucide-react";
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import type { ItemSettings, LocalConvertedFile, OutputFormat, PresetId } from "../_lib/ui-types";
-import { VALID_OUTPUT_FORMATS, IMAGE_OUTPUT_FORMATS } from "../_lib/ui-types";
+import { ALL_OUTPUT_FORMATS } from "../_lib/ui-types";
 import { Thumb } from "./Thumb";
+import { FilePreviewModal } from "./FilePreviewModal";
+import { useFilePreview } from "../hooks/useFilePreview";
+import { canPreview, logPreviewHiddenReasonOnce } from "../_lib/preview";
+import { INPUT_ONLY_FORMAT_LABELS, invalidTargetReasonForSourceLabel } from "@/app/app/_lib/conversion-support";
 
 type SortField = "name" | "size" | "date";
 type SortDir = "asc" | "desc";
@@ -17,9 +21,11 @@ type SortBy = { field: SortField; dir: SortDir };
 type Props = {
   files: LocalConvertedFile[];
   projectId: string;
-  onDeleteFile?: (fileId: string) => void;
+  onDeleteFile?: (fileId: string) => Promise<void> | void;
   onReconvert?: (sourceFileId: string, settings: ItemSettings) => void;
   globalSettings: ItemSettings;
+  title?: string;
+  emptyMessage?: string;
 };
 
 async function triggerDownload(projectId: string, fileId: string) {
@@ -105,16 +111,31 @@ function ReconvertPanel({
   onReconvert: (sourceFileId: string, settings: ItemSettings) => void;
   onClose: () => void;
 }) {
-  const [fmt, setFmt] = useState<OutputFormat>(globalSettings.format);
+  const enabledOutputFormats = useMemo(
+    () =>
+      ALL_OUTPUT_FORMATS.filter((target) => !invalidTargetReasonForSourceLabel(file.fromLabel, target)),
+    [file.fromLabel]
+  );
+  const initialFormat = useMemo(() => {
+    const outputLabel = file.toLabel as OutputFormat;
+    const fromFile = ALL_OUTPUT_FORMATS.includes(outputLabel) ? outputLabel : globalSettings.format;
+    if (enabledOutputFormats.includes(fromFile)) return fromFile;
+    return enabledOutputFormats[0] ?? globalSettings.format;
+  }, [enabledOutputFormats, file.toLabel, globalSettings.format]);
+
+  const [fmt, setFmt] = useState<OutputFormat>(initialFormat);
   const [quality, setQuality] = useState(globalSettings.quality);
-  const [preset, setPreset] = useState<PresetId>(globalSettings.preset);
+  const preset: PresetId = globalSettings.preset;
   const [resizePct, setResizePct] = useState(globalSettings.resizePct);
 
-  if (!file.sourceFileId) return null;
+  const displayFormats = useMemo(() => {
+    const inputOnly = INPUT_ONLY_FORMAT_LABELS.filter(
+      (label) => !ALL_OUTPUT_FORMATS.includes(label as OutputFormat)
+    );
+    return [...ALL_OUTPUT_FORMATS, ...inputOnly];
+  }, []);
 
-  // Only show formats valid for the source file type
-  const availableFormats: OutputFormat[] =
-    VALID_OUTPUT_FORMATS[file.fromLabel] ?? IMAGE_OUTPUT_FORMATS;
+  if (!file.sourceFileId) return null;
 
   return (
     <div className="border-t border-white/10 bg-white/2 px-5 py-4 space-y-4">
@@ -123,21 +144,37 @@ function ReconvertPanel({
       <div>
         <div className="mb-2 text-xs text-slate-400">Output format</div>
         <div className="flex flex-wrap gap-1.5">
-          {availableFormats.map((f) => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => setFmt(f)}
-              className={[
-                "rounded-full border px-2.5 py-1 text-xs font-semibold transition",
-                fmt === f
-                  ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
-                  : "border-white/10 bg-white/5 text-slate-400 hover:text-slate-200",
-              ].join(" ")}
-            >
-              {f}
-            </button>
-          ))}
+          {displayFormats.map((target) => {
+            const isOutput = ALL_OUTPUT_FORMATS.includes(target as OutputFormat);
+            const reason = !isOutput
+              ? `${target} is supported as an input format only`
+              : invalidTargetReasonForSourceLabel(file.fromLabel, target);
+            const disabled = Boolean(reason);
+            const active = !disabled && fmt === target;
+
+            return (
+              <button
+                key={target}
+                type="button"
+                onClick={() => {
+                  if (disabled || !isOutput) return;
+                  setFmt(target as OutputFormat);
+                }}
+                disabled={disabled || !isOutput}
+                title={reason ?? `Convert to ${target}`}
+                className={[
+                  "rounded-full border px-2.5 py-1 text-xs font-semibold transition",
+                  active
+                    ? "border-sky-400/40 bg-sky-500/20 text-sky-200"
+                    : !disabled && isOutput
+                      ? "border-white/10 bg-white/5 text-slate-400 hover:text-slate-200"
+                      : "cursor-not-allowed border-white/10 bg-white/3 text-slate-600",
+                ].join(" ")}
+              >
+                {target}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -173,9 +210,11 @@ function ReconvertPanel({
         <button
           type="button"
           onClick={() => {
+            if (!enabledOutputFormats.includes(fmt)) return;
             onReconvert(file.sourceFileId!, { format: fmt, quality, preset, resizePct });
             onClose();
           }}
+          disabled={!enabledOutputFormats.includes(fmt)}
           className="inline-flex items-center gap-2 rounded-2xl bg-sky-600/90 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500"
         >
           <RefreshCw className="h-3.5 w-3.5" />Reconvert
@@ -223,7 +262,13 @@ function SortButton({
 }
 
 export function ConvertedFiles({
-  files, projectId, onDeleteFile, onReconvert, globalSettings,
+  files,
+  projectId,
+  onDeleteFile,
+  onReconvert,
+  globalSettings,
+  title = "Converted Files",
+  emptyMessage = "No converted files yet.",
 }: Props) {
   const [view, setView] = useState<"list" | "grid">("list");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -238,6 +283,7 @@ export function ConvertedFiles({
   // Search + sort
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>({ field: "date", dir: "desc" });
+  const preview = useFilePreview(projectId);
 
   const doneFiles = useMemo(() => files.filter((f) => f.status === "done"), [files]);
 
@@ -265,6 +311,33 @@ export function ConvertedFiles({
     });
   }, [files, query, sortBy]);
 
+  const previewEligibilityById = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof canPreview>>();
+    for (const f of displayFiles) {
+      const eligibility = canPreview({
+        fileId: f.id,
+        filename: f.name,
+        contentType: f.contentType,
+        formatLabel: f.toLabel,
+        status: f.status,
+        previewUrl: f.previewUrl,
+        hasLocalSource: false,
+      });
+      map.set(f.id, eligibility);
+      if (!eligibility.canPreview) {
+        logPreviewHiddenReasonOnce({
+          section: "converted",
+          fileId: f.id,
+          reason: eligibility.reason,
+          filename: f.name,
+          formatLabel: f.toLabel,
+          status: f.status,
+        });
+      }
+    }
+    return map;
+  }, [displayFiles]);
+
   const allDisplaySelected =
     displayFiles.length > 0 && displayFiles.every((f) => selectedIds.has(f.id));
   const someSelected = selectedIds.size > 0;
@@ -273,6 +346,20 @@ export function ConvertedFiles({
       [...selectedIds].filter((id) => files.find((f) => f.id === id)?.status === "done"),
     [selectedIds, files]
   );
+
+  useEffect(() => {
+    const validIds = new Set(files.map((f) => f.id));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (validIds.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+    setExpandedReconvert((prev) => (prev && !validIds.has(prev) ? null : prev));
+  }, [files]);
 
   const toggleOne = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -338,7 +425,9 @@ export function ConvertedFiles({
     const ids = [...selectedIds];
     setSelectedIds(new Set());
     try {
-      for (const id of ids) onDeleteFile(id);
+      for (const id of ids) {
+        await onDeleteFile(id);
+      }
     } finally {
       setBulkDeleting(false);
     }
@@ -349,7 +438,7 @@ export function ConvertedFiles({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-xl font-semibold text-slate-100">
-          Converted Files
+          {title}
           {files.length > 0 && (
             <span className="ml-2 text-sm font-normal text-slate-400">({files.length})</span>
           )}
@@ -445,7 +534,7 @@ export function ConvertedFiles({
 
       {files.length === 0 ? (
         <div className="rounded-[28px] border border-white/10 bg-white/3 px-5 py-8 text-sm text-slate-400">
-          No converted files yet.
+          {emptyMessage}
         </div>
       ) : displayFiles.length === 0 ? (
         <div className="rounded-[28px] border border-white/10 bg-white/3 px-5 py-6 text-sm text-slate-400">
@@ -460,11 +549,13 @@ export function ConvertedFiles({
             </span>
           </div>
 
-          {displayFiles.map((f) => (
-            <div
-              key={f.id}
-              className="overflow-hidden rounded-[24px] border border-white/10 bg-white/3 shadow-[0_14px_60px_rgba(0,0,0,0.35)]"
-            >
+          {displayFiles.map((f) => {
+            const previewEligibility = previewEligibilityById.get(f.id) ?? { canPreview: false as const, reason: "missing_url" as const };
+            return (
+              <div
+                key={f.id}
+                className="overflow-hidden rounded-[24px] border border-white/10 bg-white/3 shadow-[0_14px_60px_rgba(0,0,0,0.35)]"
+              >
               <div className="flex items-center gap-3 px-5 py-4">
                 <Checkbox
                   checked={selectedIds.has(f.id)}
@@ -495,6 +586,27 @@ export function ConvertedFiles({
                 </div>
 
                 <div className="flex items-center gap-1">
+                  {previewEligibility.canPreview && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void preview.openPreview({
+                          section: "converted",
+                          fileId: f.id,
+                          filename: f.name,
+                          contentType: f.contentType,
+                          formatLabel: f.toLabel,
+                          status: f.status,
+                          previewUrl: f.previewUrl,
+                          hasLocalSource: false,
+                        })
+                      }
+                      title="Preview"
+                      className="grid h-8 w-8 place-items-center rounded-xl text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </button>
+                  )}
                   {f.status === "done" && (
                     <button
                       type="button"
@@ -526,7 +638,7 @@ export function ConvertedFiles({
                   {onDeleteFile && (
                     <button
                       type="button"
-                      onClick={() => onDeleteFile(f.id)}
+                      onClick={() => void onDeleteFile(f.id)}
                       title="Remove"
                       className="grid h-8 w-8 place-items-center rounded-xl text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-300"
                     >
@@ -545,7 +657,8 @@ export function ConvertedFiles({
                 />
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <>
@@ -557,14 +670,16 @@ export function ConvertedFiles({
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {displayFiles.map((f) => (
-              <div
-                key={f.id}
-                className={[
-                  "flex flex-col overflow-hidden rounded-[20px] border bg-white/3 shadow-[0_14px_60px_rgba(0,0,0,0.35)]",
-                  selectedIds.has(f.id) ? "border-sky-400/25" : "border-white/10",
-                ].join(" ")}
-              >
+            {displayFiles.map((f) => {
+              const previewEligibility = previewEligibilityById.get(f.id) ?? { canPreview: false as const, reason: "missing_url" as const };
+              return (
+                <div
+                  key={f.id}
+                  className={[
+                    "flex flex-col overflow-hidden rounded-[20px] border bg-white/3 shadow-[0_14px_60px_rgba(0,0,0,0.35)]",
+                    selectedIds.has(f.id) ? "border-sky-400/25" : "border-white/10",
+                  ].join(" ")}
+                >
                 <div className="relative aspect-square w-full bg-white/5">
                   {/* Always-visible fallback text behind the image */}
                   <div className="absolute inset-0 grid place-items-center">
@@ -604,12 +719,36 @@ export function ConvertedFiles({
                 </div>
 
                 <div className="flex border-t border-white/10">
+                  {previewEligibility.canPreview && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void preview.openPreview({
+                          section: "converted",
+                          fileId: f.id,
+                          filename: f.name,
+                          contentType: f.contentType,
+                          formatLabel: f.toLabel,
+                          status: f.status,
+                          previewUrl: f.previewUrl,
+                          hasLocalSource: false,
+                        })
+                      }
+                      className="flex items-center justify-center gap-1.5 py-2 px-3 text-xs text-slate-300 transition hover:bg-white/10"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Preview
+                    </button>
+                  )}
                   {f.status === "done" && (
                     <button
                       type="button"
                       onClick={() => void handleDownloadOne(f.id)}
                       disabled={downloadingId === f.id}
-                      className="flex flex-1 items-center justify-center gap-1.5 py-2 text-xs text-slate-300 transition hover:bg-white/10 disabled:opacity-40"
+                      className={[
+                        "flex items-center justify-center gap-1.5 py-2 text-xs text-slate-300 transition hover:bg-white/10 disabled:opacity-40",
+                        previewEligibility.canPreview ? "flex-1 border-l border-white/10" : "flex-1",
+                      ].join(" ")}
                     >
                       {downloadingId === f.id
                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -629,7 +768,7 @@ export function ConvertedFiles({
                   {onDeleteFile && (
                     <button
                       type="button"
-                      onClick={() => onDeleteFile(f.id)}
+                      onClick={() => void onDeleteFile(f.id)}
                       className="flex items-center justify-center gap-1.5 border-l border-white/10 px-3 py-2 text-xs text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-300"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -646,10 +785,20 @@ export function ConvertedFiles({
                   />
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
+
+      <FilePreviewModal
+        preview={preview.preview}
+        onClose={preview.closePreview}
+        onZoomIn={preview.zoomIn}
+        onZoomOut={preview.zoomOut}
+        onRetry={() => void preview.retryPreview()}
+        onImageError={preview.onImageError}
+      />
     </div>
   );
 }

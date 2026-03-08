@@ -4,7 +4,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { FileRow } from "../../_lib/types";
 import { getInlineUrl } from "../_lib/api-client";
-import { isLikelyImage } from "../../_lib/ui";
+import {
+  isPresignedUrlExpired,
+  previewLifecycleBlockedReason,
+  supportsBrowserImagePreview,
+} from "../_lib/preview";
 
 export function useSignedUrls(projectId: string, files: FileRow[]) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
@@ -15,11 +19,20 @@ export function useSignedUrls(projectId: string, files: FileRow[]) {
 
     async function run() {
       const ids = files
-        .filter((f) => isLikelyImage(f.filename, f.contentType))
+        .filter((f) => supportsBrowserImagePreview({
+          filename: f.filename,
+          contentType: f.contentType,
+        }))
+        .filter((f) => !previewLifecycleBlockedReason({ status: f.status }))
         .map((f) => f.fileId)
         .filter((x): x is string => Boolean(x));
 
-      const need = ids.filter((id) => !signedUrls[id] && !inFlightRef.current.has(id));
+      const need = ids.filter((id) => {
+        if (inFlightRef.current.has(id)) return false;
+        const current = signedUrls[id];
+        if (!current) return true;
+        return isPresignedUrlExpired(current);
+      });
       if (!need.length) return;
 
       const batch = need.slice(0, 10);

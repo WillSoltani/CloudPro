@@ -10,6 +10,7 @@ import { requireUser } from "@/app/app/api/_lib/auth";
 export const runtime = "nodejs";
 
 type FileKind = "raw" | "output";
+type OutputArtifactType = "conversion" | "filled_pdf";
 
 type FileRow = {
   fileId: string;
@@ -26,6 +27,7 @@ type FileRow = {
   outputFormat?: string;
   sourceFileId?: string;
   sourceContentType?: string;
+  artifactType?: OutputArtifactType;
   packaging?: "single" | "zip";
   pageCount?: number;
   outputCount?: number;
@@ -109,6 +111,12 @@ function toDbFileItem(raw: unknown): DbFileItem | null {
   if (sourceFileId) result.sourceFileId = sourceFileId;
   const sourceContentType = str(raw.sourceContentType);
   if (sourceContentType) result.sourceContentType = sourceContentType;
+  const artifactType = str(raw.artifactType);
+  if (artifactType === "conversion" || artifactType === "filled_pdf") {
+    result.artifactType = artifactType;
+  } else if (result.kind === "output") {
+    result.artifactType = "conversion";
+  }
   const packaging = str(raw.packaging);
   if (packaging === "single" || packaging === "zip") result.packaging = packaging;
   const pageCount = intOrUndef(raw.pageCount);

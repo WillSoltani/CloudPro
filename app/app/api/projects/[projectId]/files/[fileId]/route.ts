@@ -23,6 +23,10 @@ function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
 function awsHttpStatus(e: unknown): number | undefined {
   if (typeof e !== "object" || e === null) return undefined;
   const rec = e as Record<string, unknown>;
@@ -67,14 +71,39 @@ export async function DELETE(
     );
 
     const item = got.Item;
+    const itemKind = str(isRecord(item) ? item.kind : "");
+    const itemArtifactType = str(isRecord(item) ? item.artifactType : "");
+
+    console.info(
+      JSON.stringify({
+        event: "single_file_delete_requested",
+        projectId,
+        fileId,
+        itemFound: Boolean(item),
+        itemKind: itemKind || "unknown",
+        itemArtifactType: itemArtifactType || "unknown",
+      })
+    );
+
+    let deletedS3Objects = 0;
+    let plannedS3Deletes = 0;
 
     if (item) {
       const bucket = str(item.bucket);
       const key = str(item.key);
+      plannedS3Deletes = bucket && key ? 1 : 0;
+
+      // Safety rail: a single-delete endpoint must never delete more than one object.
+      if (plannedS3Deletes > 1) {
+        throw new Error(
+          `single delete guardrail triggered for fileId=${fileId}: plannedS3Deletes=${plannedS3Deletes}`
+        );
+      }
 
       if (bucket && key) {
         try {
           await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+          deletedS3Objects = 1;
         } catch (e: unknown) {
           // If already deleted from S3, that's fine.
           const status = awsHttpStatus(e);
@@ -95,7 +124,25 @@ export async function DELETE(
       })
     );
 
-    return NextResponse.json({ ok: true, fileId });
+    console.info(
+      JSON.stringify({
+        event: "single_file_delete_completed",
+        projectId,
+        fileId,
+        plannedS3Deletes,
+        deletedS3Objects,
+        deletedDdbRows: item ? 1 : 0,
+      })
+    );
+
+    return NextResponse.json({
+      ok: true,
+      fileId,
+      deleted: {
+        ddbRows: item ? 1 : 0,
+        s3Objects: deletedS3Objects,
+      },
+    });
   } catch (e: unknown) {
     const msg = getErrorMessage(e);
     if (msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN") {

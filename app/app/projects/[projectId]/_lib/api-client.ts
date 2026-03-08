@@ -39,6 +39,22 @@ export type ConvertResponse = {
   results: ConvertResultItem[];
 };
 
+export type CreateFilledPdfUploadPayload = {
+  originalFileId: string;
+  filename: string;
+  sizeBytes: number;
+};
+
+export type CreateFilledPdfUploadResponse = {
+  upload: {
+    fileId: string;
+    putUrl: string;
+    bucket: string;
+    key: string;
+    headers: Record<string, string>;
+  };
+};
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
@@ -155,6 +171,67 @@ export async function deleteFile(projectId: string, fileId: string) {
   if (!res.ok) {
     const msg = await readErrorMessage(res);
     throw new Error(`Delete failed: ${res.status} ${msg}`);
+  }
+}
+
+export async function createFilledPdfUpload(
+  projectId: string,
+  payload: CreateFilledPdfUploadPayload
+) {
+  const res = await fetch(`/app/api/projects/${encodeURIComponent(projectId)}/files/filled/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const msg = await readErrorMessage(res);
+    throw new Error(`create filled upload failed: ${res.status} ${msg}`);
+  }
+  const data = (await res.json()) as CreateFilledPdfUploadResponse;
+  if (!data?.upload?.fileId || !data.upload.putUrl) {
+    throw new Error("create filled upload returned invalid payload");
+  }
+  return data.upload;
+}
+
+export async function completeFilledPdfUpload(
+  projectId: string,
+  fileId: string,
+  payload: { bucket: string; key: string; sizeBytes: number }
+) {
+  const res = await fetch(
+    `/app/api/projects/${encodeURIComponent(projectId)}/files/filled/${encodeURIComponent(fileId)}/complete`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.ok) {
+    const msg = await readErrorMessage(res);
+    throw new Error(`complete filled upload failed: ${res.status} ${msg}`);
+  }
+}
+
+export async function uploadFilledPdfBytes(
+  projectId: string,
+  fileId: string,
+  bytes: Uint8Array
+) {
+  const res = await fetch(
+    `/app/api/projects/${encodeURIComponent(projectId)}/files/filled/${encodeURIComponent(fileId)}/upload`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/pdf" },
+      cache: "no-store",
+      body: bytes,
+    }
+  );
+  if (!res.ok) {
+    const msg = await readErrorMessage(res);
+    throw new Error(`upload filled pdf failed: ${res.status} ${msg}`);
   }
 }
 

@@ -104,7 +104,7 @@ export class StorageStack extends cdk.Stack {
        */
       architecture: lambda.Architecture.X86_64,
 
-      memorySize: 1024,
+      memorySize: 2048,
       timeout: cdk.Duration.minutes(2),
 
       environment: {

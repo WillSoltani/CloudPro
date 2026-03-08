@@ -7,11 +7,12 @@ Usage:
     <input_path> <output_zip> <base_name> <format> <dpi> <quality> <resize_pct> <max_width>
 
 Notes:
-- format: png | jpg | webp
+- format: png | jpg | webp | gif | tiff | avif | bmp | ico | svg
 - resize_pct: 10-100 (100 = no explicit resize)
 - max_width: 0 to disable preset width cap
 """
 
+import base64
 import io
 import json
 import os
@@ -92,6 +93,40 @@ def mean_abs_error(a, b) -> float:
     return total / denom
 
 
+def ensure_avif_support() -> None:
+    try:
+        import pillow_avif  # noqa: PLC0415
+    except Exception as exc:  # pragma: no cover - exercised in runtime tests
+        raise RuntimeError(f"AVIF codec support is unavailable in this runtime: {exc}") from exc
+
+    register = getattr(pillow_avif, "register", None)
+    if callable(register):
+        register()
+
+
+def icon_sizes(width: int, height: int) -> list[tuple[int, int]]:
+    preferred = [256, 192, 128, 96, 64, 48, 32, 24, 16]
+    max_dim = max(width, height)
+    sizes = [(s, s) for s in preferred if s <= max_dim]
+    if sizes:
+        return sizes
+    fallback = max(16, min(256, max_dim))
+    return [(fallback, fallback)]
+
+
+def png_to_embedded_svg(png_bytes: bytes, width: int, height: int) -> bytes:
+    w = max(1, int(width))
+    h = max(1, int(height))
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" version="1.1">'
+        f'<image width="{w}" height="{h}" href="data:image/png;base64,{b64}"/>'
+        "</svg>\n"
+    )
+    return xml.encode("utf-8")
+
+
 def main() -> None:
     if len(sys.argv) != 9:
         emit_error(
@@ -112,7 +147,7 @@ def main() -> None:
     if not os.path.exists(input_path):
         emit_error("validate_input", f"Input file not found: {input_path}")
         sys.exit(1)
-    if target_fmt not in ["png", "jpg", "webp"]:
+    if target_fmt not in ["png", "jpg", "webp", "gif", "tiff", "avif", "bmp", "ico", "svg"]:
         emit_error("validate_args", f"Unsupported target image format: {target_fmt}")
         sys.exit(1)
     if dpi < 36 or dpi > 400:
@@ -149,11 +184,14 @@ def main() -> None:
         if page_count <= 0:
             raise RuntimeError("Document has no pages")
 
+        if target_fmt == "avif":
+            ensure_avif_support()
+
         os.makedirs(os.path.dirname(output_zip) or ".", exist_ok=True)
         scale = dpi / 72.0
         matrix = fitz.Matrix(scale, scale)
-        thresholds = {"png": 0.0010, "jpg": 0.0200, "webp": 0.0200}
-        threshold = thresholds[target_fmt]
+        thresholds = {"png": 0.0010, "jpg": 0.0200, "webp": 0.0200, "avif": 0.0300}
+        threshold = thresholds.get(target_fmt)
         page_mae: list[float] = []
 
         with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
@@ -179,30 +217,53 @@ def main() -> None:
 
                 if target_fmt == "png":
                     image.save(out_bytes, format="PNG", optimize=True, compress_level=6)
+                    encoded = out_bytes.getvalue()
                 elif target_fmt == "jpg":
                     image.save(out_bytes, format="JPEG", quality=quality, optimize=True, progressive=True)
-                else:
+                    encoded = out_bytes.getvalue()
+                elif target_fmt == "webp":
                     image.save(out_bytes, format="WEBP", quality=quality, method=6)
+                    encoded = out_bytes.getvalue()
+                elif target_fmt == "gif":
+                    image.convert("P", palette=Image.ADAPTIVE).save(out_bytes, format="GIF", optimize=True)
+                    encoded = out_bytes.getvalue()
+                elif target_fmt == "tiff":
+                    image.save(out_bytes, format="TIFF", compression="tiff_adobe_deflate")
+                    encoded = out_bytes.getvalue()
+                elif target_fmt == "avif":
+                    image.save(out_bytes, format="AVIF", quality=quality)
+                    encoded = out_bytes.getvalue()
+                elif target_fmt == "bmp":
+                    image.save(out_bytes, format="BMP")
+                    encoded = out_bytes.getvalue()
+                elif target_fmt == "ico":
+                    rgba = image.convert("RGBA")
+                    rgba.save(out_bytes, format="ICO", sizes=icon_sizes(rgba.width, rgba.height))
+                    encoded = out_bytes.getvalue()
+                else:
+                    png_bytes = io.BytesIO()
+                    image.save(png_bytes, format="PNG", optimize=True, compress_level=6)
+                    encoded = png_to_embedded_svg(png_bytes.getvalue(), image.width, image.height)
 
-                encoded = out_bytes.getvalue()
                 zf.writestr(out_name, encoded)
 
                 # Fidelity gate: encoded page must stay within strict visual threshold
-                decoded = Image.open(io.BytesIO(encoded)).convert("RGB")
-                mae = mean_abs_error(reference, decoded)
-                page_mae.append(mae)
-                if mae > threshold:
-                    emit_error(
-                        "fidelity_gate",
-                        f"Page {i + 1} exceeds fidelity threshold ({mae:.6f} > {threshold:.6f})",
-                        {
-                            "page": i + 1,
-                            "format": target_fmt,
-                            "mae": mae,
-                            "threshold": threshold,
-                        },
-                    )
-                    sys.exit(1)
+                if threshold is not None:
+                    decoded = Image.open(io.BytesIO(encoded)).convert("RGB")
+                    mae = mean_abs_error(reference, decoded)
+                    page_mae.append(mae)
+                    if mae > threshold:
+                        emit_error(
+                            "fidelity_gate",
+                            f"Page {i + 1} exceeds fidelity threshold ({mae:.6f} > {threshold:.6f})",
+                            {
+                                "page": i + 1,
+                                "format": target_fmt,
+                                "mae": mae,
+                                "threshold": threshold,
+                            },
+                        )
+                        sys.exit(1)
 
         if not os.path.exists(output_zip):
             raise RuntimeError("ZIP output file was not created")
@@ -210,26 +271,22 @@ def main() -> None:
         if zip_size <= 256:
             raise RuntimeError(f"ZIP output is suspiciously small ({zip_size} bytes)")
 
-        max_mae = max(page_mae) if page_mae else 0.0
-        avg_mae = sum(page_mae) / len(page_mae) if page_mae else 0.0
-
-        print(
-            json.dumps(
-                {
-                    "ok": True,
-                    "pages": page_count,
-                    "zip_size": zip_size,
-                    "format": target_fmt,
-                    "fidelity": {
-                        "threshold": threshold,
-                        "max_mae": max_mae,
-                        "avg_mae": avg_mae,
-                        "page_mae": page_mae,
-                    },
-                }
-            ),
-            flush=True,
-        )
+        result: dict[str, object] = {
+            "ok": True,
+            "pages": page_count,
+            "zip_size": zip_size,
+            "format": target_fmt,
+        }
+        if threshold is not None:
+            max_mae = max(page_mae) if page_mae else 0.0
+            avg_mae = sum(page_mae) / len(page_mae) if page_mae else 0.0
+            result["fidelity"] = {
+                "threshold": threshold,
+                "max_mae": max_mae,
+                "avg_mae": avg_mae,
+                "page_mae": page_mae,
+            }
+        print(json.dumps(result), flush=True)
     except subprocess.TimeoutExpired:
         emit_error("docx_to_pdf", "DOCX->PDF pre-conversion timed out")
         sys.exit(1)

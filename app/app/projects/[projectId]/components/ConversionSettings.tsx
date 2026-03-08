@@ -6,7 +6,8 @@ import type { OutputFormat, PresetId } from "../_lib/ui-types";
 
 export function ConversionSettings(props: {
   format: OutputFormat;
-  availableFormats: OutputFormat[];
+  allFormats: OutputFormat[];
+  enabledFormats: OutputFormat[];
   inputOnlyFormats?: string[];
   recommendedFormats: OutputFormat[];
   onFormat: (f: OutputFormat) => void;
@@ -29,10 +30,11 @@ export function ConversionSettings(props: {
 
   const displayFormats = useMemo(() => {
     const inputOnly = (props.inputOnlyFormats ?? []).filter(
-      (label) => !props.availableFormats.includes(label as OutputFormat)
+      (label) => !props.allFormats.includes(label as OutputFormat)
     );
-    return [...props.availableFormats, ...inputOnly];
-  }, [props.availableFormats, props.inputOnlyFormats]);
+    return [...props.allFormats, ...inputOnly];
+  }, [props.allFormats, props.inputOnlyFormats]);
+  const canSelectTargets = props.selectedCount > 0;
 
   return (
     <div className="rounded-[32px] border border-white/10 bg-white/3 p-6 shadow-[0_20px_80px_rgba(0,0,0,0.45)]">
@@ -45,23 +47,33 @@ export function ConversionSettings(props: {
 
       {/* Format picker — uses shared conversion matrix from backend allowlist */}
       <div className="mt-6">
-        <div className="text-sm font-semibold text-slate-200">Available Formats</div>
-        {props.recommendedFormats.length > 0 ? (
+        <div className="text-sm font-semibold text-slate-200">Supported Formats</div>
+        {canSelectTargets && props.recommendedFormats.length > 0 ? (
           <div className="mt-2 text-xs text-slate-400">
             Recommended: {props.recommendedFormats.join(", ")}
           </div>
         ) : null}
         <div className="mt-3 grid grid-cols-3 gap-2">
           {displayFormats.map((opt) => {
-            const selectable = props.availableFormats.includes(opt as OutputFormat);
+            const outputTarget = props.allFormats.includes(opt as OutputFormat);
+            const enabledForSelection =
+              outputTarget && props.enabledFormats.includes(opt as OutputFormat);
+            const selectable = canSelectTargets && enabledForSelection;
             const active = selectable && opt === props.format;
+            const tooltip = !canSelectTargets
+              ? "Select a file to choose a target format"
+              : !outputTarget
+                ? `${opt} is supported as an input format only`
+                : !enabledForSelection
+                  ? "Not available for this source type"
+                  : `Convert to ${opt}`;
             return (
               <button
                 key={opt}
                 type="button"
                 onClick={() => selectable && props.onFormat(opt as OutputFormat)}
                 disabled={!selectable}
-                title={selectable ? `Convert to ${opt}` : `${opt} is currently input-only`}
+                title={tooltip}
                 className={[
                   "rounded-2xl px-3 py-2 text-sm font-semibold transition",
                   active
@@ -76,6 +88,15 @@ export function ConversionSettings(props: {
             );
           })}
         </div>
+        {!canSelectTargets ? (
+          <div className="mt-2 text-[11px] text-slate-500">
+            Select a file to choose a target format.
+          </div>
+        ) : (
+          <div className="mt-2 text-[11px] text-slate-500">
+            Disabled formats are not available for the selected source type.
+          </div>
+        )}
         {(props.inputOnlyFormats ?? []).length > 0 ? (
           <div className="mt-2 text-[11px] text-slate-500">
             Input-only formats are shown for visibility but cannot be selected as targets.

@@ -7,7 +7,8 @@ import { ddbDoc, TABLE_NAME, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 import {
   OUTPUT_FORMATS,
-  allowedOutputFormatsForContentType,
+  allowedOutputFormatsForFile,
+  sourceLabelFromFilenameOrContentType,
   type OutputFormat,
 } from "@/app/app/_lib/conversion-support";
 
@@ -130,6 +131,8 @@ function extForFormat(fmt: OutputFormat): string {
     GIF: "gif",
     TIFF: "tiff",
     AVIF: "avif",
+    HEIC: "heic",
+    HEIF: "heif",
     BMP: "bmp",
     ICO: "ico",
     SVG: "svg",
@@ -146,6 +149,8 @@ function contentTypeFor(fmt: OutputFormat): string {
     GIF: "image/gif",
     TIFF: "image/tiff",
     AVIF: "image/avif",
+    HEIC: "image/heic",
+    HEIF: "image/heif",
     BMP: "image/bmp",
     ICO: "image/x-icon",
     SVG: "image/svg+xml",
@@ -164,8 +169,8 @@ function stripExt(filename: string): string {
   return dot < 0 ? filename : filename.slice(0, dot);
 }
 
-function isRasterImageOutput(fmt: OutputFormat): fmt is "PNG" | "JPG" | "WebP" {
-  return fmt === "PNG" || fmt === "JPG" || fmt === "WebP";
+function isImageOutput(fmt: OutputFormat): fmt is Exclude<OutputFormat, "PDF"> {
+  return fmt !== "PDF";
 }
 
 function safeExecutionName(projectId: string, outFileId: string): string {
@@ -229,27 +234,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       if (src.projectId !== projectId || src.userSub !== user.sub) { results.push({ fileId, ok: false, error: "forbidden" }); continue; }
       if (src.kind !== "raw") { results.push({ fileId, ok: false, error: "cannot convert an output file" }); continue; }
       if (!isRawConvertibleStatus(src.status)) { results.push({ fileId, ok: false, error: `not convertible in status ${src.status}` }); continue; }
-      if (!allowedOutputFormatsForContentType(src.contentType).includes(outputFormat)) {
-        results.push({ fileId, ok: false, error: `unsupported conversion: ${src.contentType} cannot be converted to ${outputFormat}` });
+      const sourceLabel = sourceLabelFromFilenameOrContentType(src.filename, src.contentType);
+      const allowedTargets = allowedOutputFormatsForFile(src.filename, src.contentType);
+      if (!allowedTargets.includes(outputFormat)) {
+        results.push({
+          fileId,
+          ok: false,
+          error: `unsupported conversion: ${sourceLabel} cannot be converted to ${outputFormat}`,
+        });
         continue;
       }
 
       const outFileId = crypto.randomUUID();
       const outSK = `FILE#${projectId}#${outFileId}`;
       const createdAt = nowIso();
-      const srcCt = (src.contentType || "").toLowerCase();
-      const srcName = src.filename.toLowerCase();
-      const srcIsPdf = srcCt.includes("pdf") || srcName.endsWith(".pdf");
-      const srcIsDocx =
-        srcCt.includes("wordprocessingml") ||
-        srcCt.includes("msword") ||
-        srcName.endsWith(".docx") ||
-        srcName.endsWith(".doc");
-      const srcIsPages =
-        srcCt.includes("apple.pages") ||
-        srcCt.includes("iwork-pages") ||
-        srcName.endsWith(".pages");
-      const isDocumentImageZip = (srcIsPdf || srcIsDocx || srcIsPages) && isRasterImageOutput(outputFormat);
+      const srcIsPdf = sourceLabel === "PDF";
+      const srcIsDocx = sourceLabel === "DOCX";
+      const srcIsPages = sourceLabel === "PAGES";
+      const isDocumentImageZip =
+        (srcIsPdf || srcIsDocx || srcIsPages) && isImageOutput(outputFormat);
 
       const outputFilename = isDocumentImageZip
         ? `${stripExt(src.filename)}_${outputFormat.toLowerCase()}_pages.zip`
@@ -264,6 +267,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
         sizeBytes: null as number | null,
         bucket: outputBucketName, key: outputKey,
         status: "processing", createdAt, updatedAt: createdAt,
+        artifactType: "conversion" as const,
         sourceFileId: fileId, sourceContentType: src.contentType, outputFormat, quality, preset, resizePct,
         packaging: isDocumentImageZip ? "zip" : "single",
       };

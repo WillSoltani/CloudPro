@@ -28,6 +28,25 @@ function pruneSelection(prev: Record<string, boolean>, validIds: Set<string>) {
 
 type ApplyUpdater = FileRow[] | ((prev: FileRow[]) => FileRow[]);
 
+function dedupeByFileId(items: FileRow[]): { files: FileRow[]; duplicateIds: string[] } {
+  const seen = new Set<string>();
+  const duplicateIds: string[] = [];
+  const deduped: FileRow[] = [];
+
+  for (const item of items) {
+    const id = item.fileId;
+    if (!id) continue;
+    if (seen.has(id)) {
+      duplicateIds.push(id);
+      continue;
+    }
+    seen.add(id);
+    deduped.push(item);
+  }
+
+  return { files: deduped, duplicateIds };
+}
+
 export function useServerFiles(args: {
   projectId: string;
   initialFiles: FileRow[];
@@ -46,12 +65,20 @@ export function useServerFiles(args: {
 
   const applyFiles = useCallback((updater: ApplyUpdater) => {
     setFiles((prev) => {
-      const next = typeof updater === "function" ? updater(prev) : updater;
+      const nextRaw = typeof updater === "function" ? updater(prev) : updater;
+      const { files: next, duplicateIds } = dedupeByFileId(nextRaw);
+      if (duplicateIds.length > 0) {
+        console.error("duplicate_file_ids_detected", {
+          duplicateCount: duplicateIds.length,
+          duplicateIds: duplicateIds.slice(0, 20),
+        });
+        onError("Detected duplicate file IDs from server response. Showing a safe deduplicated list.");
+      }
       const valid = new Set(next.map((f) => f.fileId));
       setSelectedReady((selPrev) => pruneSelection(selPrev, valid));
       return next;
     });
-  }, []);
+  }, [onError]);
 
   /**
    * Default validate=true so we reconcile missing S3 objects automatically.
@@ -73,14 +100,22 @@ export function useServerFiles(args: {
 
   // Converted section = kind=output (any status)
   const outputFiles = useMemo(
-    () => files.filter((f) => readKind(f) === "output"),
+    () => files.filter((f) => readKind(f) === "output" && f.artifactType !== "filled_pdf"),
+    [files]
+  );
+
+  const filledPdfFiles = useMemo(
+    () => files.filter((f) => readKind(f) === "output" && f.artifactType === "filled_pdf"),
     [files]
   );
 
   // Auto-poll every 4s while any output file is still processing
   const hasProcessing = useMemo(
-    () => outputFiles.some((f) => (f.status || "").toLowerCase() === "processing"),
-    [outputFiles]
+    () =>
+      files.some(
+        (f) => readKind(f) === "output" && (f.status || "").toLowerCase() === "processing"
+      ),
+    [files]
   );
 
   useEffect(() => {
@@ -154,7 +189,10 @@ export function useServerFiles(args: {
   );
 
   const deleteOne = useCallback(
-    async (fileId: string) => {
+    async (fileId: string, opts?: { skipRefresh?: boolean }) => {
+      const exists = files.some((f) => f.fileId === fileId);
+      if (!exists) return;
+
       // optimistic remove
       applyFiles((prev) => prev.filter((f) => f.fileId !== fileId));
 
@@ -172,23 +210,26 @@ export function useServerFiles(args: {
       try {
         await apiDeleteFile(projectId, fileId);
       } catch (e: unknown) {
-        await refreshFiles({ validate: true });
+        await refreshFiles({ validate: false });
         const msg = e instanceof Error ? e.message : "Delete failed";
         onError(msg);
         return;
       }
 
-      await refreshFiles({ validate: true });
+      if (!opts?.skipRefresh) {
+        await refreshFiles({ validate: false });
+      }
     },
-    [applyFiles, projectId, refreshFiles, onError]
+    [applyFiles, files, projectId, refreshFiles, onError]
   );
 
   const onRemoveSelectedReady = useCallback(async () => {
     // deterministic order for predictable UX
     for (const id of selectedReadyIds) {
-      await deleteOne(id);
+      await deleteOne(id, { skipRefresh: true });
     }
-  }, [selectedReadyIds, deleteOne]);
+    await refreshFiles({ validate: false });
+  }, [selectedReadyIds, deleteOne, refreshFiles]);
 
   return {
     files,
@@ -196,6 +237,7 @@ export function useServerFiles(args: {
 
     rawReadyFiles,
     outputFiles,
+    filledPdfFiles,
 
     selectedReady,
     selectedReadyIds,

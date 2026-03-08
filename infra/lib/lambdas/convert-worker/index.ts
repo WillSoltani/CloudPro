@@ -4,9 +4,21 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import sharp from "sharp";
 
-type OutputFormat = "PNG" | "JPG" | "WebP" | "GIF" | "TIFF" | "AVIF" | "BMP" | "ICO" | "SVG" | "PDF";
+type OutputFormat =
+  | "PNG"
+  | "JPG"
+  | "WebP"
+  | "GIF"
+  | "TIFF"
+  | "AVIF"
+  | "HEIC"
+  | "HEIF"
+  | "BMP"
+  | "ICO"
+  | "SVG"
+  | "PDF";
 type ImageOutputFormat = Exclude<OutputFormat, "PDF">;
-type RasterImageOutputFormat = Extract<OutputFormat, "PNG" | "JPG" | "WebP">;
+type DocumentImageOutputFormat = ImageOutputFormat;
 type OutputPackaging = "single" | "zip";
 type SourceDocExt = "pdf" | "docx" | "doc";
 type SourceKind = "pdf" | "docx" | "pages" | "image";
@@ -33,7 +45,9 @@ type SourceInfo = {
 type PagesPdfMeta = {
   converter: string;
   sourceEntry: string;
+  sourceEntries: string[];
   pageCount: number;
+  visualFallback: boolean;
 };
 
 type DocxSanitizationMeta = {
@@ -138,6 +152,8 @@ function extForFormat(fmt: OutputFormat): string {
     GIF: "gif",
     TIFF: "tiff",
     AVIF: "avif",
+    HEIC: "heic",
+    HEIF: "heif",
     BMP: "bmp",
     ICO: "ico",
     SVG: "svg",
@@ -154,6 +170,8 @@ function contentTypeFor(fmt: OutputFormat): string {
     GIF: "image/gif",
     TIFF: "image/tiff",
     AVIF: "image/avif",
+    HEIC: "image/heic",
+    HEIF: "image/heif",
     BMP: "image/bmp",
     ICO: "image/x-icon",
     SVG: "image/svg+xml",
@@ -172,8 +190,8 @@ function stripExt(filename: string): string {
   return dot < 0 ? filename : filename.slice(0, dot);
 }
 
-function isRasterImageFormat(fmt: OutputFormat): fmt is RasterImageOutputFormat {
-  return fmt === "PNG" || fmt === "JPG" || fmt === "WebP";
+function isImageOutputFormat(fmt: OutputFormat): fmt is DocumentImageOutputFormat {
+  return fmt !== "PDF";
 }
 
 function isUint8Array(v: unknown): v is Uint8Array {
@@ -219,6 +237,8 @@ async function asBuffer(body: unknown): Promise<Buffer> {
 
 const SVG_SCAN_MAX_BYTES = 1024 * 1024;
 const SVG_DEFAULT_DENSITY = 192;
+const SVG_DEFAULT_WIDTH = 1024;
+const SVG_DEFAULT_HEIGHT = 1024;
 const NORMALIZED_PNG_COMPRESSION = 6;
 
 function startsWithBytes(buf: Buffer, bytes: number[]): boolean {
@@ -421,58 +441,270 @@ function detectSourceInfo(rawBuf: Buffer, srcFilename: string, srcContentType: s
   };
 }
 
+const IMAGE_OUTPUTS_WITH_PDF: readonly OutputFormat[] = [
+  "PNG",
+  "JPG",
+  "WebP",
+  "GIF",
+  "TIFF",
+  "AVIF",
+  "HEIC",
+  "HEIF",
+  "BMP",
+  "ICO",
+  "SVG",
+  "PDF",
+];
+
+const DOCUMENT_IMAGE_OUTPUTS: readonly OutputFormat[] = [
+  "PNG",
+  "JPG",
+  "WebP",
+  "GIF",
+  "TIFF",
+  "AVIF",
+  "BMP",
+  "ICO",
+  "SVG",
+];
+
 function allowedOutputsForSourceInfo(sourceInfo: SourceInfo): OutputFormat[] {
-  if (sourceInfo.kind === "pdf") return ["PNG", "JPG", "WebP"];
-  if (sourceInfo.kind === "docx") return ["PNG", "JPG", "WebP", "PDF"];
-  if (sourceInfo.kind === "pages") return ["PNG", "JPG", "WebP", "PDF"];
-  if (sourceInfo.imageKind === "ico") {
-    return ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "BMP", "ICO", "PDF"];
+  if (sourceInfo.kind === "pdf") return [...DOCUMENT_IMAGE_OUTPUTS];
+  if (sourceInfo.kind === "docx" || sourceInfo.kind === "pages") {
+    return [...DOCUMENT_IMAGE_OUTPUTS, "PDF"];
   }
-  return ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "BMP", "ICO", "SVG", "PDF"];
+  return [...IMAGE_OUTPUTS_WITH_PDF];
 }
 
-function assertSafeSvg(buf: Buffer): void {
-  const snippet = buf.subarray(0, Math.min(buf.length, SVG_SCAN_MAX_BYTES)).toString("utf8");
-  const trimmed = snippet.replace(/^\uFEFF/, "").trimStart();
-  if (!/<svg[\s>]/i.test(trimmed)) {
+function stripDoctypeDeclarations(svg: string): string {
+  let cursor = 0;
+  let output = "";
+  const lower = svg.toLowerCase();
+  while (cursor < svg.length) {
+    const doctypeIndex = lower.indexOf("<!doctype", cursor);
+    if (doctypeIndex < 0) {
+      output += svg.slice(cursor);
+      break;
+    }
+    output += svg.slice(cursor, doctypeIndex);
+    let i = doctypeIndex + "<!doctype".length;
+    let quote: '"' | "'" | null = null;
+    let subsetDepth = 0;
+    while (i < svg.length) {
+      const ch = svg[i];
+      if (quote) {
+        if (ch === quote) quote = null;
+        i += 1;
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+        i += 1;
+        continue;
+      }
+      if (ch === "[") {
+        subsetDepth += 1;
+        i += 1;
+        continue;
+      }
+      if (ch === "]" && subsetDepth > 0) {
+        subsetDepth -= 1;
+        i += 1;
+        continue;
+      }
+      if (ch === ">" && subsetDepth === 0) {
+        i += 1;
+        break;
+      }
+      i += 1;
+    }
+    cursor = i;
+  }
+  return output;
+}
+
+function sanitizeResourceReference(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("#")) return trimmed;
+  if (
+    /^data:image\/(?:png|jpeg|jpg|gif|webp|avif|bmp|tiff|x-icon|vnd\.microsoft\.icon);base64,[a-z0-9+/=\s]+$/i.test(
+      trimmed
+    )
+  ) {
+    return trimmed.replace(/\s+/g, "");
+  }
+  if (/^(?:https?:|file:|ftp:|javascript:|vbscript:|\/\/|data:)/i.test(trimmed)) return "";
+  // Relative paths can trigger renderer-side fetches from filesystem/network. Block them.
+  return "";
+}
+
+function sanitizeCssUrls(cssText: string): string {
+  const withoutImports = cssText.replace(/@import[\s\S]*?;?/gi, "");
+  return withoutImports.replace(/url\(([^)]*)\)/gi, (match: string, rawValue: string) => {
+    const unquoted = rawValue.trim().replace(/^['"]|['"]$/g, "");
+    const safe = sanitizeResourceReference(unquoted);
+    return safe ? `url("${safe}")` : match.replace(/url\(([^)]*)\)/i, "url()");
+  });
+}
+
+function sanitizeSvgResourceAttributes(svg: string): string {
+  const sanitizeAttrValue = (attrName: string, value: string, quote: string): string => {
+    const safe = sanitizeResourceReference(value);
+    if (!safe) return "";
+    return ` ${attrName}=${quote}${safe}${quote}`;
+  };
+  const withQuotedAttrs = svg.replace(
+    /\s((?:xlink:)?href|src)\s*=\s*(["'])([\s\S]*?)\2/gi,
+    (_match: string, attrName: string, quote: string, value: string) =>
+      sanitizeAttrValue(attrName, value, quote)
+  );
+  return withQuotedAttrs.replace(
+    /\s((?:xlink:)?href|src)\s*=\s*([^\s>]+)/gi,
+    (_match: string, attrName: string, value: string) => sanitizeAttrValue(attrName, value, '"')
+  );
+}
+
+function parseViewBoxDimensions(svgTag: string): { width: number; height: number } | null {
+  const viewBoxMatch = svgTag.match(/\bviewBox\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/i);
+  const raw = (viewBoxMatch?.[1] ?? viewBoxMatch?.[2] ?? viewBoxMatch?.[3] ?? "").trim();
+  if (!raw) return null;
+  const parts = raw
+    .split(/[\s,]+/)
+    .map((token) => Number.parseFloat(token))
+    .filter((n) => Number.isFinite(n));
+  if (parts.length !== 4) return null;
+  const width = parts[2];
+  const height = parts[3];
+  if (width <= 0 || height <= 0) return null;
+  return { width, height };
+}
+
+function ensureSvgDimensions(svg: string): string {
+  const rootMatch = svg.match(/<svg\b[^>]*>/i);
+  if (!rootMatch || rootMatch.index === undefined) return svg;
+  const rootTag = rootMatch[0];
+  const hasWidth = /\bwidth\s*=/.test(rootTag);
+  const hasHeight = /\bheight\s*=/.test(rootTag);
+  if (hasWidth && hasHeight) return svg;
+
+  const fromViewBox = parseViewBoxDimensions(rootTag);
+  const width = Math.max(1, Math.round(fromViewBox?.width ?? SVG_DEFAULT_WIDTH));
+  const height = Math.max(1, Math.round(fromViewBox?.height ?? SVG_DEFAULT_HEIGHT));
+  const missingAttrs = `${hasWidth ? "" : ` width="${width}"`}${hasHeight ? "" : ` height="${height}"`}`;
+  const rewrittenRoot = rootTag.endsWith("/>")
+    ? `${rootTag.slice(0, -2)}${missingAttrs} />`
+    : `${rootTag.slice(0, -1)}${missingAttrs}>`;
+
+  const start = rootMatch.index;
+  const end = start + rootTag.length;
+  return `${svg.slice(0, start)}${rewrittenRoot}${svg.slice(end)}`;
+}
+
+function sanitizeSvg(buf: Buffer): Buffer {
+  // Full-content sanitization: remove XML constructs that can trigger XXE/SSRF/script
+  // execution while still allowing common real-world SVG files to render.
+  const full = buf.toString("utf8").replace(/^\uFEFF/, "").trimStart();
+  if (!/<svg[\s>]/i.test(full)) {
     throw new Error("SVG input is invalid (missing <svg> root element)");
   }
 
-  const blockedPatterns: Array<[RegExp, string]> = [
-    [/\b(?:xlink:)?href\s*=\s*["']\s*(?:https?:|\/\/|file:)/i, "external href reference"],
-    [/\bsrc\s*=\s*["']\s*(?:https?:|\/\/|file:)/i, "external src reference"],
-    [/@import\s+url\(\s*['"]?(?:https?:|\/\/|file:)/i, "external CSS import"],
-    [/<!DOCTYPE/i, "DOCTYPE declarations are blocked for SVG security"],
-    [/<!ENTITY/i, "XML entities are blocked for SVG security"],
-  ];
-  for (const [pattern, reason] of blockedPatterns) {
-    if (pattern.test(trimmed)) {
-      throw new Error(`SVG contains unsupported ${reason}`);
-    }
+  let sanitized = stripDoctypeDeclarations(full)
+    .replace(/<!ENTITY[\s\S]*?>/gi, "")
+    .replace(/<\?xml-stylesheet[\s\S]*?\?>/gi, "")
+    .replace(/<script\b[\s\S]*?<\/script>/gi, "")
+    .replace(/<script\b[^>]*\/>/gi, "")
+    .replace(/<foreignObject\b[\s\S]*?<\/foreignObject>/gi, "")
+    .replace(/<foreignObject\b[^>]*\/>/gi, "")
+    .replace(/\s+on[a-z0-9:_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+
+  sanitized = sanitizeSvgResourceAttributes(sanitized);
+
+  sanitized = sanitized.replace(/<style\b([^>]*)>([\s\S]*?)<\/style>/gi, (_m, attrs: string, css: string) => {
+    const safeCss = sanitizeCssUrls(css);
+    return `<style${attrs}>${safeCss}</style>`;
+  });
+  sanitized = sanitized.replace(/\sstyle\s*=\s*(["'])([\s\S]*?)\1/gi, (_m, quote: string, css: string) => {
+    const safeCss = sanitizeCssUrls(css).trim();
+    return safeCss ? ` style=${quote}${safeCss}${quote}` : "";
+  });
+
+  // Strip non-core named entities (e.g., custom XML entities) after DOCTYPE removal.
+  sanitized = sanitized.replace(/&(?!(?:amp|lt|gt|quot|apos);)[a-zA-Z][a-zA-Z0-9._:-]*;/g, "");
+  sanitized = ensureSvgDimensions(sanitized);
+
+  if (!/<svg[\s>]/i.test(sanitized)) {
+    throw new Error("SVG input became invalid after sanitization");
   }
+
+  return Buffer.from(sanitized, "utf8");
 }
 
 // ---------------------------------------------------------------------------
 // Document / special-format → image pre-rasterization
 // ---------------------------------------------------------------------------
 
-/**
- * HEIC/HEIF → JPEG buffer using heic-convert (libheif-js WASM).
- *
- * Sharp's bundled libheif is compiled without the HEVC (libde265) decoder
- * plugin, producing error 11.6003. heic-convert ships libheif-js which
- * bundles the full codec set as WASM, so it works in Lambda without any
- * system-level dependencies.
- */
-async function heicToBuffer(buf: Buffer): Promise<Buffer> {
+async function decodeWithPythonSpecial(args: {
+  inputBuffer: Buffer;
+  inputExt: string;
+  target: "avif_decode" | "bmp_decode" | "heif_decode";
+  label: string;
+}): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const convert = require("heic-convert") as (opts: {
-    buffer: Buffer;
-    format: "JPEG" | "PNG";
-    quality?: number;
-  }) => Promise<Buffer | ArrayBuffer>;
-  const result = await convert({ buffer: buf, format: "JPEG", quality: 1 });
-  return Buffer.isBuffer(result) ? result : Buffer.from(result as ArrayBuffer);
+  const fs = require("fs") as typeof import("fs");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const os = require("os") as typeof import("os");
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const path = require("path") as typeof import("path");
+
+  const id = `${args.target}-${Date.now()}-${process.pid}`;
+  const inPath = path.join(os.tmpdir(), `${id}.${args.inputExt}`);
+  const outPath = path.join(os.tmpdir(), `${id}.png`);
+
+  try {
+    fs.writeFileSync(inPath, args.inputBuffer);
+    runPythonScript(
+      "/var/task/image_special_convert.py",
+      [inPath, outPath, args.target],
+      60_000,
+      args.label
+    );
+    const result = fs.readFileSync(outPath);
+    if (!result || result.length === 0) {
+      throw new Error(`${args.label} produced an empty output file`);
+    }
+    return result;
+  } finally {
+    try { fs.unlinkSync(inPath); } catch { /* ignore */ }
+    try { fs.unlinkSync(outPath); } catch { /* ignore */ }
+  }
+}
+
+async function heifToBuffer(buf: Buffer): Promise<Buffer> {
+  return decodeWithPythonSpecial({
+    inputBuffer: buf,
+    inputExt: "heif",
+    target: "heif_decode",
+    label: "HEIF decode",
+  });
+}
+
+async function avifToBuffer(buf: Buffer): Promise<Buffer> {
+  return decodeWithPythonSpecial({
+    inputBuffer: buf,
+    inputExt: "avif",
+    target: "avif_decode",
+    label: "AVIF decode",
+  });
+}
+
+async function bmpToBuffer(buf: Buffer): Promise<Buffer> {
+  return decodeWithPythonSpecial({
+    inputBuffer: buf,
+    inputExt: "bmp",
+    target: "bmp_decode",
+    label: "BMP decode",
+  });
 }
 
 function parseLastJsonObject(text: string): Record<string, unknown> | null {
@@ -527,7 +759,7 @@ async function documentToImagesZip(args: {
   buf: Buffer;
   sourceExt: SourceDocExt;
   sourceFilename: string;
-  outputFormat: RasterImageOutputFormat;
+  outputFormat: DocumentImageOutputFormat;
   quality: number;
   resizePct: number | null;
   maxWidth: number | undefined;
@@ -715,16 +947,28 @@ async function pagesToCanonicalPdf(buf: Buffer): Promise<{ pdfBuffer: Buffer; me
     const meta = parseLastJsonObject(run.stdout) ?? parseLastJsonObject(run.stderr) ?? {};
     const converter = typeof meta.converter === "string" ? meta.converter : "pages_preview";
     const sourceEntry = typeof meta.source_entry === "string" ? meta.source_entry : "QuickLook/Preview.pdf";
+    const sourceEntriesRaw = meta.source_entries;
+    const sourceEntries =
+      Array.isArray(sourceEntriesRaw)
+        ? sourceEntriesRaw
+            .filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+            .slice(0, 20)
+        : sourceEntry
+          ? [sourceEntry]
+          : [];
     const pageCount =
       typeof meta.page_count === "number" && Number.isFinite(meta.page_count)
         ? Math.max(0, Math.floor(meta.page_count))
         : 0;
+    const visualFallback = meta.visual_fallback === true;
     return {
       pdfBuffer: result,
       meta: {
         converter,
         sourceEntry,
+        sourceEntries,
         pageCount,
+        visualFallback,
       },
     };
   } finally {
@@ -820,24 +1064,36 @@ function extractLargestIcoFrame(buf: Buffer): Buffer {
   if (frame.length < 40) throw new Error("ICO BMP frame too small to be a valid DIB header");
 
   const dibWidth = frame.readInt32LE(4);
-  const dibHeight = frame.readInt32LE(8); // doubled in ICO
-  const bmpBuf = Buffer.alloc(14 + frame.length);
+  const dibHeight = frame.readInt32LE(8); // doubled in ICO; halved below
 
-  // BMP file header
-  bmpBuf.write("BM", 0, "ascii");
-  bmpBuf.writeUInt32LE(bmpBuf.length, 2);
-  bmpBuf.writeUInt16LE(0, 6);
-  bmpBuf.writeUInt16LE(0, 8);
-  bmpBuf.writeUInt32LE(14, 10); // pixel data offset (simplified; may need adjustment for palettes)
-
-  // Copy DIB, then fix height back to real value
-  frame.copy(bmpBuf, 14);
-  bmpBuf.writeInt32LE(Math.abs(dibHeight) / 2, 14 + 8);
-
-  // Validate dimensions are reasonable
   if (Math.abs(dibWidth) === 0 || Math.abs(dibHeight) === 0) {
     throw new Error("ICO BMP frame has zero dimensions; cannot convert");
   }
+
+  // Calculate the correct pixel data offset:
+  //   14 (BMP file header) + dibHeaderSize + colorTableSize
+  // The DIB header size is stored at frame offset 0 (first DWORD of BITMAPINFOHEADER).
+  const dibHeaderSize = frame.readUInt32LE(0);        // typically 40 for BITMAPINFOHEADER
+  const bitCount      = frame.readUInt16LE(14);        // bits per pixel
+  const colorsUsed    = frame.readUInt32LE(32);        // 0 means "use max for bit depth"
+  const numColors     = bitCount <= 8
+    ? (colorsUsed > 0 ? colorsUsed : (1 << bitCount))
+    : 0;
+  const colorTableSize  = numColors * 4;               // each RGBQUAD entry = 4 bytes
+  const pixelDataOffset = 14 + dibHeaderSize + colorTableSize;
+
+  const bmpBuf = Buffer.alloc(14 + frame.length);
+
+  // BMP file header (BITMAPFILEHEADER)
+  bmpBuf.write("BM", 0, "ascii");
+  bmpBuf.writeUInt32LE(bmpBuf.length, 2);
+  bmpBuf.writeUInt16LE(0, 6);   // reserved1
+  bmpBuf.writeUInt16LE(0, 8);   // reserved2
+  bmpBuf.writeUInt32LE(pixelDataOffset, 10);  // bfOffBits — correct for any bit depth
+
+  // Copy DIB (header + color table + pixel data), then fix doubled height back to real value
+  frame.copy(bmpBuf, 14);
+  bmpBuf.writeInt32LE(Math.abs(dibHeight) / 2, 14 + 8);
 
   return bmpBuf;
 }
@@ -852,14 +1108,19 @@ function sharpOptionsForSource(imageKind: SourceImageKind): { failOn: "none"; de
 async function preprocessInput(args: { buf: Buffer; sourceInfo: SourceInfo }): Promise<Buffer> {
   const { buf, sourceInfo } = args;
   if (sourceInfo.imageKind === "svg") {
-    assertSafeSvg(buf);
-    return buf;
+    return sanitizeSvg(buf);
   }
   if (sourceInfo.imageKind === "ico" || isIco(buf)) {
     return extractLargestIcoFrame(buf);
   }
   if (sourceInfo.imageKind === "heic" || sourceInfo.imageKind === "heif") {
-    return heicToBuffer(buf);
+    return heifToBuffer(buf);
+  }
+  if (sourceInfo.imageKind === "avif") {
+    return avifToBuffer(buf);
+  }
+  if (sourceInfo.imageKind === "bmp") {
+    return bmpToBuffer(buf);
   }
   return buf;
 }
@@ -899,7 +1160,11 @@ async function renderNormalizedPng(args: {
   return pipeline.png({ compressionLevel: NORMALIZED_PNG_COMPRESSION }).toBuffer();
 }
 
-async function convertWithPythonSpecialEncoder(inputPng: Buffer, target: "ico" | "bmp"): Promise<Buffer> {
+async function convertWithPythonSpecialEncoder(
+  inputPng: Buffer,
+  target: "ico" | "bmp" | "avif" | "heic" | "heif",
+  quality?: number
+): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require("fs") as typeof import("fs");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -912,10 +1177,15 @@ async function convertWithPythonSpecialEncoder(inputPng: Buffer, target: "ico" |
 
   try {
     fs.writeFileSync(inPath, inputPng);
+    const scriptArgs = [inPath, outPath, target];
+    if ((target === "avif" || target === "heic" || target === "heif") && typeof quality === "number") {
+      scriptArgs.push(String(Math.max(1, Math.min(100, Math.floor(quality)))));
+    }
     runPythonScript(
       "/var/task/image_special_convert.py",
-      [inPath, outPath, target],
-      60_000,
+      scriptArgs,
+      // AVIF encoding via libaom is CPU-intensive; allow up to 2 minutes.
+      target === "avif" ? 120_000 : 75_000,
       `Image→${target.toUpperCase()} conversion`
     );
     const result = fs.readFileSync(outPath);
@@ -954,7 +1224,14 @@ async function applyConversion(args: {
     sourceInfo: args.sourceInfo,
   });
 
-  if (args.fmt === "ICO" || args.fmt === "BMP" || args.fmt === "SVG") {
+  if (
+    args.fmt === "ICO" ||
+    args.fmt === "BMP" ||
+    args.fmt === "SVG" ||
+    args.fmt === "AVIF" ||
+    args.fmt === "HEIC" ||
+    args.fmt === "HEIF"
+  ) {
     const normalizedPng = await renderNormalizedPng({
       inputBuf,
       sourceInfo: args.sourceInfo,
@@ -966,6 +1243,22 @@ async function applyConversion(args: {
     }
     if (args.fmt === "BMP") {
       return convertWithPythonSpecialEncoder(normalizedPng, "bmp");
+    }
+    if (args.fmt === "AVIF") {
+      const avifQ = typeof args.quality === "number" && Number.isFinite(args.quality)
+        ? Math.max(1, Math.min(100, Math.floor(args.quality)))
+        : args.config.webpQuality;
+      return convertWithPythonSpecialEncoder(normalizedPng, "avif", avifQ);
+    }
+    if (args.fmt === "HEIC" || args.fmt === "HEIF") {
+      const heifQ = typeof args.quality === "number" && Number.isFinite(args.quality)
+        ? Math.max(1, Math.min(100, Math.floor(args.quality)))
+        : args.config.webpQuality;
+      return convertWithPythonSpecialEncoder(
+        normalizedPng,
+        args.fmt === "HEIC" ? "heic" : "heif",
+        heifQ
+      );
     }
     const meta = await sharp(normalizedPng, { failOn: "none" }).metadata();
     return pngToEmbeddedSvg(normalizedPng, meta.width ?? 1, meta.height ?? 1);
@@ -1008,12 +1301,6 @@ async function applyConversion(args: {
       const tiffQ = typeof args.quality === "number" && Number.isFinite(args.quality)
         ? Math.max(1, Math.min(100, Math.floor(args.quality))) : args.config.tiffQuality;
       pipeline = pipeline.tiff({ quality: tiffQ });
-      break;
-    }
-    case "AVIF": {
-      const avifQ = typeof args.quality === "number" && Number.isFinite(args.quality)
-        ? Math.max(1, Math.min(100, Math.floor(args.quality))) : args.config.webpQuality;
-      pipeline = pipeline.avif({ quality: avifQ });
       break;
     }
   }
@@ -1103,7 +1390,20 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
   const PK = `USER#${userSub}`;
   const outSK = `FILE#${projectId}#${outputFileId}`;
 
-  const validFormats: OutputFormat[] = ["PNG", "JPG", "WebP", "GIF", "TIFF", "AVIF", "BMP", "ICO", "SVG", "PDF"];
+  const validFormats: OutputFormat[] = [
+    "PNG",
+    "JPG",
+    "WebP",
+    "GIF",
+    "TIFF",
+    "AVIF",
+    "HEIC",
+    "HEIF",
+    "BMP",
+    "ICO",
+    "SVG",
+    "PDF",
+  ];
   if (!validFormats.includes(outputFormat)) {
     await updateOutputRow({
       pk: PK,
@@ -1170,10 +1470,6 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
       );
     }
 
-    if ((srcIsPdf || srcIsDocx || srcIsPages) && outputFormat !== "PDF" && !isRasterImageFormat(outputFormat)) {
-      throw new Error(`For PDF/DOCX/PAGES image conversion, only PNG/JPG/WebP are supported (requested ${outputFormat})`);
-    }
-
     let outputBuf: Buffer;
     let outputFilename = replaceExt(srcFilename, extForFormat(outputFormat));
     let contentType = contentTypeFor(outputFormat);
@@ -1218,6 +1514,8 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
           outputFileId,
           converter: pages.meta.converter,
           sourceEntry: pages.meta.sourceEntry,
+          sourceEntries: pages.meta.sourceEntries,
+          visualFallback: pages.meta.visualFallback,
           pageCount: pages.meta.pageCount,
         })
       );
@@ -1264,7 +1562,7 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
           maxWidth: config.maxWidth,
         });
       }
-    } else if ((srcIsPdf || srcIsDocx || srcIsPages) && isRasterImageFormat(outputFormat)) {
+    } else if ((srcIsPdf || srcIsDocx || srcIsPages) && isImageOutputFormat(outputFormat)) {
       const qualityForPages =
         outputFormat === "JPG"
           ? (typeof quality === "number" && Number.isFinite(quality)
@@ -1274,6 +1572,14 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
             ? (typeof quality === "number" && Number.isFinite(quality)
                 ? Math.max(1, Math.min(100, Math.floor(quality)))
                 : config.webpQuality)
+            : outputFormat === "AVIF"
+              ? (typeof quality === "number" && Number.isFinite(quality)
+                  ? Math.max(1, Math.min(100, Math.floor(quality)))
+                  : config.webpQuality)
+              : outputFormat === "TIFF"
+                ? (typeof quality === "number" && Number.isFinite(quality)
+                    ? Math.max(1, Math.min(100, Math.floor(quality)))
+                    : config.tiffQuality)
             : 90;
       const sourcePdfBuffer =
         srcIsDocx ? canonicalPdf?.pdfBuffer : srcIsPages ? pagesCanonicalPdf : rawBuf;
@@ -1363,3 +1669,7 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
     throw err;
   }
 }
+
+export const __test__ = {
+  sanitizeSvg,
+};

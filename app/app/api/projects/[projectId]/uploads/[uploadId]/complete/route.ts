@@ -5,7 +5,7 @@ import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { ddbDoc, s3, TABLE_NAME } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
-import { allowedOutputFormatsForContentType } from "@/app/app/_lib/conversion-support";
+import { allowedOutputFormatsForFile } from "@/app/app/_lib/conversion-support";
 
 export const runtime = "nodejs";
 
@@ -263,7 +263,7 @@ export async function POST(
     }
     const sniffed = sniffContentTypeFromBytes(prefixBytes, filename);
     const contentType = sniffed ?? (rawCt && rawCt !== "application/octet-stream" ? rawCt : guessedFromName);
-    if (allowedOutputFormatsForContentType(contentType).length === 0) {
+    if (allowedOutputFormatsForFile(filename, contentType).length === 0) {
       return NextResponse.json(
         {
           error: "unsupported_media_type",

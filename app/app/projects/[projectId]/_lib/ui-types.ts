@@ -25,6 +25,8 @@ export type LocalReadyFile = {
   id: string;
   file: File;
   previewUrl: string;
+  contentType?: string;
+  status?: string;
   fromLabel: string;
   toFormat: OutputFormat;
   quality: number;
@@ -39,6 +41,7 @@ export type LocalConvertedFile = {
   filename: string;
   name: string;
   previewUrl?: string;
+  contentType?: string;
   fromLabel: string;
   /** Immutable: the actual output format used for this conversion (stored in DDB). */
   toLabel: string;

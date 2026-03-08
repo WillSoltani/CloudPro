@@ -61,7 +61,7 @@ export default async function ProjectLayout({
   ]);
 
   return (
-    <ProjectLayoutShell projectName={projectName} initialFileCount={fileCount}>
+    <ProjectLayoutShell projectId={projectId} projectName={projectName} initialFileCount={fileCount}>
       {children}
     </ProjectLayoutShell>
   );

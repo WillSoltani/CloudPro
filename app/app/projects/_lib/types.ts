@@ -15,6 +15,7 @@ export type Stats = {
 };
 
 export type FileKind = "raw" | "output";
+export type OutputArtifactType = "conversion" | "filled_pdf";
 
 export type FileRow = {
   fileId: string;
@@ -32,6 +33,7 @@ export type FileRow = {
   outputFormat?: string;
   sourceFileId?: string;
   sourceContentType?: string;
+  artifactType?: OutputArtifactType;
   packaging?: "single" | "zip";
   pageCount?: number;
   outputCount?: number;
