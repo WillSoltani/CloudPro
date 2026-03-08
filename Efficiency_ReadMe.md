@@ -6,7 +6,7 @@ Constraint followed: No project files modified. Only this report was created.
 
 ## A) Executive Summary
 
-- **[Importance: High] [Area: Frontend] [Estimated impact: ~15–35% fewer preview-related API calls]** `useSignedUrls` currently refetches frequently and sequentially (batch loop + state dependency feedback), causing avoidable network chatter and render churn.
+- **[Importance: High] [Area: Frontend] [Estimated impact: ~15–35% fewer preview-related API calls]** `useSignedUrls` currently refetches frequently and sequentially (batch loop + state dependency feedback), causing avoidable network chatter and render churn.Now
 - **[Importance: High] [Area: Backend] [Estimated impact: ~20–40% lower memory pressure per conversion]** Convert worker loads full S3 objects into memory (`asBuffer`) and often creates additional full-size intermediate buffers/files.
 - **[Importance: High] [Area: Infra/Cost] [Estimated impact: ~15–30% lower monthly storage + request cost]** No visible S3 lifecycle policy for raw/output artifacts; long-lived converted artifacts will accumulate cost.
 - **[Importance: High] [Area: Infra] [Estimated impact: ~20–45% lower cold-start latency]** Lambda container includes heavy toolchain/runtime components (LibreOffice/fonts/Python codecs) with likely large image size.

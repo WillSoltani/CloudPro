@@ -1,0 +1,54 @@
+name: Deploy Infra (Dev)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/**'
+      - '.github/workflows/deploy-infra-dev.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-infra-dev
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ca-central-1
+  CDK_STACK_NAME: CloudPortfolioStorage
+
+jobs:
+  deploy-dev:
+    name: Deploy CDK Stack to Dev
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: infra
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install infra dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: "arn:aws:iam::928413605677:role/GitHubActionsCloudPortfolioDevDeployRole" 
+          aws-region: "ca-central-1" 
+
+      - name: CDK deploy
+        run: npm run cdk -- deploy $CDK_STACK_NAME --require-approval never

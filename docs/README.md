@@ -90,3 +90,4 @@ npm --prefix infra run cdk -- synth
 - Full repository file map: `docs/FILE_INDEX.md`
 - Contribution standards: `docs/CONTRIBUTING.md`
 - Production operations runbook: `docs/OPERATIONS.md`
+- CI/CD onboarding and setup: `docs/CI_CD.md`
