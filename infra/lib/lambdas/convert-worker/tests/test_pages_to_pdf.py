@@ -31,13 +31,13 @@ class TestPagesToPdf(unittest.TestCase):
             check=False,
         )
 
-    def _run_doc_to_images(self, input_pdf: Path, output_zip: Path, target: str) -> subprocess.CompletedProcess[str]:
+    def _run_doc_to_images(self, input_pdf: Path, output_path: Path, target: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
                 "python3",
                 str(DOC_TO_IMG_SCRIPT),
                 str(input_pdf),
-                str(output_zip),
+                str(output_path),
                 "sample",
                 target,
                 "144",
@@ -181,7 +181,7 @@ class TestPagesToPdf(unittest.TestCase):
             self.assertNotEqual(proc.returncode, 0)
             self.assertIn("preview", (proc.stderr or "").lower())
 
-    def test_pages_preview_pdf_can_be_rasterized_to_zip_outputs(self) -> None:
+    def test_pages_preview_pdf_single_page_rasterizes_to_single_output(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pages-doc2img-") as td:
             td_path = Path(td)
             pages_path = td_path / "sample.pages"
@@ -203,16 +203,16 @@ class TestPagesToPdf(unittest.TestCase):
 
             for target in targets:
                 with self.subTest(target=target):
-                    out_zip = td_path / f"pages-{target}.zip"
-                    proc = self._run_doc_to_images(canonical_pdf_path, out_zip, target)
+                    out_file = td_path / f"pages-{target}.{target}"
+                    proc = self._run_doc_to_images(canonical_pdf_path, out_file, target)
                     self.assertEqual(proc.returncode, 0, msg=f"stderr={proc.stderr}\nstdout={proc.stdout}")
-                    self.assertTrue(out_zip.exists())
-                    with zipfile.ZipFile(out_zip, "r") as zf:
-                        names = zf.namelist()
-                        self.assertEqual(len(names), 1)
-                        self.assertTrue(names[0].endswith(f".{target}"))
+                    self.assertTrue(out_file.exists())
+                    payload = json.loads((proc.stdout or "").strip().splitlines()[-1])
+                    self.assertEqual(payload.get("packaging"), "single")
+                    self.assertEqual(int(payload.get("pages", 0)), 1)
+                    self.assertFalse(zipfile.is_zipfile(out_file))
 
-    def test_pages_preview_images_can_be_rasterized_to_zip_outputs(self) -> None:
+    def test_pages_preview_images_single_page_rasterizes_to_single_output(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pages-doc2img-fallback-") as td:
             td_path = Path(td)
             pages_path = td_path / "sample.pages"
@@ -237,14 +237,14 @@ class TestPagesToPdf(unittest.TestCase):
             self.assertEqual(payload.get("converter"), "pages_quicklook_images")
             self.assertEqual(int(payload.get("page_count", 0)), 1)
 
-            out_zip = td_path / "pages-png.zip"
-            proc = self._run_doc_to_images(canonical_pdf_path, out_zip, "png")
+            out_file = td_path / "pages-png.png"
+            proc = self._run_doc_to_images(canonical_pdf_path, out_file, "png")
             self.assertEqual(proc.returncode, 0, msg=f"stderr={proc.stderr}\nstdout={proc.stdout}")
-            self.assertTrue(out_zip.exists())
-            with zipfile.ZipFile(out_zip, "r") as zf:
-                names = zf.namelist()
-                self.assertEqual(len(names), 1)
-                self.assertTrue(names[0].endswith(".png"))
+            self.assertTrue(out_file.exists())
+            payload = json.loads((proc.stdout or "").strip().splitlines()[-1])
+            self.assertEqual(payload.get("packaging"), "single")
+            self.assertEqual(int(payload.get("pages", 0)), 1)
+            self.assertFalse(zipfile.is_zipfile(out_file))
 
 
 if __name__ == "__main__":

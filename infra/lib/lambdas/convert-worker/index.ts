@@ -81,9 +81,11 @@ type ImageZipFidelity = {
   avgMae: number;
 };
 
-type DocumentImageZipResult = {
-  zipBuffer: Buffer;
+type DocumentImageRenderResult = {
+  outputBuffer: Buffer;
   pageCount: number;
+  outputCount: number;
+  packaging: OutputPackaging;
   fidelity?: ImageZipFidelity;
 };
 
@@ -753,7 +755,8 @@ function runPythonScript(
 }
 
 /**
- * Convert PDF/DOCX to per-page images in a ZIP artifact.
+ * Convert PDF/DOCX/PAGES canonical PDFs into image artifacts.
+ * Returns a single image for 1-page documents, otherwise a ZIP for multi-page.
  */
 async function documentToImagesZip(args: {
   buf: Buffer;
@@ -763,7 +766,7 @@ async function documentToImagesZip(args: {
   quality: number;
   resizePct: number | null;
   maxWidth: number | undefined;
-}): Promise<DocumentImageZipResult> {
+}): Promise<DocumentImageRenderResult> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require("fs") as typeof import("fs");
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -798,7 +801,7 @@ async function documentToImagesZip(args: {
     );
     const result = fs.readFileSync(outZipPath);
     if (!result || result.length === 0) {
-      throw new Error("Document image rendering produced an empty ZIP output file");
+      throw new Error("Document image rendering produced an empty output file");
     }
     const meta = parseLastJsonObject(run.stdout) ?? parseLastJsonObject(run.stderr);
     const pagesRaw = meta?.pages;
@@ -809,6 +812,13 @@ async function documentToImagesZip(args: {
     if (pageCount <= 0) {
       throw new Error("Document image rendering did not report a valid page count");
     }
+    const outputCountRaw = meta?.output_count;
+    const outputCount =
+      typeof outputCountRaw === "number" && Number.isFinite(outputCountRaw) && outputCountRaw > 0
+        ? Math.floor(outputCountRaw)
+        : pageCount;
+    const packagingRaw = meta?.packaging;
+    const packaging: OutputPackaging = packagingRaw === "single" ? "single" : "zip";
     const fidelityRaw = meta?.fidelity;
     let fidelity: ImageZipFidelity | undefined;
     if (typeof fidelityRaw === "object" && fidelityRaw !== null) {
@@ -824,7 +834,7 @@ async function documentToImagesZip(args: {
         fidelity = { threshold, maxMae, avgMae };
       }
     }
-    return { zipBuffer: result, pageCount, fidelity };
+    return { outputBuffer: result, pageCount, outputCount, packaging, fidelity };
   } finally {
     try { fs.unlinkSync(inPath); } catch { /* ignore */ }
     try { fs.unlinkSync(outZipPath); } catch { /* ignore */ }
@@ -1595,12 +1605,17 @@ export async function handler(event: ConvertEvent): Promise<{ ok: boolean; error
         resizePct,
         maxWidth: config.maxWidth,
       });
-      outputBuf = rendered.zipBuffer;
+      outputBuf = rendered.outputBuffer;
       pageCount = rendered.pageCount;
-      outputCount = rendered.pageCount;
-      packaging = "zip";
-      contentType = "application/zip";
-      outputFilename = `${stripExt(srcFilename)}_${outputFormat.toLowerCase()}_pages.zip`;
+      outputCount = rendered.outputCount;
+      packaging = rendered.packaging;
+      if (rendered.packaging === "zip") {
+        contentType = "application/zip";
+        outputFilename = `${stripExt(srcFilename)}_${outputFormat.toLowerCase()}_pages.zip`;
+      } else {
+        contentType = contentTypeFor(outputFormat);
+        outputFilename = replaceExt(srcFilename, extForFormat(outputFormat));
+      }
       if (srcIsDocx && rendered.fidelity) {
         console.log(
           JSON.stringify({

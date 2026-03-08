@@ -71,7 +71,9 @@ function statusBlockedReason(status?: string | null): PreviewHiddenReason | null
   const normalized = normalizeStatus(status);
   if (!normalized) return null;
   if (normalized.includes("deleted")) return "deleted";
-  if (normalized === "processing" || normalized === "queued") return "processing";
+  // Uploaded ready-queue files are currently marked "queued" in storage, and should
+  // still be previewable. Only actively processing files are blocked.
+  if (normalized === "processing") return "processing";
   if (normalized === "failed" || normalized === "error") return "error_state";
   return null;
 }

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Convert PDF or DOCX/DOC to per-page images and package as ZIP.
+Convert PDF or DOCX/DOC to image artifacts.
 
 Usage:
   python3 document_to_images_zip.py \
-    <input_path> <output_zip> <base_name> <format> <dpi> <quality> <resize_pct> <max_width>
+    <input_path> <output_path> <base_name> <format> <dpi> <quality> <resize_pct> <max_width>
 
 Notes:
 - format: png | jpg | webp | gif | tiff | avif | bmp | ico | svg
 - resize_pct: 10-100 (100 = no explicit resize)
 - max_width: 0 to disable preset width cap
+- For single-page inputs, writes a single image file to output_path.
+- For multi-page inputs, writes a ZIP archive to output_path.
 """
 
 import base64
@@ -131,7 +133,7 @@ def main() -> None:
     if len(sys.argv) != 9:
         emit_error(
             "args",
-            "Usage: document_to_images_zip.py <input_path> <output_zip> <base_name> <format> <dpi> <quality> <resize_pct> <max_width>",
+            "Usage: document_to_images_zip.py <input_path> <output_path> <base_name> <format> <dpi> <quality> <resize_pct> <max_width>",
         )
         sys.exit(1)
 
@@ -193,90 +195,113 @@ def main() -> None:
         thresholds = {"png": 0.0010, "jpg": 0.0200, "webp": 0.0200, "avif": 0.0300}
         threshold = thresholds.get(target_fmt)
         page_mae: list[float] = []
+        rendered_pages: list[tuple[str, bytes]] = []
 
-        with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-            for i in range(page_count):
-                page = doc[i]
-                pix = page.get_pixmap(matrix=matrix, alpha=False)
-                image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                reference = image.copy()
+        for i in range(page_count):
+            page = doc[i]
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            reference = image.copy()
 
-                if resize_pct < 100:
-                    new_w = max(1, round(image.width * resize_pct / 100.0))
-                    new_h = max(1, round(image.height * resize_pct / 100.0))
-                    image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                    reference = reference.resize((new_w, new_h), Image.Resampling.LANCZOS)
-                elif max_width > 0 and image.width > max_width:
-                    ratio = max_width / float(image.width)
-                    new_h = max(1, round(image.height * ratio))
-                    image = image.resize((max_width, new_h), Image.Resampling.LANCZOS)
-                    reference = reference.resize((max_width, new_h), Image.Resampling.LANCZOS)
+            if resize_pct < 100:
+                new_w = max(1, round(image.width * resize_pct / 100.0))
+                new_h = max(1, round(image.height * resize_pct / 100.0))
+                image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                reference = reference.resize((new_w, new_h), Image.Resampling.LANCZOS)
+            elif max_width > 0 and image.width > max_width:
+                ratio = max_width / float(image.width)
+                new_h = max(1, round(image.height * ratio))
+                image = image.resize((max_width, new_h), Image.Resampling.LANCZOS)
+                reference = reference.resize((max_width, new_h), Image.Resampling.LANCZOS)
 
-                out_name = f"{base_name}_page_{i + 1:02d}.{target_fmt}"
-                out_bytes = io.BytesIO()
+            out_name = f"{base_name}_page_{i + 1:02d}.{target_fmt}"
+            out_bytes = io.BytesIO()
 
-                if target_fmt == "png":
-                    image.save(out_bytes, format="PNG", optimize=True, compress_level=6)
-                    encoded = out_bytes.getvalue()
-                elif target_fmt == "jpg":
-                    image.save(out_bytes, format="JPEG", quality=quality, optimize=True, progressive=True)
-                    encoded = out_bytes.getvalue()
-                elif target_fmt == "webp":
-                    image.save(out_bytes, format="WEBP", quality=quality, method=6)
-                    encoded = out_bytes.getvalue()
-                elif target_fmt == "gif":
-                    image.convert("P", palette=Image.ADAPTIVE).save(out_bytes, format="GIF", optimize=True)
-                    encoded = out_bytes.getvalue()
-                elif target_fmt == "tiff":
-                    image.save(out_bytes, format="TIFF", compression="tiff_adobe_deflate")
-                    encoded = out_bytes.getvalue()
-                elif target_fmt == "avif":
-                    image.save(out_bytes, format="AVIF", quality=quality)
-                    encoded = out_bytes.getvalue()
-                elif target_fmt == "bmp":
-                    image.save(out_bytes, format="BMP")
-                    encoded = out_bytes.getvalue()
-                elif target_fmt == "ico":
-                    rgba = image.convert("RGBA")
-                    rgba.save(out_bytes, format="ICO", sizes=icon_sizes(rgba.width, rgba.height))
-                    encoded = out_bytes.getvalue()
-                else:
-                    png_bytes = io.BytesIO()
-                    image.save(png_bytes, format="PNG", optimize=True, compress_level=6)
-                    encoded = png_to_embedded_svg(png_bytes.getvalue(), image.width, image.height)
+            if target_fmt == "png":
+                image.save(out_bytes, format="PNG", optimize=True, compress_level=6)
+                encoded = out_bytes.getvalue()
+            elif target_fmt == "jpg":
+                image.save(out_bytes, format="JPEG", quality=quality, optimize=True, progressive=True)
+                encoded = out_bytes.getvalue()
+            elif target_fmt == "webp":
+                image.save(out_bytes, format="WEBP", quality=quality, method=6)
+                encoded = out_bytes.getvalue()
+            elif target_fmt == "gif":
+                image.convert("P", palette=Image.ADAPTIVE).save(out_bytes, format="GIF", optimize=True)
+                encoded = out_bytes.getvalue()
+            elif target_fmt == "tiff":
+                image.save(out_bytes, format="TIFF", compression="tiff_adobe_deflate")
+                encoded = out_bytes.getvalue()
+            elif target_fmt == "avif":
+                image.save(out_bytes, format="AVIF", quality=quality)
+                encoded = out_bytes.getvalue()
+            elif target_fmt == "bmp":
+                image.save(out_bytes, format="BMP")
+                encoded = out_bytes.getvalue()
+            elif target_fmt == "ico":
+                rgba = image.convert("RGBA")
+                rgba.save(out_bytes, format="ICO", sizes=icon_sizes(rgba.width, rgba.height))
+                encoded = out_bytes.getvalue()
+            else:
+                png_bytes = io.BytesIO()
+                image.save(png_bytes, format="PNG", optimize=True, compress_level=6)
+                encoded = png_to_embedded_svg(png_bytes.getvalue(), image.width, image.height)
 
-                zf.writestr(out_name, encoded)
+            rendered_pages.append((out_name, encoded))
 
-                # Fidelity gate: encoded page must stay within strict visual threshold
-                if threshold is not None:
-                    decoded = Image.open(io.BytesIO(encoded)).convert("RGB")
-                    mae = mean_abs_error(reference, decoded)
-                    page_mae.append(mae)
-                    if mae > threshold:
-                        emit_error(
-                            "fidelity_gate",
-                            f"Page {i + 1} exceeds fidelity threshold ({mae:.6f} > {threshold:.6f})",
-                            {
-                                "page": i + 1,
-                                "format": target_fmt,
-                                "mae": mae,
-                                "threshold": threshold,
-                            },
-                        )
-                        sys.exit(1)
+            # Fidelity gate: encoded page must stay within strict visual threshold
+            if threshold is not None:
+                decoded = Image.open(io.BytesIO(encoded)).convert("RGB")
+                mae = mean_abs_error(reference, decoded)
+                page_mae.append(mae)
+                if mae > threshold:
+                    emit_error(
+                        "fidelity_gate",
+                        f"Page {i + 1} exceeds fidelity threshold ({mae:.6f} > {threshold:.6f})",
+                        {
+                            "page": i + 1,
+                            "format": target_fmt,
+                            "mae": mae,
+                            "threshold": threshold,
+                        },
+                    )
+                    sys.exit(1)
 
-        if not os.path.exists(output_zip):
-            raise RuntimeError("ZIP output file was not created")
-        zip_size = os.path.getsize(output_zip)
-        if zip_size <= 256:
-            raise RuntimeError(f"ZIP output is suspiciously small ({zip_size} bytes)")
+        if page_count == 1:
+            single_name, single_encoded = rendered_pages[0]
+            with open(output_zip, "wb") as out_file:
+                out_file.write(single_encoded)
+            output_size = os.path.getsize(output_zip)
+            if output_size <= 64:
+                raise RuntimeError(f"Single output is suspiciously small ({output_size} bytes)")
+            result: dict[str, object] = {
+                "ok": True,
+                "pages": page_count,
+                "output_count": 1,
+                "packaging": "single",
+                "single_filename": single_name,
+                "output_size": output_size,
+                "format": target_fmt,
+            }
+        else:
+            with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+                for out_name, encoded in rendered_pages:
+                    zf.writestr(out_name, encoded)
 
-        result: dict[str, object] = {
-            "ok": True,
-            "pages": page_count,
-            "zip_size": zip_size,
-            "format": target_fmt,
-        }
+            if not os.path.exists(output_zip):
+                raise RuntimeError("ZIP output file was not created")
+            zip_size = os.path.getsize(output_zip)
+            if zip_size <= 256:
+                raise RuntimeError(f"ZIP output is suspiciously small ({zip_size} bytes)")
+
+            result = {
+                "ok": True,
+                "pages": page_count,
+                "output_count": page_count,
+                "packaging": "zip",
+                "zip_size": zip_size,
+                "format": target_fmt,
+            }
         if threshold is not None:
             max_mae = max(page_mae) if page_mae else 0.0
             avg_mae = sum(page_mae) / len(page_mae) if page_mae else 0.0
