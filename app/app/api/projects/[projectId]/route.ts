@@ -1,4 +1,3 @@
-// app/app/api/projects/[projectId]/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import {

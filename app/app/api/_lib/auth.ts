@@ -1,4 +1,3 @@
-// app/app/api/_lib/auth.ts
 import "server-only";
 import { cookies } from "next/headers";
 import { jwtVerify, createRemoteJWKSet } from "jose";

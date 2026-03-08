@@ -1,4 +1,3 @@
-// app/app/api/auth/session/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { requireUser } from "../../_lib/auth";

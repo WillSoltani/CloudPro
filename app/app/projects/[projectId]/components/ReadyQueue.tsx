@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/components/ReadyQueue.tsx
 "use client";
 
 import { Trash2, Play, Check, Eye } from "lucide-react";

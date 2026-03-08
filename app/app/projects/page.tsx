@@ -1,4 +1,3 @@
-// app/app/projects/page.tsx
 import { cookies, headers } from "next/headers";
 import ProjectsClient from "./ProjectsClient";
 

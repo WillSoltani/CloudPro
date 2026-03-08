@@ -1,4 +1,3 @@
-// app/app/api/_lib/http.ts
 import { NextResponse } from "next/server";
 import { AuthError } from "./auth";
 

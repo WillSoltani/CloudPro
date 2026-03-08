@@ -1,4 +1,3 @@
-// app/app/projects/ProjectsClient.tsx
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";

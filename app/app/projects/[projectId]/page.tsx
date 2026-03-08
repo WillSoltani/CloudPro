@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/page.tsx
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import ProjectDetailClient from "./ProjectDetailClient";

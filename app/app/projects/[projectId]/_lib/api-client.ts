@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/_lib/api-client.ts
 import type { FileRow } from "../../_lib/types";
 
 type CreateUploadBody = {

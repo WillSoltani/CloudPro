@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/_lib/ui-types.ts
 import {
   IMAGE_OUTPUT_FORMATS as SHARED_IMAGE_OUTPUT_FORMATS,
   OUTPUT_FORMATS as SHARED_OUTPUT_FORMATS,

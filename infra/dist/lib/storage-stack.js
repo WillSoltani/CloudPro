@@ -34,7 +34,6 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StorageStack = void 0;
-// infra/lib/storage-stack.ts
 const cdk = __importStar(require("aws-cdk-lib"));
 const dynamodb = __importStar(require("aws-cdk-lib/aws-dynamodb"));
 const s3 = __importStar(require("aws-cdk-lib/aws-s3"));
@@ -52,21 +51,17 @@ class StorageStack extends cdk.Stack {
     convertStateMachine;
     constructor(scope, id, props) {
         super(scope, id, props);
-        // KMS key for both buckets
         this.kmsKey = new kms.Key(this, "SecureDocKmsKey", {
             enableKeyRotation: true,
         });
-        // DynamoDB
         this.table = new dynamodb.Table(this, "SecureDocAppTable", {
             tableName: "SecureDocApp",
             partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING },
             sortKey: { name: "SK", type: dynamodb.AttributeType.STRING },
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
-            // DEV ONLY
             removalPolicy: cdk.RemovalPolicy.DESTROY,
         });
-        // S3: raw uploads
         this.rawBucket = new s3.Bucket(this, "RawUploadsBucket", {
             blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
             encryption: s3.BucketEncryption.KMS,
@@ -87,11 +82,9 @@ class StorageStack extends cdk.Stack {
                     maxAge: 3000,
                 },
             ],
-            // DEV ONLY
             removalPolicy: cdk.RemovalPolicy.DESTROY,
             autoDeleteObjects: true,
         });
-        // S3: outputs
         this.outputBucket = new s3.Bucket(this, "OutputsBucket", {
             blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
             encryption: s3.BucketEncryption.KMS,
@@ -107,7 +100,6 @@ class StorageStack extends cdk.Stack {
                     maxAge: 3000,
                 },
             ],
-            // DEV ONLY
             removalPolicy: cdk.RemovalPolicy.DESTROY,
             autoDeleteObjects: true,
         });
@@ -132,7 +124,6 @@ class StorageStack extends cdk.Stack {
                 OUTPUT_BUCKET: this.outputBucket.bucketName,
             },
         });
-        // permissions for worker
         this.table.grantReadWriteData(this.convertWorker);
         this.rawBucket.grantRead(this.convertWorker);
         this.outputBucket.grantWrite(this.convertWorker);
@@ -157,7 +148,6 @@ class StorageStack extends cdk.Stack {
             definitionBody: sfn.DefinitionBody.fromChainable(invokeWorker),
             timeout: cdk.Duration.minutes(5),
         });
-        // Outputs
         new cdk.CfnOutput(this, "SecureDocTableName", { value: this.table.tableName });
         new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
         new cdk.CfnOutput(this, "OutputBucketName", { value: this.outputBucket.bucketName });

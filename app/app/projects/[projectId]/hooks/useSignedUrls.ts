@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/hooks/useSignedUrls.ts
 "use client";
 
 import { useEffect, useRef, useState } from "react";

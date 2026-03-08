@@ -1,4 +1,3 @@
-// app/app/api/projects/route.ts
 import "server-only";
 import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 

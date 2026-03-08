@@ -1,4 +1,3 @@
-// app/app/api/projects/[projectId]/files/[fileId]/download/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { GetCommand } from "@aws-sdk/lib-dynamodb";

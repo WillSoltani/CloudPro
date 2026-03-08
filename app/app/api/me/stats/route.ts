@@ -1,4 +1,3 @@
-// app/app/api/me/stats/route.ts
 import { NextResponse } from "next/server";
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { ddbDoc, TABLE_NAME } from "@/app/app/api/_lib/aws";

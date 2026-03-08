@@ -1,4 +1,3 @@
-// app/app/api/me/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { jwtVerify, createRemoteJWKSet } from "jose";

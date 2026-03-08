@@ -1,4 +1,3 @@
-// app/app/api/projects/[projectId]/uploads/[uploadId]/complete/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";

@@ -1,4 +1,3 @@
-// infra/lib/storage-stack.ts
 import * as cdk from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
@@ -22,12 +21,10 @@ export class StorageStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // KMS key for both buckets
     this.kmsKey = new kms.Key(this, "SecureDocKmsKey", {
       enableKeyRotation: true,
     });
 
-    // DynamoDB
     this.table = new dynamodb.Table(this, "SecureDocAppTable", {
       tableName: "SecureDocApp",
       partitionKey: { name: "PK", type: dynamodb.AttributeType.STRING },
@@ -35,11 +32,9 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
 
-      // DEV ONLY
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    // S3: raw uploads
     this.rawBucket = new s3.Bucket(this, "RawUploadsBucket", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.KMS,
@@ -61,12 +56,10 @@ export class StorageStack extends cdk.Stack {
         },
       ],
 
-      // DEV ONLY
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
 
-    // S3: outputs
     this.outputBucket = new s3.Bucket(this, "OutputsBucket", {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.KMS,
@@ -83,7 +76,6 @@ export class StorageStack extends cdk.Stack {
         },
       ],
 
-      // DEV ONLY
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
     });
@@ -114,7 +106,6 @@ export class StorageStack extends cdk.Stack {
       },
     });
 
-    // permissions for worker
     this.table.grantReadWriteData(this.convertWorker);
     this.rawBucket.grantRead(this.convertWorker);
     this.outputBucket.grantWrite(this.convertWorker);
@@ -143,7 +134,6 @@ export class StorageStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(5),
     });
 
-    // Outputs
     new cdk.CfnOutput(this, "SecureDocTableName", { value: this.table.tableName });
     new cdk.CfnOutput(this, "RawBucketName", { value: this.rawBucket.bucketName });
     new cdk.CfnOutput(this, "OutputBucketName", { value: this.outputBucket.bucketName });

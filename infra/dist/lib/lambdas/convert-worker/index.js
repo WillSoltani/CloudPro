@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.__test__ = void 0;
 exports.handler = handler;
-// infra/lib/lambdas/convert-worker/index.ts
 const client_s3_1 = require("@aws-sdk/client-s3");
 const client_dynamodb_1 = require("@aws-sdk/client-dynamodb");
 const lib_dynamodb_1 = require("@aws-sdk/lib-dynamodb");

@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/_lib/preview.ts
 import { extFromName } from "./format";
 
 export type PreviewKind = "image";

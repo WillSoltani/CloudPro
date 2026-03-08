@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/ProjectDetailClient.tsx
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -60,13 +59,11 @@ function summarizeConvert(results: Array<{ ok: boolean; error?: string }>) {
 
 export default function ProjectDetailClient({ projectId, initialFiles }: Props) {
   const router = useRouter();
-  // Global defaults shown in the sidebar
   const [globalFormat, setGlobalFormat] = useState<OutputFormat>("JPG");
   const [globalQuality, setGlobalQuality] = useState(100);
   const [globalPreset, setGlobalPreset] = useState<PresetId>("web");
   const [globalResizePct, setGlobalResizePct] = useState(100);
 
-  // Per-item settings overrides — keyed by fileId
   const [itemSettings, setItemSettings] = useState<Record<string, ItemSettings>>({});
 
   const [uploadBusy, setUploadBusy] = useState(false);
@@ -79,24 +76,20 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
   const server = useServerFiles({ projectId, initialFiles, onError: setError });
   const signed = useSignedUrls(projectId, server.files);
 
-  // Keep navbar file count in sync with live file list
   useEffect(() => {
     setFileCount(server.files.length);
   }, [server.files, setFileCount]);
 
-  // Inject dropSignedUrl into server hook
   useEffect(() => {
     server.setDropSignedUrl(signed.dropSignedUrl);
   }, [server, signed.dropSignedUrl]);
 
-  // Effective settings for a file (per-item override or global defaults)
   const getSettings = useCallback(
     (fileId: string): ItemSettings =>
       itemSettings[fileId] ?? { ...DEFAULT_SETTINGS },
     [itemSettings]
   );
 
-  // Per-item format override (inline selector in ReadyQueue row)
   const setItemFormat = useCallback(
     (fileId: string, fmt: OutputFormat) => {
       setItemSettings((prev) => {
@@ -107,7 +100,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     []
   );
 
-  // Sidebar changes apply to all selected items + update global default
   const handleGlobalFormat = useCallback(
     (f: OutputFormat) => {
       setGlobalFormat(f);
@@ -172,9 +164,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     [server.selectedReadyIds]
   );
 
-  // Keep per-item settings isolated:
-  // - remove settings for deleted files
-  // - initialize new raw files once using current global defaults
   const prevFileIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const currentRawIds = new Set(server.rawReadyFiles.map((f) => f.fileId));
@@ -202,7 +191,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     prevFileIdsRef.current = currentRawIds;
   }, [server.rawReadyFiles, globalFormat, globalQuality, globalPreset, globalResizePct]);
 
-  // ---- Upload ----
   const onUploadClick = useCallback(async () => {
     if (uploadBusy || staged.uploadDisabled) return;
     setError(null);
@@ -233,7 +221,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     }
   }, [uploadBusy, staged, projectId, server]);
 
-  // ---- Ready view (raw) ----
   const readyView: LocalReadyFile[] = useMemo(() => {
     return server.rawReadyFiles.map((f) => {
       const filename = safeFilenameFromRow(f);
@@ -256,14 +243,9 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     });
   }, [server.rawReadyFiles, server.selectedReady, signed.signedUrls, getSettings]);
 
-  // ---- Converted view (output) — toLabel is IMMUTABLE from DDB ----
   const convertedView: LocalConvertedFile[] = useMemo(() => {
     return server.outputFiles.map((f) => {
       const filename = safeFilenameFromRow(f);
-      // Derive fromLabel from source file. Priority:
-      // 1. Live source row (if still in file list)
-      // 2. Stored sourceContentType (persisted in DDB on output row creation)
-      // 3. Fallback to output contentType (pre-Lambda update, may be source CT)
       const sourceFile = f.sourceFileId
         ? server.files.find((sf) => sf.fileId === f.sourceFileId)
         : undefined;
@@ -276,7 +258,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
       const status: "done" | "processing" | "failed" =
         st === "done" ? "done" : st === "failed" ? "failed" : "processing";
 
-      // toLabel = actual output format stored in DDB — never derived from current UI state
       const toLabel =
         f.outputFormat ?? (filename.includes(".") ? filename.split(".").pop()!.toUpperCase() : "?");
 
@@ -343,7 +324,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     [selectedReadyView]
   );
 
-  // Always show every output format in the sidebar. Selection/disabled state is handled separately.
   const allSidebarFormats = useMemo<OutputFormat[]>(
     () => sortOutputsByRecommendation(FORMAT_CAPABILITIES.supportedOutputs, selectedReadySourceLabels),
     [selectedReadySourceLabels]
@@ -379,7 +359,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     setGlobalFormat(allSidebarFormats[0] ?? "JPG");
   }, [allSidebarFormats, globalFormat]);
 
-  // ---- Convert ----
   const onConvert = useCallback(async () => {
     if (convertBusy || !server.anyReadySelected) return;
     setConvertBusy(true);
@@ -418,7 +397,6 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     }
   }, [convertBusy, server, projectId, getSettings]);
 
-  // ---- Reconvert ----
   const onReconvert = useCallback(
     async (sourceFileId: string, settings: ItemSettings) => {
       setError(null);

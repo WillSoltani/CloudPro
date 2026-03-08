@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/components/ConvertedFiles.tsx
 "use client";
 
 import {
@@ -54,12 +53,10 @@ export function ConvertedFiles({
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [expandedReconvert, setExpandedReconvert] = useState<string | null>(null);
 
-  // Multi-select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDownloading, setBulkDownloading] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  // Search + sort
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<SortBy>({ field: "date", dir: "desc" });
   const preview = useFilePreview(projectId);

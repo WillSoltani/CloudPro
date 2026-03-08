@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/layout.tsx
 import type { ReactNode } from "react";
 import { cookies, headers } from "next/headers";
 import { ProjectLayoutShell } from "./ProjectLayoutShell";

@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/_lib/format.ts
 import type { FileRow } from "../../_lib/types"
 import type { OutputFormat } from "./ui-types";
 

@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/_lib/local-types.ts
 export type StagedFile = {
   id: string;
   file: File;

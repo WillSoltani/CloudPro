@@ -1,4 +1,3 @@
-// app/app/projects/types.ts
 
 export type ProjectRow = {
   projectId: string;

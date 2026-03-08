@@ -1,4 +1,3 @@
-// app/app/api/projects/[projectId]/files/[fileId]/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { DeleteCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
@@ -62,7 +61,6 @@ export async function DELETE(
     const PK = `USER#${user.sub}`;
     const SK = `FILE#${projectId}#${fileId}`;
 
-    // 1) Read row (optional). If it exists, attempt S3 delete best-effort.
     const got = await ddbDoc.send(
       new GetCommand({
         TableName: TABLE_NAME,
@@ -116,7 +114,6 @@ export async function DELETE(
       }
     }
 
-    // 2) Delete Dynamo row (idempotent).
     await ddbDoc.send(
       new DeleteCommand({
         TableName: TABLE_NAME,

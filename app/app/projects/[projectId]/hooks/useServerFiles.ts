@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/hooks/useServerFiles.ts
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";

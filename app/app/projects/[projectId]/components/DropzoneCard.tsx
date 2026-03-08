@@ -1,6 +1,3 @@
-
-// app/app/projects/[projectId]/components/DropzoneCard.tsx;
-
 import { useCallback, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { Upload, ArrowUpFromLine, Trash2 } from "lucide-react";

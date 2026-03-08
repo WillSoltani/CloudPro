@@ -1,4 +1,3 @@
-// app/app/api/projects/[projectId]/uploads/route.ts
 import "server-only";
 import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";

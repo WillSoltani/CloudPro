@@ -1,4 +1,3 @@
-// app/app/projects/[projectId]/hooks/useStagedFiles.ts
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
