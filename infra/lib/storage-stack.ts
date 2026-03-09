@@ -4,6 +4,8 @@ import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 
 import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as sfnTasks from "aws-cdk-lib/aws-stepfunctions-tasks";
@@ -58,6 +60,13 @@ export class StorageStack extends cdk.Stack {
 
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      lifecycleRules: [
+        {
+          id: "raw-upload-maintenance",
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
+          noncurrentVersionExpiration: cdk.Duration.days(30),
+        },
+      ],
     });
 
     this.outputBucket = new s3.Bucket(this, "OutputsBucket", {
@@ -78,6 +87,13 @@ export class StorageStack extends cdk.Stack {
 
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       autoDeleteObjects: true,
+      lifecycleRules: [
+        {
+          id: "output-maintenance",
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
+          noncurrentVersionExpiration: cdk.Duration.days(30),
+        },
+      ],
     });
 
     // With ts-node, __dirname is infra/lib — go up one level to reach infra/
@@ -87,8 +103,17 @@ export class StorageStack extends cdk.Stack {
     // Convert Worker Lambda — container image to support large native deps
     // (pdfjs-dist alone is ~220 MB unzipped, exceeding the 250 MB zip limit)
     // --------------------------
+    const convertWorkerFunctionName = `${cdk.Stack.of(this).stackName}-ConvertWorker`;
+    const convertWorkerLogGroup = new logs.LogGroup(this, "ConvertWorkerLogs", {
+      logGroupName: `/aws/lambda/${convertWorkerFunctionName}`,
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     this.convertWorker = new lambda.DockerImageFunction(this, "ConvertWorker", {
       code: lambda.DockerImageCode.fromImageAsset(workerDir),
+      functionName: convertWorkerFunctionName,
+      logGroup: convertWorkerLogGroup,
 
       /**
        * x86_64 matches the linux/amd64 platform in the Dockerfile.
@@ -128,10 +153,44 @@ export class StorageStack extends cdk.Stack {
       backoffRate: 2,
     });
 
+    const convertStateMachineLogGroup = new logs.LogGroup(this, "ConvertStateMachineLogs", {
+      retention: logs.RetentionDays.ONE_MONTH,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
     this.convertStateMachine = new sfn.StateMachine(this, "ConvertStateMachine", {
       stateMachineType: sfn.StateMachineType.STANDARD,
       definitionBody: sfn.DefinitionBody.fromChainable(invokeWorker),
       timeout: cdk.Duration.minutes(5),
+      logs: {
+        destination: convertStateMachineLogGroup,
+        level: sfn.LogLevel.ERROR,
+        includeExecutionData: false,
+      },
+    });
+
+    new cloudwatch.Alarm(this, "ConvertWorkerErrorsAlarm", {
+      metric: this.convertWorker.metricErrors({
+        period: cdk.Duration.minutes(5),
+        statistic: "sum",
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: "Alerts when convert worker Lambda reports one or more errors in 5 minutes.",
+    });
+
+    new cloudwatch.Alarm(this, "ConvertStateMachineFailedAlarm", {
+      metric: this.convertStateMachine.metricFailed({
+        period: cdk.Duration.minutes(5),
+        statistic: "sum",
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: "Alerts when conversion Step Functions executions fail.",
     });
 
     new cdk.CfnOutput(this, "SecureDocTableName", { value: this.table.tableName });

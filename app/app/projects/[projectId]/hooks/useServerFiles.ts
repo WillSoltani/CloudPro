@@ -6,6 +6,8 @@ import { deleteFile as apiDeleteFile, listFiles } from "../_lib/api-client";
 import { normalizeStatus } from "../_lib/format";
 
 const MAX_CONVERT_BATCH = 25;
+const POLL_MIN_DELAY_MS = 2000;
+const POLL_MAX_DELAY_MS = 10000;
 
 type FileKind = "raw" | "output";
 
@@ -55,6 +57,7 @@ export function useServerFiles(args: {
 
   const [files, setFiles] = useState<FileRow[]>(initialFiles);
   const [selectedReady, setSelectedReady] = useState<Record<string, boolean>>({});
+  const pollDelayRef = useRef<number>(POLL_MIN_DELAY_MS);
 
   // dropSignedUrl is injected later (after useSignedUrls exists)
   const dropSignedUrlRef = useRef<(fileId: string) => void>(() => {});
@@ -108,7 +111,7 @@ export function useServerFiles(args: {
     [files]
   );
 
-  // Auto-poll every 4s while any output file is still processing
+  // Auto-poll while outputs are processing. Delay backs off to reduce API churn.
   const hasProcessing = useMemo(
     () =>
       files.some(
@@ -118,11 +121,41 @@ export function useServerFiles(args: {
   );
 
   useEffect(() => {
-    if (!hasProcessing) return;
-    const id = setInterval(() => {
-      void refreshFiles({ validate: false });
-    }, 4000);
-    return () => clearInterval(id);
+    if (!hasProcessing) {
+      pollDelayRef.current = POLL_MIN_DELAY_MS;
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = (delayMs: number) => {
+      if (cancelled) return;
+      timer = setTimeout(() => {
+        void pollOnce();
+      }, delayMs);
+    };
+
+    const pollOnce = async () => {
+      try {
+        await refreshFiles({ validate: false });
+      } catch {
+        // On transient polling errors, keep going with max delay.
+      }
+
+      if (cancelled) return;
+
+      const nextDelay = Math.min(pollDelayRef.current * 2, POLL_MAX_DELAY_MS);
+      pollDelayRef.current = nextDelay;
+      schedule(nextDelay);
+    };
+
+    schedule(pollDelayRef.current);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [hasProcessing, refreshFiles]);
 
   const selectedReadyIds = useMemo(() => {

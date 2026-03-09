@@ -245,11 +245,19 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     });
   }, [server.rawReadyFiles, server.selectedReady, signed.signedUrls, getSettings]);
 
+  const filesById = useMemo(() => {
+    const map = new Map<string, FileRow>();
+    for (const file of server.files) {
+      map.set(file.fileId, file);
+    }
+    return map;
+  }, [server.files]);
+
   const convertedView: LocalConvertedFile[] = useMemo(() => {
     return server.outputFiles.map((f) => {
       const filename = safeFilenameFromRow(f);
       const sourceFile = f.sourceFileId
-        ? server.files.find((sf) => sf.fileId === f.sourceFileId)
+        ? filesById.get(f.sourceFileId)
         : undefined;
       const from = sourceFile
         ? formatFromFilenameOrContentType(safeFilenameFromRow(sourceFile), sourceFile.contentType)
@@ -281,13 +289,13 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         outputCount: f.outputCount,
       };
     });
-  }, [server.outputFiles, server.files, signed.signedUrls]);
+  }, [server.outputFiles, filesById, signed.signedUrls]);
 
   const filledPdfView: LocalConvertedFile[] = useMemo(() => {
     return server.filledPdfFiles.map((f) => {
       const filename = safeFilenameFromRow(f);
       const sourceFile = f.sourceFileId
-        ? server.files.find((sf) => sf.fileId === f.sourceFileId)
+        ? filesById.get(f.sourceFileId)
         : undefined;
       const from = sourceFile
         ? formatFromFilenameOrContentType(safeFilenameFromRow(sourceFile), sourceFile.contentType)
@@ -314,7 +322,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         outputCount: f.outputCount,
       };
     });
-  }, [server.filledPdfFiles, server.files, signed.signedUrls]);
+  }, [server.filledPdfFiles, filesById, signed.signedUrls]);
 
   const selectedReadyView = useMemo(
     () => readyView.filter((f) => f.selected),

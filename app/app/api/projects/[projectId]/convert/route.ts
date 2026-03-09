@@ -29,6 +29,7 @@ import {
 } from "./_lib/convert-route-utils";
 
 export const runtime = "nodejs";
+const CONVERT_ENQUEUE_CONCURRENCY = 4;
 
 type ProjectLookup = { status: string };
 
@@ -64,6 +65,26 @@ async function fetchProjectById(userSub: string, projectId: string): Promise<Pro
   return null;
 }
 
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+
+  async function runOne() {
+    while (idx < items.length) {
+      const cur = idx++;
+      results[cur] = await worker(items[cur]);
+    }
+  }
+
+  const n = Math.max(1, Math.min(limit, items.length || 1));
+  await Promise.all(Array.from({ length: n }, () => runOne()));
+  return results;
+}
+
 
 export async function POST(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {
@@ -94,27 +115,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
     const outputBucketName = mustEnv("OUTPUT_BUCKET");
     const sfn = new SFNClient({});
     const PK = `USER#${user.sub}`;
-    const results: ConvertResult[] = [];
+    const dedupedJobs = Array.from(seen.values());
 
-    for (const [, job] of seen) {
+    const results = await mapLimit(dedupedJobs, CONVERT_ENQUEUE_CONCURRENCY, async (job): Promise<ConvertResult> => {
       const { fileId, outputFormat, quality, preset, resizePct } = job;
       const rawSK = `FILE#${projectId}#${fileId}`;
 
       const got = await ddbDoc.send(new GetCommand({ TableName: TABLE_NAME, Key: { PK, SK: rawSK } }));
       const src = toDbFileItem(got.Item);
-      if (!src) { results.push({ fileId, ok: false, error: "not found" }); continue; }
-      if (src.projectId !== projectId || src.userSub !== user.sub) { results.push({ fileId, ok: false, error: "forbidden" }); continue; }
-      if (src.kind !== "raw") { results.push({ fileId, ok: false, error: "cannot convert an output file" }); continue; }
-      if (!isRawConvertibleStatus(src.status)) { results.push({ fileId, ok: false, error: `not convertible in status ${src.status}` }); continue; }
+      if (!src) return { fileId, ok: false, error: "not found" };
+      if (src.projectId !== projectId || src.userSub !== user.sub) return { fileId, ok: false, error: "forbidden" };
+      if (src.kind !== "raw") return { fileId, ok: false, error: "cannot convert an output file" };
+      if (!isRawConvertibleStatus(src.status)) return { fileId, ok: false, error: `not convertible in status ${src.status}` };
       const sourceLabel = sourceLabelFromFilenameOrContentType(src.filename, src.contentType);
       const allowedTargets = allowedOutputFormatsForFile(src.filename, src.contentType);
       if (!allowedTargets.includes(outputFormat)) {
-        results.push({
+        return {
           fileId,
           ok: false,
           error: `unsupported conversion: ${sourceLabel} cannot be converted to ${outputFormat}`,
-        });
-        continue;
+        };
       }
 
       const outFileId = crypto.randomUUID();
@@ -150,8 +170,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
           ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
         }));
       } catch (e: unknown) {
-        results.push({ fileId, ok: false, error: `ddb put failed: ${getErrorMessage(e)}` });
-        continue;
+        return { fileId, ok: false, error: `ddb put failed: ${getErrorMessage(e)}` };
       }
 
       try {
@@ -168,12 +187,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
             Item: { ...outItem, status: "failed", updatedAt: nowIso(), errorMessage: msg },
           }));
         } catch { /* ignore */ }
-        results.push({ fileId, ok: false, error: `enqueue failed: ${msg}` });
-        continue;
+        return { fileId, ok: false, error: `enqueue failed: ${msg}` };
       }
 
-      results.push({ fileId, ok: true, outputFileId: outFileId });
-    }
+      return { fileId, ok: true, outputFileId: outFileId };
+    });
 
     return NextResponse.json({ ok: true, projectId, results }, { status: 200 });
   } catch (e: unknown) {

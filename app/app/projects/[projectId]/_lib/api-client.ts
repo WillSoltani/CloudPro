@@ -1,4 +1,5 @@
 import type { FileRow } from "../../_lib/types";
+import { parsePresignedUrlExpiryMs } from "./preview";
 
 type CreateUploadBody = {
   filename: string;
@@ -53,6 +54,32 @@ export type CreateFilledPdfUploadResponse = {
     headers: Record<string, string>;
   };
 };
+
+type CachedInlineUrl = {
+  url: string;
+  expiresAtMs: number | null;
+};
+
+const INLINE_URL_CACHE = new Map<string, CachedInlineUrl>();
+const INLINE_URL_IN_FLIGHT = new Map<string, Promise<string | null>>();
+const INLINE_URL_EXPIRY_SKEW_MS = 5000;
+
+function inlineUrlCacheKey(projectId: string, fileId: string): string {
+  return `${projectId}:${fileId}`;
+}
+
+function isInlineUrlCacheValid(entry: CachedInlineUrl, nowMs = Date.now()): boolean {
+  if (!entry.url) return false;
+  if (!entry.expiresAtMs) return true;
+  return nowMs < entry.expiresAtMs - INLINE_URL_EXPIRY_SKEW_MS;
+}
+
+function cacheInlineUrl(projectId: string, fileId: string, url: string) {
+  INLINE_URL_CACHE.set(inlineUrlCacheKey(projectId, fileId), {
+    url,
+    expiresAtMs: parsePresignedUrlExpiryMs(url),
+  });
+}
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
@@ -239,26 +266,55 @@ export async function uploadFilledPdfBytes(
  * This returns inlineUrl first (best for thumbnails), then falls back to url or downloadUrl.
  */
 export async function getInlineUrl(projectId: string, fileId: string): Promise<string | null> {
-  const res = await fetch(
-    `/app/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download`,
-    { cache: "no-store" }
-  );
-  if (!res.ok) return null;
+  const key = inlineUrlCacheKey(projectId, fileId);
+  const cached = INLINE_URL_CACHE.get(key);
+  if (cached && isInlineUrlCacheValid(cached)) return cached.url;
 
-  const data = (await res.json()) as unknown;
+  const existing = INLINE_URL_IN_FLIGHT.get(key);
+  if (existing) return existing;
 
-  if (isRecord(data)) {
+  const request = (async () => {
+    const res = await fetch(
+      `/app/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) {
+      INLINE_URL_CACHE.delete(key);
+      return null;
+    }
+
+    const data = (await res.json()) as unknown;
+    if (!isRecord(data)) {
+      INLINE_URL_CACHE.delete(key);
+      return null;
+    }
+
     const inlineUrl = getString(data, "inlineUrl");
-    if (inlineUrl) return inlineUrl;
+    if (inlineUrl) {
+      cacheInlineUrl(projectId, fileId, inlineUrl);
+      return inlineUrl;
+    }
 
     const url = getString(data, "url");
-    if (url) return url;
+    if (url) {
+      cacheInlineUrl(projectId, fileId, url);
+      return url;
+    }
 
     const downloadUrl = getString(data, "downloadUrl");
-    if (downloadUrl) return downloadUrl;
-  }
+    if (downloadUrl) {
+      cacheInlineUrl(projectId, fileId, downloadUrl);
+      return downloadUrl;
+    }
 
-  return null;
+    INLINE_URL_CACHE.delete(key);
+    return null;
+  })().finally(() => {
+    INLINE_URL_IN_FLIGHT.delete(key);
+  });
+
+  INLINE_URL_IN_FLIGHT.set(key, request);
+  return request;
 }
 
 /**
