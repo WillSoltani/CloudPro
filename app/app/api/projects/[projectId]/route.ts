@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-import { ddbDoc, TABLE_NAME, s3 } from "../../_lib/aws";
+import { ddbDoc, getTableName, s3 } from "../../_lib/aws";
 import { requireUser } from "../../_lib/auth";
 
 export const runtime = "nodejs";
@@ -70,6 +70,7 @@ type ProjectFound = {
 };
 
 async function findProject(
+  tableName: string,
   userSub: string,
   projectId: string
 ): Promise<ProjectFound | null> {
@@ -79,7 +80,7 @@ async function findProject(
   for (let page = 0; page < 50; page += 1) {
     const res = await ddbDoc.send(
       new QueryCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         ConsistentRead: true,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
@@ -119,6 +120,7 @@ type FileItem = {
 };
 
 async function listProjectFiles(
+  tableName: string,
   userSub: string,
   projectId: string
 ): Promise<FileItem[]> {
@@ -129,7 +131,7 @@ async function listProjectFiles(
   for (let page = 0; page < 200; page += 1) {
     const res = await ddbDoc.send(
       new QueryCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         ConsistentRead: true,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
@@ -168,6 +170,7 @@ export async function GET(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId } = await params;
 
     if (!projectId) {
@@ -177,7 +180,7 @@ export async function GET(
       );
     }
 
-    const found = await findProject(user.sub, projectId);
+    const found = await findProject(tableName, user.sub, projectId);
     if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
 
     const it = found.item;
@@ -211,6 +214,7 @@ export async function PATCH(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId } = await params;
 
     if (!projectId) {
@@ -231,7 +235,7 @@ export async function PATCH(
     if (!name) return NextResponse.json({ error: "name is required" }, { status: 400 });
     if (name.length > 80) return NextResponse.json({ error: "name too long" }, { status: 400 });
 
-    const found = await findProject(user.sub, projectId);
+    const found = await findProject(tableName, user.sub, projectId);
     if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
 
     const updatedAt = nowIso();
@@ -255,7 +259,7 @@ export async function PATCH(
     try {
       await ddbDoc.send(
         new UpdateCommand({
-          TableName: TABLE_NAME,
+          TableName: tableName,
           Key: found.key,
           UpdateExpression: updateExpr,
           ExpressionAttributeNames: { "#n": "name" },
@@ -292,6 +296,7 @@ export async function DELETE(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId } = await params;
 
     if (!projectId) {
@@ -301,10 +306,10 @@ export async function DELETE(
       );
     }
 
-    const found = await findProject(user.sub, projectId);
+    const found = await findProject(tableName, user.sub, projectId);
     if (!found) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-    const files = await listProjectFiles(user.sub, projectId);
+    const files = await listProjectFiles(tableName, user.sub, projectId);
 
     let deletedFileRows = 0;
     let deletedS3Objects = 0;
@@ -320,7 +325,7 @@ export async function DELETE(
       try {
         await ddbDoc.send(
           new DeleteCommand({
-            TableName: TABLE_NAME,
+            TableName: tableName,
             Key: { PK: f.PK, SK: f.SK },
           })
         );
@@ -333,7 +338,7 @@ export async function DELETE(
     try {
       await ddbDoc.send(
         new DeleteCommand({
-          TableName: TABLE_NAME,
+          TableName: tableName,
           Key: found.key,
           ConditionExpression: "attribute_exists(PK) AND attribute_exists(SK)",
         })

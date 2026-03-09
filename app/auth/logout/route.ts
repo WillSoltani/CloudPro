@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { mustServerEnv } from "@/app/app/api/_lib/server-env";
 
 export async function GET() {
-  const domain = process.env.COGNITO_DOMAIN;
-  const clientId = process.env.COGNITO_CLIENT_ID;
-  const logoutRedirect = process.env.COGNITO_LOGOUT_REDIRECT_URI;
+  const domain = await mustServerEnv("COGNITO_DOMAIN");
+  const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
+  const logoutRedirect = await mustServerEnv("COGNITO_LOGOUT_REDIRECT_URI");
 
   if (!domain || !clientId || !logoutRedirect) {
     return new NextResponse("Missing server env vars", { status: 500 });

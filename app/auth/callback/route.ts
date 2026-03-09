@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-
-function mustEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
+import { mustServerEnv } from "@/app/app/api/_lib/server-env";
 
 export async function GET(req: NextRequest) {
   const isProd = process.env.NODE_ENV === "production";
 
-  const domain = mustEnv("COGNITO_DOMAIN").replace(/\/$/, "");
-  const clientId = mustEnv("COGNITO_CLIENT_ID");
-  const redirectUri = mustEnv("COGNITO_REDIRECT_URI");
+  const domain = (await mustServerEnv("COGNITO_DOMAIN")).replace(/\/$/, "");
+  const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
+  const redirectUri = await mustServerEnv("COGNITO_REDIRECT_URI");
 
   const url = new URL(req.url);
   const code = url.searchParams.get("code");

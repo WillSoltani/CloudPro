@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { SFNClient, StartExecutionCommand } from "@aws-sdk/client-sfn";
 
-import { ddbDoc, TABLE_NAME, mustEnv } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 import {
   allowedOutputFormatsForFile,
@@ -41,12 +41,16 @@ function jsonError(status: number, error: string, detail?: string) {
 }
 
 
-async function fetchProjectById(userSub: string, projectId: string): Promise<ProjectLookup | null> {
+async function fetchProjectById(
+  tableName: string,
+  userSub: string,
+  projectId: string
+): Promise<ProjectLookup | null> {
   const PK = `USER#${userSub}`;
   let lastKey: Record<string, unknown> | undefined;
   for (let page = 0; page < 50; page += 1) {
     const res = await ddbDoc.send(new QueryCommand({
-      TableName: TABLE_NAME, ConsistentRead: true,
+      TableName: tableName, ConsistentRead: true,
       KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
       ExpressionAttributeValues: { ":pk": PK, ":prefix": "PROJECT#", ":pid": projectId },
       FilterExpression: "projectId = :pid",
@@ -89,10 +93,11 @@ async function mapLimit<T, R>(
 export async function POST(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId } = await params;
     if (!projectId) return jsonError(400, "bad_request", "projectId is required");
 
-    const project = await fetchProjectById(user.sub, projectId);
+    const project = await fetchProjectById(tableName, user.sub, projectId);
     if (!project) return jsonError(404, "not_found", "project not found");
     if ((project.status || "active") !== "active") return jsonError(410, "gone", "project is not active");
 
@@ -111,8 +116,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
     const seen = new Map<string, ConversionJobInput>();
     for (const j of jobs) seen.set(j.fileId, j);
 
-    const stateMachineArn = mustEnv("CONVERT_SFN_ARN");
-    const outputBucketName = mustEnv("OUTPUT_BUCKET");
+    const stateMachineArn = await mustEnv("CONVERT_SFN_ARN");
+    const outputBucketName = await mustEnv("OUTPUT_BUCKET");
     const sfn = new SFNClient({});
     const PK = `USER#${user.sub}`;
     const dedupedJobs = Array.from(seen.values());
@@ -121,7 +126,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
       const { fileId, outputFormat, quality, preset, resizePct } = job;
       const rawSK = `FILE#${projectId}#${fileId}`;
 
-      const got = await ddbDoc.send(new GetCommand({ TableName: TABLE_NAME, Key: { PK, SK: rawSK } }));
+      const got = await ddbDoc.send(new GetCommand({ TableName: tableName, Key: { PK, SK: rawSK } }));
       const src = toDbFileItem(got.Item);
       if (!src) return { fileId, ok: false, error: "not found" };
       if (src.projectId !== projectId || src.userSub !== user.sub) return { fileId, ok: false, error: "forbidden" };
@@ -166,7 +171,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
 
       try {
         await ddbDoc.send(new PutCommand({
-          TableName: TABLE_NAME, Item: outItem,
+          TableName: tableName, Item: outItem,
           ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
         }));
       } catch (e: unknown) {
@@ -183,7 +188,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ project
         const msg = getErrorMessage(e);
         try {
           await ddbDoc.send(new PutCommand({
-            TableName: TABLE_NAME,
+            TableName: tableName,
             Item: { ...outItem, status: "failed", updatedAt: nowIso(), errorMessage: msg },
           }));
         } catch { /* ignore */ }

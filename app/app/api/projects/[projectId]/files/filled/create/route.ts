@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { ddbDoc, mustEnv, s3, TABLE_NAME } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, mustEnv, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
@@ -47,6 +47,7 @@ export async function POST(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId } = await params;
     if (!projectId) {
       return NextResponse.json({ error: "bad_request", detail: "projectId is required" }, { status: 400 });
@@ -73,14 +74,14 @@ export async function POST(
     const PK = `USER#${user.sub}`;
     const sourceSK = `FILE#${projectId}#${originalFileId}`;
     const sourceRes = await ddbDoc.send(
-      new GetCommand({ TableName: TABLE_NAME, Key: { PK, SK: sourceSK } })
+      new GetCommand({ TableName: tableName, Key: { PK, SK: sourceSK } })
     );
     const source = sourceRes.Item;
     if (!source) {
       return NextResponse.json({ error: "not_found", detail: "source file not found" }, { status: 404 });
     }
 
-    const outputBucket = mustEnv("OUTPUT_BUCKET");
+    const outputBucket = await mustEnv("OUTPUT_BUCKET");
     const fileId = crypto.randomUUID();
     const createdAt = nowIso();
     const key = `private/${user.sub}/${projectId}/filled/${fileId}/${filename}`;
@@ -88,7 +89,7 @@ export async function POST(
 
     await ddbDoc.send(
       new PutCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         Item: {
           PK,
           SK: outSK,

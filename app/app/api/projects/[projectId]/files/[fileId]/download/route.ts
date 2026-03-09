@@ -4,7 +4,7 @@ import { GetCommand } from "@aws-sdk/lib-dynamodb";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-import { ddbDoc, TABLE_NAME, s3 } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
@@ -35,6 +35,7 @@ export async function GET(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId, fileId } = await params;
 
     if (!projectId || !fileId) {
@@ -49,7 +50,7 @@ export async function GET(
 
     const got = await ddbDoc.send(
       new GetCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         Key: { PK, SK },
       })
     );

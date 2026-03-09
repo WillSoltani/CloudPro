@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { mustServerEnv } from "@/app/app/api/_lib/server-env";
 
 function base64UrlEncode(bytes: Uint8Array) {
   let str = "";
@@ -19,9 +20,9 @@ async function sha256Base64Url(input: string) {
 }
 
 export async function GET() {
-  const domain = process.env.COGNITO_DOMAIN?.replace(/\/$/, "");
-  const clientId = process.env.COGNITO_CLIENT_ID;
-  const redirectUri = process.env.COGNITO_REDIRECT_URI;
+  const domain = (await mustServerEnv("COGNITO_DOMAIN")).replace(/\/$/, "");
+  const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
+  const redirectUri = await mustServerEnv("COGNITO_REDIRECT_URI");
 
   if (!domain || !clientId || !redirectUri) {
     return new NextResponse("Missing server env vars", { status: 500 });

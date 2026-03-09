@@ -4,7 +4,7 @@ import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
-import { ddbDoc, TABLE_NAME, s3, mustEnv } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, s3, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireUser, AuthError } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
@@ -77,14 +77,18 @@ function userSlugFromClaims(user: { name?: unknown; email?: unknown }): string {
  * - Paginate until found.
  * - Return the real stored name; do NOT substitute "Untitled Project" here.
  */
-async function fetchProjectById(userSub: string, projectId: string): Promise<ProjectLookup> {
+async function fetchProjectById(
+  tableName: string,
+  userSub: string,
+  projectId: string
+): Promise<ProjectLookup> {
   const PK = `USER#${userSub}`;
   let lastKey: Record<string, unknown> | undefined;
 
   for (let page = 0; page < 50; page += 1) {
     const res = await ddbDoc.send(
       new QueryCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         ConsistentRead: true,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
@@ -125,6 +129,7 @@ async function fetchProjectById(userSub: string, projectId: string): Promise<Pro
 }
 
 async function backfillProjectSlugOnce(params: {
+  tableName: string;
   userSub: string;
   projectSK: string;
   projectSlug: string;
@@ -134,7 +139,7 @@ async function backfillProjectSlugOnce(params: {
   // Only set if missing (immutable once set)
   await ddbDoc.send(
     new UpdateCommand({
-      TableName: TABLE_NAME,
+      TableName: params.tableName,
       Key: { PK, SK: params.projectSK },
       UpdateExpression: "SET projectSlug = :ps",
       ExpressionAttributeValues: { ":ps": params.projectSlug },
@@ -170,6 +175,7 @@ export async function POST(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId } = await params;
 
     if (!projectId) return jsonError(400, "bad_request", "projectId is required");
@@ -195,7 +201,7 @@ export async function POST(
     const contentType = normalizeContentType(body.contentType ?? "");
 
     // Ensure project exists and is active
-    const project = await fetchProjectById(user.sub, projectId);
+    const project = await fetchProjectById(tableName, user.sub, projectId);
     if (!project) return jsonError(404, "not_found", "project not found");
     if ((project.status || "active") !== "active") return jsonError(410, "gone", "project is not active");
 
@@ -206,6 +212,7 @@ export async function POST(
 
       try {
         await backfillProjectSlugOnce({
+          tableName,
           userSub: user.sub,
           projectSK: project.projectSK,
           projectSlug: computed,
@@ -217,7 +224,7 @@ export async function POST(
       projectSlug = computed;
     }
 
-    const bucket = mustEnv("RAW_BUCKET");
+    const bucket = await mustEnv("RAW_BUCKET");
     const fileId = crypto.randomUUID();
 
     const userSlug = userSlugFromClaims({

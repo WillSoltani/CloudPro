@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { DeleteCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
 
-import { ddbDoc, TABLE_NAME, s3 } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
@@ -49,6 +49,7 @@ export async function DELETE(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId, fileId } = await params;
 
     if (!projectId || !fileId) {
@@ -63,7 +64,7 @@ export async function DELETE(
 
     const got = await ddbDoc.send(
       new GetCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         Key: { PK, SK },
       })
     );
@@ -116,7 +117,7 @@ export async function DELETE(
 
     await ddbDoc.send(
       new DeleteCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         Key: { PK, SK },
       })
     );

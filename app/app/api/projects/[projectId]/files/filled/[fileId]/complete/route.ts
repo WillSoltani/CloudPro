@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
-import { ddbDoc, s3, TABLE_NAME } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
@@ -37,6 +37,7 @@ export async function POST(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId, fileId } = await params;
     if (!projectId || !fileId) {
       return NextResponse.json({ error: "bad_request", detail: "missing params" }, { status: 400 });
@@ -52,7 +53,7 @@ export async function POST(
     const PK = `USER#${user.sub}`;
     const SK = `FILE#${projectId}#${fileId}`;
 
-    const got = await ddbDoc.send(new GetCommand({ TableName: TABLE_NAME, Key: { PK, SK } }));
+    const got = await ddbDoc.send(new GetCommand({ TableName: tableName, Key: { PK, SK } }));
     const item = got.Item;
     if (!item) return NextResponse.json({ error: "not_found" }, { status: 404 });
     if (str(item.kind) !== "output" || str(item.artifactType) !== "filled_pdf") {
@@ -108,7 +109,7 @@ export async function POST(
 
     await ddbDoc.send(
       new UpdateCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         Key: { PK, SK },
         UpdateExpression: "SET #s = :done, updatedAt = :u, sizeBytes = :sz, contentType = :ct, errorMessage = :em",
         ExpressionAttributeNames: { "#s": "status" },

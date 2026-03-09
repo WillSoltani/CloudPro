@@ -1,18 +1,13 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { jwtVerify, createRemoteJWKSet } from "jose";
+import { mustServerEnv } from "./server-env";
 
 export class AuthError extends Error {
   constructor(message: "UNAUTHENTICATED" | "INVALID_TOKEN") {
     super(message);
     this.name = "AuthError";
   }
-}
-
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
 }
 
 const COOKIE_NAME = "id_token";
@@ -22,18 +17,20 @@ type AuthConfig = {
   jwks: ReturnType<typeof createRemoteJWKSet>;
 };
 
-let cachedAuthConfig: AuthConfig | null = null;
+let cachedAuthConfigPromise: Promise<AuthConfig> | null = null;
 
-function getAuthConfig(): AuthConfig {
-  if (cachedAuthConfig) return cachedAuthConfig;
+async function getAuthConfig(): Promise<AuthConfig> {
+  if (cachedAuthConfigPromise) return cachedAuthConfigPromise;
 
-  const region = mustEnv("COGNITO_REGION");
-  const userPoolId = mustEnv("COGNITO_USER_POOL_ID");
-  const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
-  const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+  cachedAuthConfigPromise = (async () => {
+    const region = await mustServerEnv("COGNITO_REGION");
+    const userPoolId = await mustServerEnv("COGNITO_USER_POOL_ID");
+    const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+    const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+    return { issuer, jwks };
+  })();
 
-  cachedAuthConfig = { issuer, jwks };
-  return cachedAuthConfig;
+  return cachedAuthConfigPromise;
 }
 
 export type AuthedUser = {
@@ -45,7 +42,7 @@ export async function requireUser(): Promise<AuthedUser> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) throw new AuthError("UNAUTHENTICATED");
 
-  const { issuer, jwks } = getAuthConfig();
+  const { issuer, jwks } = await getAuthConfig();
 
   let payload: unknown;
   try {

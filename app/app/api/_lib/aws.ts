@@ -4,11 +4,10 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { S3Client } from "@aws-sdk/client-s3";
 import { SFNClient } from "@aws-sdk/client-sfn";
+import { mustServerEnv } from "./server-env";
 
-export function mustEnv(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
+export async function mustEnv(name: string): Promise<string> {
+  return mustServerEnv(name);
 }
 
 export const REGION =
@@ -22,7 +21,9 @@ export const ddbDoc = DynamoDBDocumentClient.from(ddb, {
   marshallOptions: { removeUndefinedValues: true },
 });
 
-export const TABLE_NAME: string = mustEnv("SECURE_DOC_TABLE");
+export async function getTableName(): Promise<string> {
+  return mustServerEnv("SECURE_DOC_TABLE");
+}
 
 export const s3 = new S3Client({ region: REGION });
 

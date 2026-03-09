@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
 import { QueryCommand } from "@aws-sdk/lib-dynamodb";
-import { ddbDoc, TABLE_NAME } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export async function GET() {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const PK = `USER#${user.sub}`;
 
     // Projects count
     const projRes = await ddbDoc.send(
       new QueryCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :pfx)",
         ExpressionAttributeValues: { ":pk": PK, ":pfx": "PROJECT#" },
         Select: "COUNT",
@@ -21,7 +22,7 @@ export async function GET() {
     // Files + total bytes (uploads so far)
     const fileRes = await ddbDoc.send(
       new QueryCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :pfx)",
         ExpressionAttributeValues: { ":pk": PK, ":pfx": "FILE#" },
         Limit: 250, // fine for now; we can paginate later

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 
-import { ddbDoc, TABLE_NAME, s3 } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 
 export const runtime = "nodejs";
@@ -177,6 +177,7 @@ async function mapLimit<T, R>(
 export async function GET(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId } = await params;
 
     if (!projectId) {
@@ -195,7 +196,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
     // ✅ deterministic query: no FilterExpression needed
     const res = await ddbDoc.send(
       new QueryCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
         ExpressionAttributeValues: {
           ":pk": PK,
@@ -231,7 +232,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
         ddbDoc
           .send(
             new DeleteCommand({
-              TableName: TABLE_NAME,
+              TableName: tableName,
               Key: { PK: m.PK, SK: m.SK },
             })
           )

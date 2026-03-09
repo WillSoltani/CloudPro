@@ -1,7 +1,7 @@
 import "server-only";
 import { PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
-import { ddbDoc, TABLE_NAME } from "../_lib/aws";
+import { ddbDoc, getTableName } from "../_lib/aws";
 import { requireUser } from "../_lib/auth";
 import { withApiErrors, ok, badRequest, conflict } from "../_lib/http";
 
@@ -59,6 +59,7 @@ export async function POST(req: Request) {
       }
   >(async () => {
     const user = await requireUser();
+    const tableName = await getTableName();
 
     let body: Partial<CreateProjectBody> = {};
     try {
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
     try {
       await ddbDoc.send(
         new PutCommand({
-          TableName: TABLE_NAME,
+          TableName: tableName,
           Item: {
             PK,
             SK,
@@ -122,11 +123,12 @@ export async function POST(req: Request) {
 export async function GET() {
   return withApiErrors(async () => {
     const user = await requireUser();
+    const tableName = await getTableName();
     const PK = `USER#${user.sub}`;
 
     const res = await ddbDoc.send(
       new QueryCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         KeyConditionExpression: "PK = :pk AND begins_with(SK, :skPrefix)",
         ExpressionAttributeValues: {
           ":pk": PK,

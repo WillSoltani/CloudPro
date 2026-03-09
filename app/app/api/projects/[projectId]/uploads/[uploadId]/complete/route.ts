@@ -2,7 +2,7 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { ddbDoc, s3, TABLE_NAME } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
 import { requireUser } from "@/app/app/api/_lib/auth";
 import { allowedOutputFormatsForFile } from "@/app/app/_lib/conversion-support";
 
@@ -214,6 +214,7 @@ export async function POST(
 ) {
   try {
     const user = await requireUser();
+    const tableName = await getTableName();
     const { projectId, uploadId } = await params;
 
     if (!projectId || !uploadId) {
@@ -287,7 +288,7 @@ export async function POST(
 
     await ddbDoc.send(
       new PutCommand({
-        TableName: TABLE_NAME,
+        TableName: tableName,
         Item: {
           PK,
           SK,

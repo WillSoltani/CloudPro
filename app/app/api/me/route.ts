@@ -1,15 +1,30 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { jwtVerify, createRemoteJWKSet } from "jose";
+import { mustServerEnv } from "../_lib/server-env";
 
-const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID!;
-const REGION = process.env.COGNITO_REGION!;
+type VerifierConfig = {
+  issuer: string;
+  jwks: ReturnType<typeof createRemoteJWKSet>;
+};
 
-const JWKS = createRemoteJWKSet(
-  new URL(
-    `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}/.well-known/jwks.json`
-  )
-);
+let verifierConfigPromise: Promise<VerifierConfig> | null = null;
+
+async function getVerifierConfig(): Promise<VerifierConfig> {
+  if (verifierConfigPromise) return verifierConfigPromise;
+
+  verifierConfigPromise = (async () => {
+    const userPoolId = await mustServerEnv("COGNITO_USER_POOL_ID");
+    const region = await mustServerEnv("COGNITO_REGION");
+    const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+    const jwks = createRemoteJWKSet(
+      new URL(`${issuer}/.well-known/jwks.json`)
+    );
+    return { issuer, jwks };
+  })();
+
+  return verifierConfigPromise;
+}
 
 export async function GET() {
   const jar = await cookies();
@@ -20,9 +35,8 @@ export async function GET() {
   }
 
   try {
-    const { payload } = await jwtVerify(token, JWKS, {
-      issuer: `https://cognito-idp.${REGION}.amazonaws.com/${USER_POOL_ID}`,
-    });
+    const { issuer, jwks } = await getVerifierConfig();
+    const { payload } = await jwtVerify(token, jwks, { issuer });
 
     return NextResponse.json({
       authenticated: true,
