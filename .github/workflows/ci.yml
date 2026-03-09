@@ -15,6 +15,11 @@ jobs:
     name: App Build + Tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      COGNITO_REGION: "ca-central-1"
+      COGNITO_USER_POOL_ID: "ci-user-pool"
+      SECURE_DOC_TABLE: "ci-table"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

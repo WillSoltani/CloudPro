@@ -17,11 +17,24 @@ function mustEnv(name: string) {
 
 const COOKIE_NAME = "id_token";
 
-const region = mustEnv("COGNITO_REGION");
-const userPoolId = mustEnv("COGNITO_USER_POOL_ID");
+type AuthConfig = {
+  issuer: string;
+  jwks: ReturnType<typeof createRemoteJWKSet>;
+};
 
-const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
-const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+let cachedAuthConfig: AuthConfig | null = null;
+
+function getAuthConfig(): AuthConfig {
+  if (cachedAuthConfig) return cachedAuthConfig;
+
+  const region = mustEnv("COGNITO_REGION");
+  const userPoolId = mustEnv("COGNITO_USER_POOL_ID");
+  const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
+  const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+
+  cachedAuthConfig = { issuer, jwks };
+  return cachedAuthConfig;
+}
 
 export type AuthedUser = {
   sub: string;
@@ -31,6 +44,8 @@ export type AuthedUser = {
 export async function requireUser(): Promise<AuthedUser> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) throw new AuthError("UNAUTHENTICATED");
+
+  const { issuer, jwks } = getAuthConfig();
 
   let payload: unknown;
   try {
