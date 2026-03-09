@@ -1,4 +1,3 @@
-// middleware.ts
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 
@@ -19,7 +18,7 @@ async function isValidToken(token: string): Promise<boolean> {
   }
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (!pathname.startsWith("/app")) {
@@ -35,7 +34,6 @@ export async function middleware(req: NextRequest) {
 
     const res = NextResponse.redirect(url);
 
-    // optional but recommended: clean bad cookie
     res.cookies.delete("id_token");
 
     return res;
