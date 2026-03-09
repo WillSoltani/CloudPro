@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:pdf-fill": "tsx --test \"app/tests/pdf-fill/*.test.ts\""
+    "test:pdf-fill": "tsx --test app/tests/pdf-fill/*.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.988.0",
