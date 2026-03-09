@@ -80,7 +80,7 @@ Run locally:
 
 ```bash
 npm --prefix infra ci
-npm --prefix infra run cdk -- bootstrap aws://<AWS_ACCOUNT_ID>/ca-central-1
+npm --prefix infra run cdk -- bootstrap aws://<AWS_ACCOUNT_ID>/us-east-1
 ```
 
 ## 4) GitHub repository settings you must add

@@ -8,6 +8,6 @@ const app = new cdk.App();
 new StorageStack(app, "CloudPortfolioStorage", {
   env: {
     account: process.env.CDK_DEFAULT_ACCOUNT,
-    region: process.env.CDK_DEFAULT_REGION ?? "ca-central-1",
+    region: "us-east-1",
   },
 });

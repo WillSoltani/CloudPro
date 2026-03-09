@@ -104,7 +104,7 @@ interface PresetConfig {
   jpegChromaSubsampling: string;
 }
 
-const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "ca-central-1";
+const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 const TABLE_NAME = process.env.SECURE_DOC_TABLE as string;
 const OUTPUT_BUCKET = process.env.OUTPUT_BUCKET as string;
 

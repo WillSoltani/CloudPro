@@ -13,7 +13,7 @@ export async function mustEnv(name: string): Promise<string> {
 export const REGION =
   process.env.AWS_REGION ||
   process.env.AWS_DEFAULT_REGION ||
-  "ca-central-1";
+  "us-east-1";
 
 const ddb = new DynamoDBClient({ region: REGION });
 
