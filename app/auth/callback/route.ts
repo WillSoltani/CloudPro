@@ -1,8 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mustServerEnv } from "@/app/app/api/_lib/server-env";
 
+function getPublicOrigin(req: NextRequest): string {
+  const configured = process.env.APP_BASE_URL?.trim();
+  if (configured) {
+    return configured.replace(/\/+$/, "");
+  }
+
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  const host = forwardedHost || req.headers.get("host");
+  const proto =
+    req.headers.get("x-forwarded-proto") ||
+    (process.env.NODE_ENV === "production" ? "https" : "http");
+
+  if (host) {
+    return `${proto}://${host}`.replace(/\/+$/, "");
+  }
+
+  return new URL(req.url).origin;
+}
+
 export async function GET(req: NextRequest) {
   const isProd = process.env.NODE_ENV === "production";
+  const origin = getPublicOrigin(req);
 
   const domain = (await mustServerEnv("COGNITO_DOMAIN")).replace(/\/$/, "");
   const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
@@ -13,14 +33,14 @@ export async function GET(req: NextRequest) {
   const state = url.searchParams.get("state");
 
   if (!code || !state) {
-    return NextResponse.redirect(new URL("/?auth=error", req.url));
+    return NextResponse.redirect(new URL("/?auth=error", origin));
   }
 
   const verifier = req.cookies.get("pkce_verifier")?.value;
   const expectedState = req.cookies.get("oauth_state")?.value;
 
   if (!verifier || state !== expectedState) {
-    return NextResponse.redirect(new URL("/?auth=state_error", req.url));
+    return NextResponse.redirect(new URL("/?auth=state_error", origin));
   }
 
   const body = new URLSearchParams({
@@ -38,12 +58,12 @@ export async function GET(req: NextRequest) {
   });
 
   if (!tokenRes.ok) {
-    return NextResponse.redirect(new URL("/?auth=token_error", req.url));
+    return NextResponse.redirect(new URL("/?auth=token_error", origin));
   }
 
   const tokens = await tokenRes.json();
 
-  const res = NextResponse.redirect(new URL("/app", req.url));
+  const res = NextResponse.redirect(new URL("/app", origin));
 
   const commonCookie = {
     httpOnly: true,

@@ -62,21 +62,21 @@ function candidateParameterNames(key: string): string[] {
     process.env[`${key}_SSM_PARAM`] ||
     process.env[`${key}_SSM_PARAMETER`];
 
-  const names = [
-    explicit || "",
-    key,
-    lower,
-    `/${key}`,
-    `/${lower}`,
-  ];
+  const names = [explicit || ""];
 
   if (SSM_PREFIX) {
     const prefix = SSM_PREFIX.endsWith("/")
       ? SSM_PREFIX.slice(0, -1)
       : SSM_PREFIX;
+    // Prefer environment-scoped parameters when a prefix is configured.
     names.push(`${prefix}/${key}`);
     names.push(`${prefix}/${lower}`);
   }
+
+  names.push(key);
+  names.push(lower);
+  names.push(`/${key}`);
+  names.push(`/${lower}`);
 
   return uniqueNames(names);
 }
