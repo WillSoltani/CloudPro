@@ -5,28 +5,24 @@ export type SkillCategory = {
   
   export const skillCategories: SkillCategory[] = [
     {
-      title: "AWS Serverless",
-      items: ["Lambda", "API Gateway", "Step Functions", "EventBridge", "S3", "SQS", "SNS"],
+      title: "AWS Application Platform",
+      items: ["App Runner", "Amplify", "CloudFront", "Route 53", "S3", "Lambda", "API Gateway"],
     },
     {
-      title: "Databases",
-      items: ["DynamoDB", "RDS", "Aurora", "ElastiCache (basic)", "DMS (basic)"],
+      title: "AWS Workflows & Data",
+      items: ["Step Functions", "DynamoDB", "EventBridge", "SQS", "SNS", "RDS"],
     },
     {
-      title: "Containers",
-      items: ["ECS", "Fargate", "ECR", "ALB", "Cloud Map (basic)"],
+      title: "Security & Observability",
+      items: ["IAM", "Cognito", "KMS", "CloudWatch", "X-Ray", "Systems Manager Parameter Store"],
     },
     {
-      title: "IaC & CI/CD",
-      items: ["CloudFormation", "CDK (learning)", "Terraform (optional)", "GitHub Actions"],
+      title: "Delivery & Infrastructure",
+      items: ["CDK", "CloudFormation", "ECR", "ECS/Fargate", "Docker", "CI/CD Pipelines"],
     },
     {
-      title: "Observability",
-      items: ["CloudWatch Logs", "CloudWatch Metrics", "Alarms", "X-Ray (basic)"],
-    },
-    {
-      title: "Security",
-      items: ["IAM (least privilege)", "KMS", "Secrets Manager / SSM", "WAF (basic)", "Cognito (basic)"],
+      title: "Languages & Tools",
+      items: ["TypeScript", "Python", "Bash", "Ruby", "Rust", "GitHub Actions"],
     },
   ];
   

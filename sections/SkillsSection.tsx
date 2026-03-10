@@ -18,7 +18,7 @@ export function SkillsSection() {
     <Section
       id="skills"
       title="Skills"
-      subtitle="Tools and services I use to build secure, observable, cost-aware systems."
+      subtitle="A curated stack for building reliable, secure, and production-ready cloud systems."
     >
       <motion.div
         variants={skillsWrap}

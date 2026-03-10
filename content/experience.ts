@@ -6,20 +6,21 @@ export type ExperienceItem = {
     bullets: string[];
   };
   
-  export const experience = {
-    work: [
-      {
-        title: "Software Developer",
-        org: "Silicon X",
-        location: "Halifax, NS",
-        dates: "2022 – Present",
-        bullets: [
-          "Handled high-volume operations in a time-sensitive environment.",
-          "Trained new staff and supported process improvements.",
-          "Maintained accuracy and confidentiality with sensitive records.",
-        ],
-      },
-    ] satisfies ExperienceItem[],
+export const experience = {
+  work: [
+    {
+      title: "Co-founder",
+      org: "Silicon X",
+      location: "Vancouver, BC · Remote",
+      dates: "2022 – Present",
+      bullets: [
+        "Co-founded the company and led product delivery across multiple client and internal projects with a lean team.",
+        "Owned technical planning and execution from architecture decisions to release readiness and production support.",
+        "Designed and operated AWS-based systems (Lambda, API Gateway, S3, DynamoDB, Cognito) with CI/CD and CloudWatch monitoring.",
+        "Improved reliability and cost efficiency through deployment guardrails, observability standards, and usage-aware infrastructure decisions.",
+      ],
+    },
+  ] satisfies ExperienceItem[],
   
     education: [
       {

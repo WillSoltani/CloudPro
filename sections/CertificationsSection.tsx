@@ -14,7 +14,7 @@ export function CertificationsSection() {
     <Section
       id="certifications"
       title="Certifications"
-      subtitle="Verified AWS certifications. Links go to Credly verification pages."
+      subtitle="Verified credentials with direct issuer verification links."
     >
       <p className="mb-4 text-xs font-semibold tracking-[0.22em] text-slate-400">
         CERTIFICATIONS

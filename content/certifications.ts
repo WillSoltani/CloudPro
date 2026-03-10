@@ -27,4 +27,10 @@ export const certifications: Certification[] = [
     verifyUrl:
       "https://www.credly.com/badges/e9667c91-543f-463d-9ed5-39fedca92cdf/public_url",
   },
+  {
+    name: "Google Data Analytics Professional Certificate",
+    issuer: "Coursera",
+    verifyUrl:
+      "https://coursera.org/share/a5e1d0e00602929475bbe63c9883c3c9",
+  },
 ];

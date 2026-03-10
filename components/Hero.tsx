@@ -48,7 +48,7 @@ export function Hero() {
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70" />
             <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
           </span>
-          Available for full-time opportunities
+          Open to impactful roles and select project collaborations.
         </motion.div>
 
         {/* Name */}
@@ -83,7 +83,7 @@ export function Hero() {
           variants={item}
           className="mt-3 text-xs text-slate-400 sm:text-sm"
         >
-          Halifax, NS | Open to Remote
+          Halifax, NS · Remote-friendly
         </motion.p>
 
         {/* Social buttons: stacked on mobile, side-by-side on >= sm */}
