@@ -1,5 +1,10 @@
-import { NextResponse } from "next/server";
-import { mustServerEnv } from "@/app/app/api/_lib/server-env";
+import { NextRequest, NextResponse } from "next/server";
+import { getServerEnv, mustServerEnv } from "@/app/app/api/_lib/server-env";
+import {
+  authCallbackUriFromOrigin,
+  isLocalOrigin,
+  resolvePublicOrigin,
+} from "@/app/app/_lib/server-origin";
 
 function base64UrlEncode(bytes: Uint8Array) {
   let str = "";
@@ -19,10 +24,29 @@ async function sha256Base64Url(input: string) {
   return base64UrlEncode(new Uint8Array(digest));
 }
 
-export async function GET() {
+function resolveLoginRedirectUri(req: NextRequest, configured: string | undefined): string {
+  const origin = resolvePublicOrigin({
+    hostHeader: req.headers.get("host"),
+    forwardedHostHeader: req.headers.get("x-forwarded-host"),
+    forwardedProtoHeader: req.headers.get("x-forwarded-proto"),
+    fallbackOrigin: new URL(req.url).origin,
+  });
+
+  const localCallbackUri = authCallbackUriFromOrigin(origin);
+  const useLocalhostUri = process.env.NODE_ENV !== "production" && isLocalOrigin(origin);
+
+  if (useLocalhostUri) return localCallbackUri;
+  if (configured) return configured;
+  if (isLocalOrigin(origin)) return localCallbackUri;
+
+  throw new Error("Missing env var: COGNITO_REDIRECT_URI");
+}
+
+export async function GET(req: NextRequest) {
   const domain = (await mustServerEnv("COGNITO_DOMAIN")).replace(/\/$/, "");
   const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
-  const redirectUri = await mustServerEnv("COGNITO_REDIRECT_URI");
+  const configuredRedirectUri = await getServerEnv("COGNITO_REDIRECT_URI");
+  const redirectUri = resolveLoginRedirectUri(req, configuredRedirectUri);
 
   if (!domain || !clientId || !redirectUri) {
     return new NextResponse("Missing server env vars", { status: 500 });
@@ -56,6 +80,14 @@ export async function GET() {
   });
 
   res.cookies.set("pkce_verifier", codeVerifier, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isProd,
+    path: "/",
+    maxAge: 10 * 60,
+  });
+
+  res.cookies.set("oauth_redirect_uri", redirectUri, {
     httpOnly: true,
     sameSite: "lax",
     secure: isProd,

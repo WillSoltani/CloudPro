@@ -10,6 +10,28 @@ function firstForwardedValue(value: string | null): string | null {
   return first || null;
 }
 
+function isLocalHost(hostname: string): boolean {
+  const lower = hostname.trim().toLowerCase();
+  return lower === "localhost" || lower === "127.0.0.1" || lower === "::1";
+}
+
+export function isLocalOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    return isLocalHost(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function authCallbackUriFromOrigin(origin: string): string {
+  return `${normalizeOrigin(origin)}/auth/callback`;
+}
+
+export function logoutRedirectUriFromOrigin(origin: string): string {
+  return `${normalizeOrigin(origin)}/`;
+}
+
 export function resolvePublicOrigin(params: {
   hostHeader?: string | null;
   forwardedHostHeader?: string | null;
@@ -42,4 +64,3 @@ export async function getServerOrigin(): Promise<string> {
     forwardedProtoHeader: h.get("x-forwarded-proto"),
   });
 }
-

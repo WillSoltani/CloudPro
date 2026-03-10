@@ -1,9 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
-import { mustServerEnv } from "@/app/app/api/_lib/server-env";
-import { resolvePublicOrigin } from "@/app/app/_lib/server-origin";
+import { getServerEnv, mustServerEnv } from "@/app/app/api/_lib/server-env";
+import {
+  authCallbackUriFromOrigin,
+  isLocalOrigin,
+  resolvePublicOrigin,
+} from "@/app/app/_lib/server-origin";
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function resolveCallbackRedirectUri(params: {
+  origin: string;
+  cookieRedirectUri: string | null;
+  configuredRedirectUri: string | undefined;
+}): string {
+  const localCallbackUri = authCallbackUriFromOrigin(params.origin);
+  const allowLocalFallback =
+    process.env.NODE_ENV !== "production" && isLocalOrigin(params.origin);
+
+  if (params.cookieRedirectUri) {
+    if (
+      params.configuredRedirectUri &&
+      params.cookieRedirectUri === params.configuredRedirectUri
+    ) {
+      return params.cookieRedirectUri;
+    }
+    if (allowLocalFallback && params.cookieRedirectUri === localCallbackUri) {
+      return params.cookieRedirectUri;
+    }
+  }
+
+  if (allowLocalFallback) return localCallbackUri;
+  if (params.configuredRedirectUri) return params.configuredRedirectUri;
+  throw new Error("Missing env var: COGNITO_REDIRECT_URI");
 }
 
 export async function GET(req: NextRequest) {
@@ -17,7 +47,13 @@ export async function GET(req: NextRequest) {
   try {
     const domain = (await mustServerEnv("COGNITO_DOMAIN")).replace(/\/$/, "");
     const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
-    const redirectUri = await mustServerEnv("COGNITO_REDIRECT_URI");
+    const configuredRedirectUri = await getServerEnv("COGNITO_REDIRECT_URI");
+    const cookieRedirectUri = readString(req.cookies.get("oauth_redirect_uri")?.value);
+    const redirectUri = resolveCallbackRedirectUri({
+      origin,
+      cookieRedirectUri,
+      configuredRedirectUri,
+    });
 
     const url = new URL(req.url);
     const code = url.searchParams.get("code");
@@ -77,6 +113,7 @@ export async function GET(req: NextRequest) {
     // Clear PKCE cookies (more reliable than delete across Next versions)
     res.cookies.set("pkce_verifier", "", { path: "/", maxAge: 0 });
     res.cookies.set("oauth_state", "", { path: "/", maxAge: 0 });
+    res.cookies.set("oauth_redirect_uri", "", { path: "/", maxAge: 0 });
 
     return res;
   } catch (error: unknown) {
