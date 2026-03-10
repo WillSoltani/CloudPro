@@ -6,6 +6,7 @@ import { mustServerEnv } from "../_lib/server-env";
 type VerifierConfig = {
   issuer: string;
   jwks: ReturnType<typeof createRemoteJWKSet>;
+  clientId: string;
 };
 
 let verifierConfigPromise: Promise<VerifierConfig> | null = null;
@@ -16,11 +17,12 @@ async function getVerifierConfig(): Promise<VerifierConfig> {
   verifierConfigPromise = (async () => {
     const userPoolId = await mustServerEnv("COGNITO_USER_POOL_ID");
     const region = await mustServerEnv("COGNITO_REGION");
+    const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
     const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`;
     const jwks = createRemoteJWKSet(
       new URL(`${issuer}/.well-known/jwks.json`)
     );
-    return { issuer, jwks };
+    return { issuer, jwks, clientId };
   })();
 
   return verifierConfigPromise;
@@ -35,8 +37,8 @@ export async function GET() {
   }
 
   try {
-    const { issuer, jwks } = await getVerifierConfig();
-    const { payload } = await jwtVerify(token, jwks, { issuer });
+    const { issuer, jwks, clientId } = await getVerifierConfig();
+    const { payload } = await jwtVerify(token, jwks, { issuer, audience: clientId });
 
     return NextResponse.json({
       authenticated: true,

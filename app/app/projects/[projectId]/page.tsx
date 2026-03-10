@@ -1,7 +1,8 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import ProjectDetailClient from "./ProjectDetailClient";
 import type { FileRow } from "../_lib/types";
+import { getServerOrigin } from "@/app/app/_lib/server-origin";
 
 type ProjectRow = {
   projectId: string;
@@ -17,15 +18,8 @@ function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
-async function getOrigin() {
-  const h = await headers();
-  const host = h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
-
 async function fetchProjects(): Promise<ProjectRow[]> {
-  const origin = await getOrigin();
+  const origin = await getServerOrigin();
   const store = await cookies();
   const cookie = cookieHeaderFromStore(store);
 
@@ -46,7 +40,7 @@ async function fetchProjects(): Promise<ProjectRow[]> {
 }
 
 async function fetchProjectFiles(projectId: string): Promise<FileRow[]> {
-  const origin = await getOrigin();
+  const origin = await getServerOrigin();
   const store = await cookies();
   const cookie = cookieHeaderFromStore(store);
 
@@ -88,7 +82,7 @@ export default async function AppProjectDetailPage({
   ]);
 
   const project = projects.find((p) => p.projectId === projectId);
-  if (!project) redirect("/?auth=required");
+  if (!project) redirect("/app/projects");
 
   return (
     <ProjectDetailClient

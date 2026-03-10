@@ -4,6 +4,7 @@ import { jwtVerify, createRemoteJWKSet } from "jose";
 type ProxyAuthConfig = {
   issuer: string;
   jwks: ReturnType<typeof createRemoteJWKSet>;
+  clientId: string | null;
 };
 
 let cachedProxyAuthConfig: ProxyAuthConfig | null = null;
@@ -14,6 +15,7 @@ function getProxyAuthConfig(): ProxyAuthConfig | null {
 
   const region = process.env.COGNITO_REGION;
   const userPoolId = process.env.COGNITO_USER_POOL_ID;
+  const clientId = process.env.COGNITO_CLIENT_ID || null;
   if (!region || !userPoolId) {
     return null;
   }
@@ -23,13 +25,16 @@ function getProxyAuthConfig(): ProxyAuthConfig | null {
     new URL(`${issuer}/.well-known/jwks.json`)
   );
 
-  cachedProxyAuthConfig = { issuer, jwks };
+  cachedProxyAuthConfig = { issuer, jwks, clientId };
   return cachedProxyAuthConfig;
 }
 
 async function isValidToken(token: string, config: ProxyAuthConfig): Promise<boolean> {
   try {
-    await jwtVerify(token, config.jwks, { issuer: config.issuer });
+    await jwtVerify(token, config.jwks, {
+      issuer: config.issuer,
+      audience: config.clientId ?? undefined,
+    });
     return true;
   } catch {
     return false;
@@ -45,10 +50,17 @@ export async function proxy(req: NextRequest) {
 
   const authConfig = getProxyAuthConfig();
   if (!authConfig) {
+    if (process.env.NODE_ENV === "production") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/";
+      url.searchParams.set("auth", "config_error");
+      return NextResponse.redirect(url);
+    }
+
     if (!missingProxyConfigWarned) {
       missingProxyConfigWarned = true;
       console.warn(
-        "proxy_auth_config_missing: COGNITO_REGION/COGNITO_USER_POOL_ID not set in runtime env; skipping proxy auth check"
+        "proxy_auth_config_missing: COGNITO_REGION/COGNITO_USER_POOL_ID not set in runtime env; skipping proxy auth check (dev only)"
       );
     }
     return NextResponse.next();

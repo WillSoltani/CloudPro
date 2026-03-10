@@ -1,5 +1,6 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import ProjectsClient from "./ProjectsClient";
+import { getServerOrigin } from "@/app/app/_lib/server-origin";
 
 type ProjectRow = {
   projectId: string;
@@ -22,13 +23,6 @@ function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
-async function getOrigin() {
-  const h = await headers();
-  const host = h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
-
 function isProjectRow(x: unknown): x is ProjectRow {
   if (typeof x !== "object" || x === null) return false;
   const o = x as Record<string, unknown>;
@@ -42,7 +36,7 @@ function isProjectRow(x: unknown): x is ProjectRow {
 }
 
 async function fetchProjects(): Promise<ProjectRow[]> {
-  const origin = await getOrigin();
+  const origin = await getServerOrigin();
   const store = await cookies();
   const cookie = cookieHeaderFromStore(store);
 
@@ -66,7 +60,7 @@ async function fetchProjects(): Promise<ProjectRow[]> {
 }
 
 async function fetchStats(): Promise<ClientStats> {
-  const origin = await getOrigin();
+  const origin = await getServerOrigin();
   const store = await cookies();
   const cookie = cookieHeaderFromStore(store);
 

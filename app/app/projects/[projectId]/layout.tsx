@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { ProjectLayoutShell } from "./ProjectLayoutShell";
+import { getServerOrigin } from "@/app/app/_lib/server-origin";
 
 type ProjectRow = { projectId: string; name: string };
 type FilesResponse = { files?: unknown[] };
@@ -11,15 +12,8 @@ function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
-async function getOrigin() {
-  const h = await headers();
-  const host = h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
-}
-
 async function fetchProjectName(projectId: string): Promise<string> {
-  const origin = await getOrigin();
+  const origin = await getServerOrigin();
   const store = await cookies();
   const cookie = cookieHeaderFromStore(store);
   const res = await fetch(`${origin}/app/api/projects`, {
@@ -34,7 +28,7 @@ async function fetchProjectName(projectId: string): Promise<string> {
 }
 
 async function fetchFileCount(projectId: string): Promise<number> {
-  const origin = await getOrigin();
+  const origin = await getServerOrigin();
   const store = await cookies();
   const cookie = cookieHeaderFromStore(store);
   const res = await fetch(
