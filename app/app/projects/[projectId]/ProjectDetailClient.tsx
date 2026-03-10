@@ -202,7 +202,18 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
       for (const item of staged.selectedFiles) {
         const file = item.file;
         const upload = await createUpload(projectId, file);
-        const putRes = await fetch(upload.putUrl, { method: "PUT", headers: upload.headers, body: file });
+        let putRes: Response;
+        try {
+          putRes = await fetch(upload.putUrl, { method: "PUT", headers: upload.headers, body: file });
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.toLowerCase().includes("failed to fetch")) {
+            throw new Error(
+              "Upload failed before reaching S3. Check bucket CORS allowed origins for this app domain."
+            );
+          }
+          throw error;
+        }
         if (!putRes.ok) throw new Error(`S3 PUT failed: ${putRes.status}`);
         await completeUpload(projectId, {
           uploadId: upload.uploadId,

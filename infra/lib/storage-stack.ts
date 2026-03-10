@@ -11,6 +11,44 @@ import * as sfn from "aws-cdk-lib/aws-stepfunctions";
 import * as sfnTasks from "aws-cdk-lib/aws-stepfunctions-tasks";
 import * as path from "path";
 
+function normalizeCorsOrigin(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return null;
+  }
+}
+
+function resolveAllowedWebOrigins(): string[] {
+  const defaults = [
+    "http://localhost:3000",
+    "https://d3nhgj9fri.us-east-1.awsapprunner.com",
+    "https://soltani.org",
+    "https://www.soltani.org",
+  ];
+
+  const envCandidates = [
+    process.env.WEB_ALLOWED_ORIGINS || "",
+    process.env.APP_BASE_URL || "",
+  ]
+    .join(",")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const normalized = new Set<string>();
+  for (const candidate of [...defaults, ...envCandidates]) {
+    const value = normalizeCorsOrigin(candidate);
+    if (value) normalized.add(value);
+  }
+
+  return Array.from(normalized);
+}
+
 export class StorageStack extends cdk.Stack {
   public readonly table: dynamodb.Table;
   public readonly rawBucket: s3.Bucket;
@@ -22,6 +60,7 @@ export class StorageStack extends cdk.Stack {
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+    const allowedWebOrigins = resolveAllowedWebOrigins();
 
     this.kmsKey = new kms.Key(this, "SecureDocKmsKey", {
       enableKeyRotation: true,
@@ -45,7 +84,7 @@ export class StorageStack extends cdk.Stack {
       versioned: true,
       cors: [
         {
-          allowedOrigins: ["http://localhost:3000", "https://soltani.org", "https://www.soltani.org"],
+          allowedOrigins: allowedWebOrigins,
           allowedMethods: [
             s3.HttpMethods.PUT,
             s3.HttpMethods.POST,
@@ -77,7 +116,7 @@ export class StorageStack extends cdk.Stack {
       versioned: true,
       cors: [
         {
-          allowedOrigins: ["http://localhost:3000", "https://soltani.org", "https://www.soltani.org"],
+          allowedOrigins: allowedWebOrigins,
           allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD],
           allowedHeaders: ["*"],
           exposedHeaders: ["ETag"],
