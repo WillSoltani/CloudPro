@@ -26,7 +26,6 @@ function normalizeCorsOrigin(raw: string): string | null {
 function resolveAllowedWebOrigins(): string[] {
   const defaults = [
     "http://localhost:3000",
-    "https://d3nhgj9fri.us-east-1.awsapprunner.com",
     "https://soltani.org",
     "https://www.soltani.org",
   ];
