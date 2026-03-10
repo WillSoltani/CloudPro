@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { mustServerEnv } from "@/app/app/api/_lib/server-env";
+import { resolveCognitoDomain } from "../_lib/cognito-domain";
 
 function base64UrlEncode(bytes: Uint8Array) {
   let str = "";
@@ -20,7 +21,7 @@ async function sha256Base64Url(input: string) {
 }
 
 export async function GET() {
-  const domain = (await mustServerEnv("COGNITO_DOMAIN")).replace(/\/$/, "");
+  const domain = await resolveCognitoDomain();
   const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
   const redirectUri = await mustServerEnv("COGNITO_REDIRECT_URI");
 

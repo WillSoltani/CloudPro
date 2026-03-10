@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mustServerEnv } from "@/app/app/api/_lib/server-env";
 import { resolvePublicOrigin } from "@/app/app/_lib/server-origin";
+import { resolveCognitoDomain } from "../_lib/cognito-domain";
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
     fallbackOrigin: new URL(req.url).origin,
   });
   try {
-    const domain = (await mustServerEnv("COGNITO_DOMAIN")).replace(/\/$/, "");
+    const domain = await resolveCognitoDomain();
     const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
     const redirectUri = await mustServerEnv("COGNITO_REDIRECT_URI");
 

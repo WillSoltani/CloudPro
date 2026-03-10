@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { mustServerEnv } from "@/app/app/api/_lib/server-env";
+import { resolveCognitoDomain } from "../_lib/cognito-domain";
 
 export async function GET() {
-  const domain = await mustServerEnv("COGNITO_DOMAIN");
+  const domain = await resolveCognitoDomain();
   const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
   const logoutRedirect = await mustServerEnv("COGNITO_LOGOUT_REDIRECT_URI");
 
