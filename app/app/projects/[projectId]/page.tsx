@@ -3,6 +3,10 @@ import { redirect } from "next/navigation";
 import ProjectDetailClient from "./ProjectDetailClient";
 import type { FileRow } from "../_lib/types";
 import { getServerOrigin } from "@/app/app/_lib/server-origin";
+import {
+  GUEST_PROJECT_ID,
+  GUEST_SESSION_COOKIE,
+} from "@/app/app/api/_lib/guest-session";
 
 type ProjectRow = {
   projectId: string;
@@ -16,6 +20,16 @@ function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
   const all = store.getAll();
   if (!all.length) return "";
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
+}
+
+async function readJsonIfPossible<T>(res: Response): Promise<T | null> {
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/json")) return null;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 async function fetchProjects(): Promise<ProjectRow[]> {
@@ -35,7 +49,8 @@ async function fetchProjects(): Promise<ProjectRow[]> {
     throw new Error(`GET /app/api/projects failed: ${res.status} ${text}`);
   }
 
-  const data = (await res.json()) as { projects?: ProjectRow[] };
+  const data = await readJsonIfPossible<{ projects?: ProjectRow[] }>(res);
+  if (!data) return [];
   return data.projects ?? [];
 }
 
@@ -61,7 +76,8 @@ async function fetchProjectFiles(projectId: string): Promise<FileRow[]> {
     );
   }
 
-  const data = (await res.json()) as { files?: FileRow[] };
+  const data = await readJsonIfPossible<{ files?: FileRow[] }>(res);
+  if (!data) return [];
   return data.files ?? [];
 }
 
@@ -71,9 +87,24 @@ export default async function AppProjectDetailPage({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-
-  // extra guard (middleware already does this)
   const jar = await cookies();
+  const hasGuestSession = Boolean(jar.get(GUEST_SESSION_COOKIE)?.value);
+  const isGuestProject = projectId === GUEST_PROJECT_ID;
+
+  if (isGuestProject) {
+    if (!hasGuestSession) redirect("/test");
+    const initialFiles = await fetchProjectFiles(projectId);
+    return (
+      <ProjectDetailClient
+        projectId={projectId}
+        projectName="Guest Conversion Test"
+        initialFiles={initialFiles}
+        guestMode
+      />
+    );
+  }
+
+  // extra guard (proxy already does this)
   if (!jar.get("id_token")?.value) redirect("/?auth=required");
 
   const [projects, initialFiles] = await Promise.all([

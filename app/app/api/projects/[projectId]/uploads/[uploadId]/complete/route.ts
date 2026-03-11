@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
-import { requireUser } from "@/app/app/api/_lib/auth";
+import { requireActorForProject } from "@/app/app/api/_lib/actor";
 import { allowedOutputFormatsForFile } from "@/app/app/_lib/conversion-support";
 
 export const runtime = "nodejs";
@@ -213,16 +213,16 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string; uploadId: string }> }
 ) {
   try {
-    const user = await requireUser();
-    const tableName = await getTableName();
     const { projectId, uploadId } = await params;
-
     if (!projectId || !uploadId) {
       return NextResponse.json(
         { error: "bad_request", detail: "missing params" },
         { status: 400 }
       );
     }
+
+    const actor = await requireActorForProject(projectId);
+    const tableName = await getTableName();
 
     let body: Partial<CompleteUploadBody> = {};
     try {
@@ -281,7 +281,7 @@ export async function POST(
         : null;
 
     const createdAt = nowIso();
-    const PK = `USER#${user.sub}`;
+    const PK = `USER#${actor.sub}`;
     const SK = `FILE#${projectId}#${uploadId}`; // deterministic
 
     const kind: FileKind = "raw";
@@ -296,7 +296,7 @@ export async function POST(
           kind, // ✅ NEW
           fileId: uploadId,
           projectId,
-          userSub: user.sub,
+          userSub: actor.sub,
           filename,
           contentType,
           sizeBytes,

@@ -148,6 +148,7 @@ export default async function ProjectPage({
 
   const tags = project.tags ?? [];
   const cs = project.caseStudy;
+  const canRunGuestTest = project.slug === "serverless-file-pipeline";
 
   const servicesUsed =
     typeof project.stack === "string" && project.stack.trim().length > 0
@@ -260,6 +261,15 @@ export default async function ProjectPage({
                     Live Demo
                   </span>
                 </a>
+              </Button>
+            ) : null}
+
+            {canRunGuestTest ? (
+              <Button
+                asChild
+                className="bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.3)] hover:bg-sky-500"
+              >
+                <Link href="/test">Test</Link>
               </Button>
             ) : null}
           </div>

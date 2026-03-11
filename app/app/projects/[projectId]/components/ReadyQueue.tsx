@@ -19,13 +19,22 @@ type Props = {
   onRemoveSelected: () => void;
   onConvert: () => void;
   onSetItemFormat: (fileId: string, format: OutputFormat) => void;
-  onFillPdf: (item: { name: string; source: "uploaded"; fileId: string }) => void;
+  onFillPdf?: (item: { name: string; source: "uploaded"; fileId: string }) => void;
   convertBusy: boolean;
+  quotaExhausted?: boolean;
 };
 
 export function ReadyQueue({
   projectId,
-  files, onToggleAll, onToggleOne, onRemoveSelected, onConvert, onSetItemFormat, onFillPdf, convertBusy,
+  files,
+  onToggleAll,
+  onToggleOne,
+  onRemoveSelected,
+  onConvert,
+  onSetItemFormat,
+  onFillPdf,
+  convertBusy,
+  quotaExhausted = false,
 }: Props) {
   const preview = useFilePreview(projectId);
 
@@ -33,7 +42,7 @@ export function ReadyQueue({
   const selected = files.reduce((acc, f) => acc + (f.selected ? 1 : 0), 0);
   const allSelected = total > 0 && selected === total;
   const removeDisabled = selected === 0;
-  const convertDisabled = selected === 0 || convertBusy;
+  const convertDisabled = selected === 0 || convertBusy || quotaExhausted;
 
   return (
     <>
@@ -84,7 +93,7 @@ export function ReadyQueue({
               ].join(" ")}
             >
               <Play className="h-4 w-4" />
-              {convertBusy ? "Converting…" : `Convert (${selected})`}
+              {convertBusy ? "Converting…" : quotaExhausted ? "Limit reached" : `Convert (${selected})`}
             </button>
           </div>
         </div>
@@ -218,7 +227,7 @@ export function ReadyQueue({
                         </button>
                       ) : null}
 
-                      {isPdf ? (
+                      {isPdf && onFillPdf ? (
                         <button
                           type="button"
                           onClick={() => onFillPdf({ name, source: "uploaded", fileId: f.id })}

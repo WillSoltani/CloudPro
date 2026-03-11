@@ -4,7 +4,7 @@ import { QueryCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 
 import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
-import { requireUser } from "@/app/app/api/_lib/auth";
+import { requireActorForProject } from "@/app/app/api/_lib/actor";
 
 export const runtime = "nodejs";
 
@@ -176,10 +176,7 @@ async function mapLimit<T, R>(
 
 export async function GET(req: Request, { params }: { params: Promise<{ projectId: string }> }) {
   try {
-    const user = await requireUser();
-    const tableName = await getTableName();
     const { projectId } = await params;
-
     if (!projectId) {
       return NextResponse.json(
         { error: "bad_request", detail: "projectId is required" },
@@ -187,10 +184,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
       );
     }
 
+    const actor = await requireActorForProject(projectId);
+    const tableName = await getTableName();
+
     const url = new URL(req.url);
     const validate = url.searchParams.get("validate") === "1";
 
-    const PK = `USER#${user.sub}`;
+    const PK = `USER#${actor.sub}`;
     const prefix = `FILE#${projectId}#`;
 
     // ✅ deterministic query: no FilterExpression needed

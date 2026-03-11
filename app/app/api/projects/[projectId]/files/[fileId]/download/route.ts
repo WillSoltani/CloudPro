@@ -5,7 +5,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
-import { requireUser } from "@/app/app/api/_lib/auth";
+import { requireActorForProject } from "@/app/app/api/_lib/actor";
 
 export const runtime = "nodejs";
 
@@ -34,8 +34,6 @@ export async function GET(
   { params }: { params: Promise<{ projectId: string; fileId: string }> }
 ) {
   try {
-    const user = await requireUser();
-    const tableName = await getTableName();
     const { projectId, fileId } = await params;
 
     if (!projectId || !fileId) {
@@ -45,7 +43,9 @@ export async function GET(
       );
     }
 
-    const PK = `USER#${user.sub}`;
+    const actor = await requireActorForProject(projectId);
+    const tableName = await getTableName();
+    const PK = `USER#${actor.sub}`;
     const SK = `FILE#${projectId}#${fileId}`;
 
     const got = await ddbDoc.send(

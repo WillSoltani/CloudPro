@@ -21,7 +21,7 @@ export function DropzoneCard(props: {
   uploadDisabled?: boolean;
   stagedItems: StagedItem[];
   onRemoveStagedItem: (id: string) => void;
-  onFillPdf: (item: { name: string; source: "staged" }) => void;
+  onFillPdf?: (item: { name: string; source: "staged" }) => void;
 }) {
   const { pendingCount, onPickFiles, onUploadClick, uploadDisabled, stagedItems, onRemoveStagedItem, onFillPdf } = props;
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -178,7 +178,7 @@ export function DropzoneCard(props: {
                       </div>
 
                       <div className="flex items-center gap-2 self-start sm:self-center">
-                        {isPdf ? (
+                        {isPdf && onFillPdf ? (
                           <button
                             type="button"
                             onClick={() => onFillPdf({ name: it.name, source: "staged" })}

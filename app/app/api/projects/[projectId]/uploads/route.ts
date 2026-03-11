@@ -5,7 +5,8 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
 import { ddbDoc, getTableName, s3, mustEnv } from "@/app/app/api/_lib/aws";
-import { requireUser, AuthError } from "@/app/app/api/_lib/auth";
+import { requireActorForProject } from "@/app/app/api/_lib/actor";
+import { isGuestProjectId } from "@/app/app/api/_lib/guest-session";
 
 export const runtime = "nodejs";
 
@@ -174,11 +175,11 @@ export async function POST(
   { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const user = await requireUser();
-    const tableName = await getTableName();
     const { projectId } = await params;
-
     if (!projectId) return jsonError(400, "bad_request", "projectId is required");
+
+    const actor = await requireActorForProject(projectId);
+    const tableName = await getTableName();
 
     let body: CreateUploadBody = {};
     try {
@@ -200,40 +201,49 @@ export async function POST(
     const filename = safeFileName(rawName);
     const contentType = normalizeContentType(body.contentType ?? "");
 
-    // Ensure project exists and is active
-    const project = await fetchProjectById(tableName, user.sub, projectId);
-    if (!project) return jsonError(404, "not_found", "project not found");
-    if ((project.status || "active") !== "active") return jsonError(410, "gone", "project is not active");
-
-    // ✅ Stable slug: prefer stored projectSlug; otherwise compute once and store.
-    let projectSlug = project.projectSlug;
-    if (!projectSlug) {
-      const computed = project.name ? slugify(project.name) : fallbackProjectSlug(projectId);
-
-      try {
-        await backfillProjectSlugOnce({
-          tableName,
-          userSub: user.sub,
-          projectSK: project.projectSK,
-          projectSlug: computed,
-        });
-      } catch {
-        // Another request might have set it first; ignore.
+    const usingGuestProject = actor.kind === "guest" && isGuestProjectId(projectId);
+    let projectSlug = "guest-conversion-test";
+    if (!usingGuestProject) {
+      // Ensure project exists and is active
+      const project = await fetchProjectById(tableName, actor.sub, projectId);
+      if (!project) return jsonError(404, "not_found", "project not found");
+      if ((project.status || "active") !== "active") {
+        return jsonError(410, "gone", "project is not active");
       }
 
-      projectSlug = computed;
+      // Stable slug: prefer stored projectSlug; otherwise compute once and store.
+      projectSlug = project.projectSlug || "";
+      if (!projectSlug) {
+        const computed = project.name ? slugify(project.name) : fallbackProjectSlug(projectId);
+
+        try {
+          await backfillProjectSlugOnce({
+            tableName,
+            userSub: actor.sub,
+            projectSK: project.projectSK,
+            projectSlug: computed,
+          });
+        } catch {
+          // Another request might have set it first; ignore.
+        }
+
+        projectSlug = computed;
+      }
     }
 
     const bucket = await mustEnv("RAW_BUCKET");
     const fileId = crypto.randomUUID();
 
-    const userSlug = userSlugFromClaims({
-      name: (user as unknown as { name?: unknown }).name,
-      email: (user as unknown as { email?: unknown }).email,
-    });
+    const userSlug =
+      actor.kind === "guest"
+        ? "guest"
+        : userSlugFromClaims({
+            name: undefined,
+            email: actor.email,
+          });
 
     const key = buildRawKey({
-      userSub: user.sub,
+      userSub: actor.sub,
       userSlug,
       projectId,
       projectSlug,
@@ -265,10 +275,10 @@ export async function POST(
       { status: 201 }
     );
   } catch (e: unknown) {
-    if (e instanceof AuthError) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN") {
       return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
     }
-    const msg = e instanceof Error ? e.message : String(e);
     console.error("POST uploads error:", e);
     return jsonError(500, "server_error", msg);
   }

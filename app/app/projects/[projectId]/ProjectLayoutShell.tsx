@@ -4,13 +4,27 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { FileCountProvider, useFileCount } from "./FileCountContext";
 
-function ProjectHeader({ projectName, projectId }: { projectName: string; projectId: string }) {
+function ProjectHeader({
+  projectName,
+  projectId,
+  guestMode,
+}: {
+  projectName: string;
+  projectId: string;
+  guestMode?: boolean;
+}) {
   const pathname = usePathname();
   const inFillFlow = pathname.includes("/fill/");
   const backHref = inFillFlow
     ? `/app/projects/${encodeURIComponent(projectId)}`
-    : "/app/projects";
-  const backLabel = inFillFlow ? `Back to ${projectName}` : "Back to Projects";
+    : guestMode
+      ? "/projects/serverless-file-pipeline"
+      : "/app/projects";
+  const backLabel = inFillFlow
+    ? `Back to ${projectName}`
+    : guestMode
+      ? "Back to Case Study"
+      : "Back to Projects";
   const fileCount = useFileCount();
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#070b16]/65 backdrop-blur-xl">
@@ -47,17 +61,19 @@ export function ProjectLayoutShell({
   projectId,
   projectName,
   initialFileCount,
+  guestMode,
   children,
 }: {
   projectId: string;
   projectName: string;
   initialFileCount: number;
+  guestMode?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <FileCountProvider initial={initialFileCount}>
       <div className="relative min-h-screen text-slate-100">
-        <ProjectHeader projectId={projectId} projectName={projectName} />
+        <ProjectHeader projectId={projectId} projectName={projectName} guestMode={guestMode} />
         <main className="w-full px-0 pb-10 pt-16 sm:pt-20">
           {children}
         </main>

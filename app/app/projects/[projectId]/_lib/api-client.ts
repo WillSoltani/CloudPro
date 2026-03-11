@@ -37,6 +37,15 @@ export type ConvertResponse = {
   ok: boolean;
   projectId: string;
   results: ConvertResultItem[];
+  quota?: QuotaStatus;
+};
+
+export type QuotaStatus = {
+  scope: "signed_in" | "guest";
+  limit: number;
+  used: number;
+  remaining: number;
+  exhausted: boolean;
 };
 
 export type CreateFilledPdfUploadPayload = {
@@ -88,6 +97,23 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 function getString(obj: Record<string, unknown>, key: string): string | undefined {
   const v = obj[key];
   return typeof v === "string" ? v : undefined;
+}
+
+function getNumber(obj: Record<string, unknown>, key: string): number | undefined {
+  const v = obj[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function parseQuotaStatus(raw: unknown): QuotaStatus | undefined {
+  if (!isRecord(raw)) return undefined;
+  const scope = getString(raw, "scope");
+  if (scope !== "signed_in" && scope !== "guest") return undefined;
+  const limit = getNumber(raw, "limit");
+  const used = getNumber(raw, "used");
+  const remaining = getNumber(raw, "remaining");
+  const exhausted = raw.exhausted === true;
+  if (limit == null || used == null || remaining == null) return undefined;
+  return { scope, limit, used, remaining, exhausted };
 }
 
 async function readErrorMessage(res: Response): Promise<string> {
@@ -360,5 +386,16 @@ export async function convertFiles(projectId: string, payload: ConvertRequest): 
         .filter((x): x is ConvertResultItem => x !== null)
     : [];
 
-  return { ok, projectId: pid, results };
+  const quota = parseQuotaStatus(json.quota);
+  return { ok, projectId: pid, results, quota };
+}
+
+export async function getConversionQuota(projectId: string): Promise<QuotaStatus | null> {
+  const res = await fetch(`/api/quota?projectId=${encodeURIComponent(projectId)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const json = (await res.json()) as unknown;
+  if (!isRecord(json)) return null;
+  return parseQuotaStatus(json.quota) ?? null;
 }

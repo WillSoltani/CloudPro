@@ -23,6 +23,16 @@ function cookieHeaderFromStore(store: Awaited<ReturnType<typeof cookies>>) {
   return all.map((c) => `${c.name}=${c.value}`).join("; ");
 }
 
+async function readJsonIfPossible<T>(res: Response): Promise<T | null> {
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("application/json")) return null;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 function isProjectRow(x: unknown): x is ProjectRow {
   if (typeof x !== "object" || x === null) return false;
   const o = x as Record<string, unknown>;
@@ -52,7 +62,8 @@ async function fetchProjects(): Promise<ProjectRow[]> {
     throw new Error(`GET /app/api/projects failed: ${res.status} ${text}`);
   }
 
-  const data: unknown = await res.json();
+  const data = await readJsonIfPossible<unknown>(res);
+  if (!data) return [];
   const projectsUnknown = (data as { projects?: unknown }).projects;
 
   if (!Array.isArray(projectsUnknown)) return [];
@@ -79,7 +90,8 @@ async function fetchStats(): Promise<ClientStats> {
     throw new Error(`GET /app/api/me/stats failed: ${res.status} ${text}`);
   }
 
-  const data: unknown = await res.json();
+  const data = await readJsonIfPossible<unknown>(res);
+  if (!data) return { totalProjects: 0, totalFiles: 0, spaceSavedBytes: 0 };
   const o = (typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {}) as Record<
     string,
     unknown

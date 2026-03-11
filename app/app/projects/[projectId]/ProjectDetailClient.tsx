@@ -20,7 +20,13 @@ import {
   sortOutputsByRecommendation,
 } from "@/app/app/_lib/conversion-support";
 
-import { completeUpload, convertFiles, createUpload } from "./_lib/api-client";
+import {
+  completeUpload,
+  convertFiles,
+  createUpload,
+  getConversionQuota,
+  type QuotaStatus,
+} from "./_lib/api-client";
 import { fmtBytes, formatFromFilenameOrContentType, safeFilenameFromRow } from "./_lib/format";
 
 import { useSignedUrls } from "./hooks/useSignedUrls";
@@ -32,6 +38,7 @@ type Props = {
   projectId: string;
   projectName: string;
   initialFiles: FileRow[];
+  guestMode?: boolean;
 };
 
 type FillPdfTarget = {
@@ -58,7 +65,7 @@ function summarizeConvert(results: Array<{ ok: boolean; error?: string }>) {
   return { okCount, failCount, firstError };
 }
 
-export default function ProjectDetailClient({ projectId, initialFiles }: Props) {
+export default function ProjectDetailClient({ projectId, initialFiles, guestMode = false }: Props) {
   const router = useRouter();
   const [globalFormat, setGlobalFormat] = useState<OutputFormat>("JPG");
   const [globalQuality, setGlobalQuality] = useState(100);
@@ -72,15 +79,29 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
+  const [quota, setQuota] = useState<QuotaStatus | null>(null);
 
   const setFileCount = useSetFileCount();
   const staged = useStagedFiles();
   const server = useServerFiles({ projectId, initialFiles, onError: setError });
   const signed = useSignedUrls(projectId, server.files);
 
+  const refreshQuota = useCallback(async () => {
+    try {
+      const next = await getConversionQuota(projectId);
+      setQuota(next);
+    } catch {
+      // Non-fatal: quota banner just stays hidden.
+    }
+  }, [projectId]);
+
   useEffect(() => {
     setFileCount(server.files.length);
   }, [server.files, setFileCount]);
+
+  useEffect(() => {
+    void refreshQuota();
+  }, [refreshQuota]);
 
   useEffect(() => {
     server.setDropSignedUrl(signed.dropSignedUrl);
@@ -375,6 +396,11 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
     []
   );
 
+  const quotaExhausted = Boolean(quota?.exhausted);
+  const quotaRemaining = quota?.remaining ?? null;
+  const selectedExceedsQuota =
+    quotaRemaining != null && server.selectedReadyIds.length > quotaRemaining;
+
   useEffect(() => {
     if (allSidebarFormats.includes(globalFormat)) return;
     setGlobalFormat(allSidebarFormats[0] ?? "JPG");
@@ -393,6 +419,16 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
 
   const onConvert = useCallback(async () => {
     if (convertBusy || !server.anyReadySelected) return;
+    if (quotaExhausted) {
+      setError("You've reached your conversion limit.");
+      return;
+    }
+    if (quotaRemaining != null && server.selectedReadyIds.length > quotaRemaining) {
+      setError(
+        `You can convert ${quotaRemaining} more file${quotaRemaining === 1 ? "" : "s"} before reaching your limit.`
+      );
+      return;
+    }
     setConvertBusy(true);
     setError(null);
     setNotice(null);
@@ -409,6 +445,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
       });
 
       const res = await convertFiles(projectId, { conversions });
+      if (res.quota) setQuota(res.quota);
       const summary = summarizeConvert(
         res.results.map((r) => (r.ok ? { ok: true } : { ok: false, error: (r as { error: string }).error }))
       );
@@ -424,13 +461,30 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
       await server.refreshFiles({ validate: false });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Convert failed");
+      await refreshQuota();
     } finally {
       setConvertBusy(false);
     }
-  }, [convertBusy, server, projectId, getSettings]);
+  }, [
+    convertBusy,
+    getSettings,
+    projectId,
+    quotaExhausted,
+    quotaRemaining,
+    refreshQuota,
+    server,
+  ]);
 
   const onReconvert = useCallback(
     async (sourceFileId: string, settings: ItemSettings) => {
+      if (quotaExhausted) {
+        setError("You've reached your conversion limit.");
+        return;
+      }
+      if (quotaRemaining != null && quotaRemaining < 1) {
+        setError("You've reached your conversion limit.");
+        return;
+      }
       setError(null);
       try {
         const res = await convertFiles(projectId, {
@@ -442,6 +496,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
             resizePct: settings.resizePct < 100 ? settings.resizePct : null,
           }],
         });
+        if (res.quota) setQuota(res.quota);
         const r = res.results[0];
         if (r && !r.ok) {
           setError(`Reconvert failed: ${(r as { error: string }).error}`);
@@ -451,13 +506,18 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         }
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : "Reconvert failed");
+        await refreshQuota();
       }
     },
-    [projectId, server]
+    [projectId, quotaExhausted, quotaRemaining, refreshQuota, server]
   );
 
   const openFillPdf = useCallback(
     (target: FillPdfTarget) => {
+      if (guestMode) {
+        setNotice("PDF fill is available in signed-in projects.");
+        return;
+      }
       if (target.source !== "uploaded" || !target.fileId) {
         setNotice(`Upload "${target.name}" first to open Fill PDF.`);
         return;
@@ -468,7 +528,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
         `/app/projects/${encodeURIComponent(projectId)}/fill/${encodeURIComponent(target.fileId)}`
       );
     },
-    [projectId, router]
+    [guestMode, projectId, router]
   );
 
   return (
@@ -485,6 +545,34 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
               {notice}
             </div>
           ) : null}
+          {quota ? (
+            <div
+              className={[
+                "rounded-2xl border px-4 py-3 text-sm",
+                quota.exhausted
+                  ? "border-amber-300/30 bg-amber-500/10 text-amber-100"
+                  : "border-white/10 bg-white/5 text-slate-200",
+              ].join(" ")}
+            >
+              <p className="font-medium">
+                {quota.remaining} of {quota.limit} conversions remaining
+              </p>
+              {quota.exhausted ? (
+                <p className="mt-1 text-xs text-amber-200/90">
+                  You've reached your conversion limit.{" "}
+                  {quota.scope === "guest"
+                    ? "Sign in to get 10 conversions."
+                    : "Contact an admin to request a higher limit."}
+                </p>
+              ) : null}
+              {!quota.exhausted && selectedExceedsQuota ? (
+                <p className="mt-1 text-xs text-amber-200/90">
+                  Reduce your selection to {quota.remaining} file
+                  {quota.remaining === 1 ? "" : "s"} or fewer.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <DropzoneCard
             pendingCount={staged.staged.length}
@@ -493,7 +581,7 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
             uploadDisabled={uploadBusy || staged.uploadDisabled}
             stagedItems={staged.stagedItems}
             onRemoveStagedItem={staged.removeStaged}
-            onFillPdf={openFillPdf}
+            onFillPdf={guestMode ? undefined : openFillPdf}
           />
 
           <ReadyQueue
@@ -504,8 +592,9 @@ export default function ProjectDetailClient({ projectId, initialFiles }: Props) 
             onRemoveSelected={server.onRemoveSelectedReady}
             onConvert={onConvert}
             onSetItemFormat={setItemFormat}
-            onFillPdf={openFillPdf}
+            onFillPdf={guestMode ? undefined : openFillPdf}
             convertBusy={convertBusy}
+            quotaExhausted={quotaExhausted || selectedExceedsQuota}
           />
 
           <ConvertedFiles
