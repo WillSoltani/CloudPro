@@ -4,6 +4,20 @@ function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }
 
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h === "::1";
+}
+
+function isLocalOrigin(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return isLoopbackHost(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function firstForwardedValue(value: string | null): string | null {
   if (!value) return null;
   const first = value.split(",")[0]?.trim();
@@ -17,7 +31,13 @@ export function resolvePublicOrigin(params: {
   fallbackOrigin?: string;
 }): string {
   const configuredBaseUrl = process.env.APP_BASE_URL?.trim();
-  if (configuredBaseUrl) return normalizeOrigin(configuredBaseUrl);
+  if (configuredBaseUrl) {
+    const normalized = normalizeOrigin(configuredBaseUrl);
+    if (!(process.env.NODE_ENV === "production" && isLocalOrigin(normalized))) {
+      return normalized;
+    }
+    console.warn("Ignoring APP_BASE_URL loopback value in production:", normalized);
+  }
 
   const forwardedHost = firstForwardedValue(params.forwardedHostHeader ?? null);
   const host = forwardedHost || params.hostHeader || null;
@@ -42,4 +62,3 @@ export async function getServerOrigin(): Promise<string> {
     forwardedProtoHeader: h.get("x-forwarded-proto"),
   });
 }
-
