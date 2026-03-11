@@ -1,5 +1,7 @@
+import { getSiteUrl } from "@/app/_lib/site-url";
+
 export default function robots() {
-  const base = "https://soltani.org";
+  const base = getSiteUrl();
 
   return {
     rules: [

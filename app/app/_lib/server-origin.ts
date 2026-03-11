@@ -32,11 +32,19 @@ export function resolvePublicOrigin(params: {
 }): string {
   const configuredBaseUrl = process.env.APP_BASE_URL?.trim();
   if (configuredBaseUrl) {
-    const normalized = normalizeOrigin(configuredBaseUrl);
-    if (!(process.env.NODE_ENV === "production" && isLocalOrigin(normalized))) {
-      return normalized;
+    const normalizedConfigured = normalizeOrigin(configuredBaseUrl);
+    const allowConfiguredInDev = process.env.ALLOW_APP_BASE_URL_IN_DEV === "1";
+    const isProd = process.env.NODE_ENV === "production";
+
+    if (isProd) {
+      if (!isLocalOrigin(normalizedConfigured)) return normalizedConfigured;
+      console.warn(
+        "Ignoring APP_BASE_URL loopback value in production:",
+        normalizedConfigured
+      );
+    } else if (allowConfiguredInDev || isLocalOrigin(normalizedConfigured)) {
+      return normalizedConfigured;
     }
-    console.warn("Ignoring APP_BASE_URL loopback value in production:", normalized);
   }
 
   const forwardedHost = firstForwardedValue(params.forwardedHostHeader ?? null);

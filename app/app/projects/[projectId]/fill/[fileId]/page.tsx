@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import type { FileRow } from "../../../_lib/types";
 import FillPdfClient from "./FillPdfClient";
 import { getServerOrigin } from "@/app/app/_lib/server-origin";
+import { isDevAuthBypassEnabled } from "@/app/app/_lib/dev-auth-bypass";
 
 type ProjectRow = {
   projectId: string;
@@ -68,7 +69,9 @@ export default async function FillPdfPage({
   const { projectId, fileId } = await params;
 
   const jar = await cookies();
-  if (!jar.get("id_token")?.value) redirect("/?auth=required");
+  if (!isDevAuthBypassEnabled() && !jar.get("id_token")?.value) {
+    redirect("/?auth=required");
+  }
 
   const [projects, files] = await Promise.all([
     fetchProjects(),

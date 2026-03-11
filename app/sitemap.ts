@@ -1,7 +1,8 @@
 import { projects } from "@/content/projects";
+import { getSiteUrl } from "@/app/_lib/site-url";
 
 export default function sitemap() {
-  const base = "https://soltani.org";
+  const base = getSiteUrl();
 
   const projectUrls = projects.map((p) => ({
     url: `${base}/projects/${p.slug}`,

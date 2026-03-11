@@ -140,7 +140,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
 
           {showLoggedIn ? (
             <Link
-              href="/app/projects"
+              href="/dashboard"
               className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 text-sm text-slate-100 shadow-[0_0_0_0_rgba(56,189,248,0.0)] transition hover:bg-white/15 hover:shadow-[0_0_28px_rgba(56,189,248,0.22)]"
             >
               <LayoutDashboard className="h-4 w-4 text-sky-200" />
@@ -184,7 +184,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                     className="px-2 pt-2"
                   >
                     <Link
-                      href="/app/projects"
+                      href="/dashboard"
                       onClick={() => setOpen(false)}
                       className="flex items-center justify-between rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-slate-100 transition hover:bg-white/10"
                     >

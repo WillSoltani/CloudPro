@@ -2,6 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { jwtVerify, createRemoteJWKSet } from "jose";
 import { mustServerEnv } from "./server-env";
+import { DEV_BYPASS_USER, isDevAuthBypassEnabled } from "@/app/app/_lib/dev-auth-bypass";
 
 export class AuthError extends Error {
   constructor(message: "UNAUTHENTICATED" | "INVALID_TOKEN") {
@@ -42,6 +43,10 @@ export type AuthedUser = {
 };
 
 export async function requireUser(): Promise<AuthedUser> {
+  if (isDevAuthBypassEnabled()) {
+    return { sub: DEV_BYPASS_USER.sub, email: DEV_BYPASS_USER.email };
+  }
+
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) throw new AuthError("UNAUTHENTICATED");
 

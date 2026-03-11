@@ -7,6 +7,7 @@ import {
   GUEST_PROJECT_ID,
   GUEST_SESSION_COOKIE,
 } from "@/app/app/api/_lib/guest-session";
+import { isDevAuthBypassEnabled } from "@/app/app/_lib/dev-auth-bypass";
 
 type ProjectRow = {
   projectId: string;
@@ -105,7 +106,9 @@ export default async function AppProjectDetailPage({
   }
 
   // extra guard (proxy already does this)
-  if (!jar.get("id_token")?.value) redirect("/?auth=required");
+  if (!isDevAuthBypassEnabled() && !jar.get("id_token")?.value) {
+    redirect("/?auth=required");
+  }
 
   const [projects, initialFiles] = await Promise.all([
     fetchProjects(),

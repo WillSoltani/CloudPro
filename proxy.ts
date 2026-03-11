@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify, createRemoteJWKSet } from "jose";
+import { isDevAuthBypassEnabled } from "@/app/app/_lib/dev-auth-bypass";
 
 type ProxyAuthConfig = {
   issuer: string;
@@ -56,6 +57,7 @@ export async function proxy(req: NextRequest) {
       url.pathname = "/test";
       return NextResponse.redirect(url);
     }
+  if (isDevAuthBypassEnabled()) {
     return NextResponse.next();
   }
 

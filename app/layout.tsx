@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import { getSiteUrl } from "@/app/_lib/site-url";
 
 // ✅ Client component is fine to render inside a Server Component layout
 import { InteractiveBackground } from "@/components/InteractiveBackground";
@@ -10,12 +11,12 @@ export const metadata: Metadata = {
   title: "Will Soltani | Cloud Portfolio",
   description:
     "AWS-focused cloud portfolio featuring production-style projects, architecture, security, and observability.",
-  metadataBase: new URL("https://soltani.org"),
+  metadataBase: new URL(getSiteUrl()),
   openGraph: {
     title: "Will Soltani | Cloud Portfolio",
     description:
       "AWS-focused cloud portfolio with production-grade projects and case studies.",
-    url: "https://soltani.org",
+    url: getSiteUrl(),
     siteName: "Will Soltani",
     type: "website",
   },
