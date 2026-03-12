@@ -38,6 +38,7 @@ async function getAuthConfig(): Promise<AuthConfig> {
 export type AuthedUser = {
   sub: string;
   email?: string;
+  groups?: string[];
 };
 
 export async function requireUser(): Promise<AuthedUser> {
@@ -59,5 +60,13 @@ export async function requireUser(): Promise<AuthedUser> {
   if (!sub || typeof sub !== "string") throw new AuthError("INVALID_TOKEN");
 
   const email = typeof p.email === "string" ? p.email : undefined;
-  return { sub, email };
+
+  const rawGroups = p["cognito:groups"];
+  const groups = Array.isArray(rawGroups)
+    ? rawGroups.filter((v): v is string => typeof v === "string")
+    : typeof rawGroups === "string"
+      ? [rawGroups]
+      : undefined;
+
+  return { sub, email, groups };
 }
