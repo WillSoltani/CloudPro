@@ -57,6 +57,9 @@ export async function proxy(req: NextRequest) {
       url.pathname = "/test";
       return NextResponse.redirect(url);
     }
+    return NextResponse.next();
+  }
+
   if (isDevAuthBypassEnabled()) {
     return NextResponse.next();
   }
