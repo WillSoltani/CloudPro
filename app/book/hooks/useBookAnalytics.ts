@@ -69,7 +69,7 @@ const PROGRESS_PREFIX = "book-accelerator:book-progress:v2:";
 function parseDashboard(raw: string | null): DashboardSnapshot {
   if (!raw) {
     return {
-      streakDays: 1,
+      streakDays: 0,
       minutesReadToday: 0,
     };
   }
@@ -78,9 +78,9 @@ function parseDashboard(raw: string | null): DashboardSnapshot {
     const parsed = JSON.parse(raw) as Partial<DashboardSnapshot>;
     return {
       streakDays:
-        Number.isFinite(Number(parsed.streakDays)) && Number(parsed.streakDays) > 0
+        Number.isFinite(Number(parsed.streakDays)) && Number(parsed.streakDays) >= 0
           ? Math.floor(Number(parsed.streakDays))
-          : 1,
+          : 0,
       minutesReadToday:
         Number.isFinite(Number(parsed.minutesReadToday)) && Number(parsed.minutesReadToday) >= 0
           ? Math.floor(Number(parsed.minutesReadToday))
@@ -88,7 +88,7 @@ function parseDashboard(raw: string | null): DashboardSnapshot {
     };
   } catch {
     return {
-      streakDays: 1,
+      streakDays: 0,
       minutesReadToday: 0,
     };
   }
@@ -117,9 +117,9 @@ function parseBookProgress(raw: string | null): StoredBookProgress | null {
             )
           : {},
       streakDays:
-        Number.isFinite(Number(parsed.streakDays)) && Number(parsed.streakDays) > 0
+        Number.isFinite(Number(parsed.streakDays)) && Number(parsed.streakDays) >= 0
           ? Math.floor(Number(parsed.streakDays))
-          : 1,
+          : 0,
       lastReadChapterId:
         typeof parsed.lastReadChapterId === "string" ? parsed.lastReadChapterId : "",
     };
@@ -149,6 +149,8 @@ function generateHeatmap(
   const now = new Date();
   const days = 84;
   const cells: HeatmapCell[] = [];
+  const noProgress =
+    totalCompletedChapters <= 0 && streakDays <= 0 && minutesReadToday <= 0;
 
   for (let index = days - 1; index >= 0; index -= 1) {
     const date = new Date(now);
@@ -158,7 +160,9 @@ function generateHeatmap(
     const seed = (index * 37 + totalCompletedChapters * 11 + streakDays * 13) % 100;
     let minutes = 0;
 
-    if (index === 0) {
+    if (noProgress) {
+      minutes = 0;
+    } else if (index === 0) {
       minutes = minutesReadToday;
     } else if (index < streakDays) {
       minutes = 12 + (seed % 54);
@@ -209,23 +213,17 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
       const totalChapters = getBookChaptersBundle(entry.id).chapters.length || entry.chaptersTotal;
 
       if (!stored) {
-        const status = entry.status;
+        const status: BookProgressSnapshot["status"] = "not_started";
         return {
           book: entry,
           status,
-          completedChapters: entry.chaptersCompleted,
+          completedChapters: 0,
           totalChapters,
-          progressPercent: entry.progressPercent,
-          bestScore: status === "completed" ? 96 : status === "in_progress" ? 88 : 0,
-          avgScore: status === "not_started" ? 0 : status === "completed" ? 92 : 84,
-          lastOpenedLabel:
-            status === "not_started"
-              ? "Not started"
-              : `${entry.chaptersCompleted}/${totalChapters} chapters`,
-          resumeChapterId:
-            status === "not_started"
-              ? "ch-01"
-              : `ch-${String(Math.min(entry.chaptersCompleted + 1, totalChapters)).padStart(2, "0")}`,
+          progressPercent: 0,
+          bestScore: 0,
+          avgScore: 0,
+          lastOpenedLabel: "Not started",
+          resumeChapterId: "ch-01",
         };
       }
 
@@ -304,7 +302,7 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
       avgQuizScore,
       maxQuizScore,
       totalCompletedChapters,
-      longestStreak: Math.max(dashboard.streakDays, 12),
+      longestStreak: dashboard.streakDays,
       bookSnapshots,
       heatmapCells,
       upcomingReviews,

@@ -36,8 +36,8 @@ function createDefaultState(seed: DashboardSeed): BookDashboardState {
   const currentChapter = Math.max(1, primary?.chapter ?? 1);
 
   return {
-    streakDays: 12,
-    minutesReadToday: Math.min(14, Math.max(0, seed.dailyGoalMinutes - 6)),
+    streakDays: 0,
+    minutesReadToday: 0,
     currentBookId: primary?.bookId || seed.selectedBookIds[0] || "",
     searchQuery: "",
     dismissMobileCta: false,
@@ -153,4 +153,3 @@ export function useBookState(seed: DashboardSeed) {
     dismissMobileCta,
   };
 }
-

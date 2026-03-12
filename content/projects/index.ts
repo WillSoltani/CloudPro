@@ -1,7 +1,8 @@
 import type { Project } from "@/types/project";
+import { bookAccelerator } from "./book-accelerator";
 import { serverlessFilePipeline } from "./serverless-file-pipeline";
 
-export const projects: Project[] = [serverlessFilePipeline];
+export const projects: Project[] = [serverlessFilePipeline, bookAccelerator];
 
 // Optional safety check (catches duplicates + empty)
 (function assertProjects(list: Project[]) {

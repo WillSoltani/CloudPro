@@ -2,6 +2,7 @@
 
 import { ArrowRight, Check, Sparkles } from "lucide-react";
 import type { LibraryBookEntry } from "@/app/book/data/mockUserLibraryState";
+import { BookCover } from "@/app/book/components/BookCover";
 
 function statusBadge(entry: LibraryBookEntry): {
   label: string;
@@ -66,8 +67,16 @@ export function BookCardLarge({ entry, onOpen }: BookCardLargeProps) {
             {badge.label}
           </span>
         </span>
-        <div className="absolute inset-0 flex items-center justify-center text-6xl drop-shadow-[0_10px_22px_rgba(2,6,23,0.55)]">
-          {entry.icon}
+        <div className="absolute inset-0 flex items-center justify-center px-10 py-8">
+          <BookCover
+            bookId={entry.id}
+            title={entry.title}
+            icon={entry.icon}
+            coverImage={entry.coverImage}
+            className="h-full w-full rounded-2xl border border-white/10 bg-white/6"
+            fallbackClassName="text-6xl drop-shadow-[0_10px_22px_rgba(2,6,23,0.55)]"
+            sizes="(max-width: 768px) 70vw, 28vw"
+          />
         </div>
         {entry.status === "in_progress" ? (
           <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-full border border-sky-300/25 bg-sky-400/12 px-2.5 py-1 text-xs text-sky-100 opacity-0 transition duration-200 group-hover:opacity-100">
@@ -116,7 +125,7 @@ export function BookCardLarge({ entry, onOpen }: BookCardLargeProps) {
                     ? "bg-sky-300"
                     : "bg-white/25",
               ].join(" ")}
-              style={{ width: `${Math.max(entry.progressPercent, entry.status === "not_started" ? 6 : 2)}%` }}
+              style={{ width: `${Math.max(entry.progressPercent, 0)}%` }}
             />
           </div>
         </div>
@@ -124,4 +133,3 @@ export function BookCardLarge({ entry, onOpen }: BookCardLargeProps) {
     </button>
   );
 }
-

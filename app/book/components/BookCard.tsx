@@ -2,6 +2,7 @@
 
 import { CheckCircle2, Clock3 } from "lucide-react";
 import type { BookCatalogItem } from "@/app/book/data/booksCatalog";
+import { BookCover } from "@/app/book/components/BookCover";
 
 const difficultyStyles: Record<BookCatalogItem["difficulty"], string> = {
   Easy: "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
@@ -48,9 +49,15 @@ export function BookCard({
         disabled && !selected ? "cursor-not-allowed opacity-45" : "",
       ].join(" ")}
     >
-      <span aria-hidden="true" className="text-3xl">
-        {book.icon}
-      </span>
+      <BookCover
+        bookId={book.id}
+        title={book.title}
+        icon={book.icon}
+        coverImage={book.coverImage}
+        className="h-14 w-12 rounded-xl border border-white/15 bg-white/6"
+        fallbackClassName="text-3xl"
+        sizes="48px"
+      />
 
       {selected ? (
         <span className="absolute right-4 top-4 text-sky-300" aria-hidden="true">
@@ -83,4 +90,3 @@ export function BookCard({
     </button>
   );
 }
-

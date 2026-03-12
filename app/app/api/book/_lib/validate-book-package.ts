@@ -21,6 +21,7 @@ const ROOT_KEYS = new Set([
   "contentOwner",
   "licenseNotes",
   "book",
+  "chapters",
 ]);
 
 const BOOK_KEYS = new Set([
@@ -36,6 +37,7 @@ const BOOK_KEYS = new Set([
 ]);
 
 const COVER_KEYS = new Set(["emoji", "color"]);
+const EDITION_KEYS = new Set(["name", "publishedYear"]);
 const CHAPTER_KEYS = new Set([
   "chapterId",
   "number",
@@ -47,8 +49,20 @@ const CHAPTER_KEYS = new Set([
 ]);
 const EXAMPLE_KEYS = new Set(["exampleId", "title", "scenario", "whatToDo", "whyItMatters", "contexts"]);
 const QUIZ_KEYS = new Set(["passingScorePercent", "questions"]);
-const QUESTION_KEYS = new Set(["questionId", "prompt", "choices", "correctAnswerIndex", "explanation"]);
-const VARIANT_CONTENT_KEYS = new Set(["summaryBullets", "takeaways"]);
+const QUESTION_KEYS = new Set([
+  "questionId",
+  "prompt",
+  "choices",
+  "correctAnswerIndex",
+  "correctIndex",
+  "explanation",
+]);
+const VARIANT_CONTENT_KEYS = new Set([
+  "summaryBullets",
+  "importantSummary",
+  "takeaways",
+  "keyTakeaways",
+]);
 const EMH_VARIANTS: VariantKey[] = ["easy", "medium", "hard"];
 const PBC_VARIANTS: VariantKey[] = ["precise", "balanced", "challenging"];
 
@@ -134,7 +148,35 @@ function parseVariantFamily(value: unknown, path: string, issues: ValidationIssu
   return "EMH";
 }
 
-function parseBook(bookRaw: unknown, issues: ValidationIssue[]): BookPackageBook {
+function parseEdition(value: unknown, path: string, issues: ValidationIssue[]): string {
+  if (value == null) return "";
+  if (typeof value === "string") {
+    return readString(value, path, issues, { optional: true, min: 1, max: 80 });
+  }
+  if (!isRecord(value)) {
+    issues.push({ path, message: "edition must be a string or object." });
+    return "";
+  }
+
+  hasOnlyKeys(value, EDITION_KEYS, path, issues);
+  const name = readString(value.name, `${path}.name`, issues, { max: 80 });
+  const year =
+    value.publishedYear == null
+      ? null
+      : readInteger(value.publishedYear, `${path}.publishedYear`, issues, {
+          min: 0,
+          max: 3000,
+        });
+
+  if (!name) return "";
+  return typeof year === "number" && year > 0 ? `${name} (${year})` : name;
+}
+
+function parseBook(
+  bookRaw: unknown,
+  topLevelChaptersRaw: unknown,
+  issues: ValidationIssue[]
+): BookPackageBook {
   if (!isRecord(bookRaw)) {
     issues.push({ path: "book", message: "book must be an object." });
     return {
@@ -153,13 +195,28 @@ function parseBook(bookRaw: unknown, issues: ValidationIssue[]): BookPackageBook
     hasOnlyKeys(coverRaw, COVER_KEYS, "book.cover", issues);
   }
 
-  const chaptersRaw = Array.isArray(bookRaw.chapters) ? bookRaw.chapters : [];
-  if (!Array.isArray(bookRaw.chapters)) {
-    issues.push({ path: "book.chapters", message: "chapters must be an array." });
+  const hasTopLevelChapters = Array.isArray(topLevelChaptersRaw);
+  const hasBookChapters = Array.isArray(bookRaw.chapters);
+  if (topLevelChaptersRaw != null && !hasTopLevelChapters) {
+    issues.push({ path: "chapters", message: "chapters must be an array." });
+  }
+  let chaptersRaw: unknown[] = [];
+  let chapterPathBase = "book.chapters";
+
+  if (hasTopLevelChapters) {
+    chaptersRaw = topLevelChaptersRaw;
+    chapterPathBase = "chapters";
+  } else if (hasBookChapters) {
+    chaptersRaw = bookRaw.chapters as unknown[];
+  } else {
+    issues.push({
+      path: "chapters",
+      message: "chapters must be an array (either top-level or book.chapters).",
+    });
   }
 
   const chapters = chaptersRaw.map((chapterRaw, index) =>
-    parseChapter(chapterRaw, `book.chapters[${index}]`, issues)
+    parseChapter(chapterRaw, `${chapterPathBase}[${index}]`, issues)
   );
 
   return {
@@ -191,11 +248,7 @@ function parseBook(bookRaw: unknown, issues: ValidationIssue[]): BookPackageBook
           }),
         }
       : undefined,
-    edition: readString(bookRaw.edition, "book.edition", issues, {
-      optional: true,
-      min: 1,
-      max: 80,
-    }),
+    edition: parseEdition(bookRaw.edition, "book.edition", issues),
     variantFamily: parseVariantFamily(bookRaw.variantFamily, "book.variantFamily", issues),
     chapters,
   };
@@ -244,16 +297,43 @@ function parseChapter(chapterRaw: unknown, path: string, issues: ValidationIssue
       `${path}.contentVariants.${variantKey}`,
       issues
     );
+    const summaryBullets = Array.isArray(variantValue.summaryBullets)
+      ? readStringArray(
+          variantValue.summaryBullets,
+          `${path}.contentVariants.${variantKey}.summaryBullets`,
+          issues,
+          { minItems: 1, maxItems: 20, itemMax: 2000 }
+        )
+      : typeof variantValue.importantSummary === "string"
+        ? [
+            readString(
+              variantValue.importantSummary,
+              `${path}.contentVariants.${variantKey}.importantSummary`,
+              issues,
+              { max: 4000 }
+            ),
+          ].filter(Boolean)
+        : [];
+
+    if (!summaryBullets.length) {
+      issues.push({
+        path: `${path}.contentVariants.${variantKey}.summaryBullets`,
+        message: "Provide summaryBullets or importantSummary.",
+      });
+    }
+
+    const takeawaysSource =
+      variantValue.takeaways != null
+        ? variantValue.takeaways
+        : variantValue.keyTakeaways;
+
     contentVariants[variantKey as VariantKey] = {
-      summaryBullets: readStringArray(
-        variantValue.summaryBullets,
-        `${path}.contentVariants.${variantKey}.summaryBullets`,
-        issues,
-        { minItems: 1, maxItems: 20, itemMax: 2000 }
-      ),
+      summaryBullets,
       takeaways: readStringArray(
-        variantValue.takeaways,
-        `${path}.contentVariants.${variantKey}.takeaways`,
+        takeawaysSource,
+        `${path}.contentVariants.${variantKey}.${
+          variantValue.takeaways != null ? "takeaways" : "keyTakeaways"
+        }`,
         issues,
         { minItems: 1, maxItems: 15, itemMax: 500 }
       ),
@@ -351,16 +431,24 @@ function parseQuestion(
     maxItems: 8,
     itemMax: 1000,
   });
+  const correctIndexPath =
+    questionRaw.correctAnswerIndex != null
+      ? `${path}.correctAnswerIndex`
+      : `${path}.correctIndex`;
+  const correctIndexRaw =
+    questionRaw.correctAnswerIndex != null
+      ? questionRaw.correctAnswerIndex
+      : questionRaw.correctIndex;
   const correctAnswerIndex = readInteger(
-    questionRaw.correctAnswerIndex,
-    `${path}.correctAnswerIndex`,
+    correctIndexRaw,
+    correctIndexPath,
     issues,
     { min: 0, max: 20 }
   );
   if (choices.length > 0 && (correctAnswerIndex < 0 || correctAnswerIndex >= choices.length)) {
     issues.push({
-      path: `${path}.correctAnswerIndex`,
-      message: "correctAnswerIndex is out of range for choices.",
+      path: correctIndexPath,
+      message: "Correct answer index is out of range for choices.",
     });
   }
   return {
@@ -458,7 +546,7 @@ export function validateBookPackage(raw: unknown): BookPackage {
       min: 1,
       max: 4000,
     }),
-    book: parseBook(raw.book, issues),
+    book: parseBook(raw.book, raw.chapters, issues),
   };
 
   enforceSemanticRules(pkg, issues);

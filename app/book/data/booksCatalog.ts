@@ -3,6 +3,7 @@ export type BookDifficulty = "Easy" | "Medium" | "Hard";
 export type BookCatalogItem = {
   id: string;
   icon: string;
+  coverImage?: string;
   title: string;
   author: string;
   category: string;
@@ -150,6 +151,17 @@ export const BOOKS_CATALOG: BookCatalogItem[] = [
 
 export function getBookById(bookId: string): BookCatalogItem | undefined {
   return BOOKS_CATALOG.find((book) => book.id === bookId);
+}
+
+export function getBookCoverCandidates(book: Pick<BookCatalogItem, "id" | "coverImage">): string[] {
+  if (book.coverImage) return [book.coverImage];
+  return [
+    `/book-covers/${book.id}.png`,
+    `/book-covers/${book.id}.jpg`,
+    `/book-covers/${book.id}.jpeg`,
+    `/book-covers/${book.id}.webp`,
+    `/book-covers/${book.id}.avif`,
+  ];
 }
 
 const SYNOPSIS_BY_BOOK_ID: Record<string, string> = {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { LibraryBookEntry } from "@/app/book/data/mockUserLibraryState";
 import { StatTile } from "@/app/book/library/[bookId]/components/StatTile";
+import { BookCover } from "@/app/book/components/BookCover";
 
 type BookOverviewPanelProps = {
   entry: LibraryBookEntry;
@@ -62,11 +63,15 @@ export function BookOverviewPanel({
           aria-hidden="true"
           className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_95%_at_100%_0%,rgba(255,255,255,0.14),transparent_60%)]"
         />
-        <div className="h-56 rounded-2xl border border-white/15 bg-black/10 sm:h-72">
-          <div className="flex h-full items-center justify-center text-7xl">
-            {entry.icon}
-          </div>
-        </div>
+        <BookCover
+          bookId={entry.id}
+          title={entry.title}
+          icon={entry.icon}
+          coverImage={entry.coverImage}
+          className="h-56 rounded-2xl border border-white/15 bg-black/10 sm:h-72"
+          fallbackClassName="text-7xl"
+          sizes="320px"
+        />
         <span className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-white/20 bg-black/30 px-3 py-1 text-xs text-slate-100">
           App Preview
         </span>
@@ -111,7 +116,7 @@ export function BookOverviewPanel({
         <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-900/55">
           <div
             className="h-full rounded-full bg-gradient-to-r from-sky-300 to-cyan-200 transition-[width] duration-300"
-            style={{ width: `${Math.max(progressPercent, 2)}%` }}
+            style={{ width: `${Math.max(progressPercent, 0)}%` }}
           />
         </div>
       </div>

@@ -7,3 +7,4 @@ This repository is documented in `/docs`.
 - Full file index: [`docs/FILE_INDEX.md`](docs/FILE_INDEX.md)
 - Contribution guide: [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md)
 - Operations guide: [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+- Book app admin upload guide: [`docs/BOOKAPP_ADMIN_GUIDE.md`](docs/BOOKAPP_ADMIN_GUIDE.md)

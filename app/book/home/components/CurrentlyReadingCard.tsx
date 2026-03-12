@@ -3,6 +3,7 @@
 import { ArrowRight, BookOpenText } from "lucide-react";
 import type { BookCatalogItem } from "@/app/book/data/booksCatalog";
 import type { RecentBookProgress } from "@/app/book/data/mockProgress";
+import { BookCover } from "@/app/book/components/BookCover";
 
 function estimateMinutesRemaining(
   book: BookCatalogItem,
@@ -38,9 +39,15 @@ export function CurrentlyReadingCard({
       />
 
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-        <div className="inline-flex h-28 w-24 items-center justify-center rounded-2xl border border-white/25 bg-white/10 text-4xl shadow-[0_10px_25px_rgba(2,6,23,0.38)]">
-          {book.icon}
-        </div>
+        <BookCover
+          bookId={book.id}
+          title={book.title}
+          icon={book.icon}
+          coverImage={book.coverImage}
+          className="h-28 w-24 rounded-2xl border border-white/25 bg-white/10 shadow-[0_10px_25px_rgba(2,6,23,0.38)]"
+          fallbackClassName="text-4xl"
+          sizes="96px"
+        />
 
         <div className="min-w-0 flex-1">
           <p className="inline-flex rounded-full border border-sky-300/35 bg-sky-300/16 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-sky-100">
@@ -58,7 +65,7 @@ export function CurrentlyReadingCard({
           <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-slate-900/45">
             <div
               className="h-full rounded-full bg-gradient-to-r from-sky-300 to-cyan-200"
-              style={{ width: `${Math.max(2, progress.progressPercent)}%` }}
+              style={{ width: `${Math.max(0, progress.progressPercent)}%` }}
             />
           </div>
           <p className="mt-2 text-sm text-slate-200">{progress.progressPercent}% complete</p>
@@ -84,4 +91,3 @@ export function CurrentlyReadingCard({
     </article>
   );
 }
-

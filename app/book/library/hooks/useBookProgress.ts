@@ -20,37 +20,15 @@ function uniqueIds(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
-function initialProgress(bookId: string, chapters: BookChapter[]): PersistedBookProgress {
+function initialProgress(chapters: BookChapter[]): PersistedBookProgress {
   const firstChapterId = chapters[0]?.id ?? "";
-
-  if (bookId === "deep-work") {
-    const completed = chapters.slice(0, 6).map((chapter) => chapter.id);
-    const current = chapters[6]?.id ?? firstChapterId;
-    const scores: Record<string, number> = {
-      [completed[0] ?? ""]: 100,
-      [completed[1] ?? ""]: 92,
-      [completed[2] ?? ""]: 88,
-      [completed[3] ?? ""]: 94,
-      [completed[4] ?? ""]: 80,
-      [completed[5] ?? ""]: 96,
-    };
-
-    return {
-      currentChapterId: current,
-      completedChapterIds: completed,
-      unlockedChapterIds: uniqueIds([...completed, current]),
-      chapterScores: scores,
-      streakDays: 12,
-      lastReadChapterId: current,
-    };
-  }
 
   return {
     currentChapterId: firstChapterId,
     completedChapterIds: [],
     unlockedChapterIds: firstChapterId ? [firstChapterId] : [],
     chapterScores: {},
-    streakDays: 4,
+    streakDays: 0,
     lastReadChapterId: firstChapterId,
   };
 }
@@ -142,13 +120,12 @@ function normalizeProgress(
 
 function parseStored(
   raw: string | null,
-  bookId: string,
   chapters: BookChapter[]
 ): PersistedBookProgress | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as Partial<PersistedBookProgress>;
-    return normalizeProgress(parsed, initialProgress(bookId, chapters), chapters);
+    return normalizeProgress(parsed, initialProgress(chapters), chapters);
   } catch {
     return null;
   }
@@ -158,14 +135,14 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
   const storageKey = `${STORAGE_PREFIX}:${bookId}`;
   const [hydrated, setHydrated] = useState(false);
   const [progress, setProgress] = useState<PersistedBookProgress>(() =>
-    initialProgress(bookId, chapters)
+    initialProgress(chapters)
   );
 
   useEffect(() => {
-    const parsed = parseStored(window.localStorage.getItem(storageKey), bookId, chapters);
-    setProgress(parsed ?? initialProgress(bookId, chapters));
+    const parsed = parseStored(window.localStorage.getItem(storageKey), chapters);
+    setProgress(parsed ?? initialProgress(chapters));
     setHydrated(true);
-  }, [bookId, chapters, storageKey]);
+  }, [chapters, storageKey]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -320,8 +297,8 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
   );
 
   const resetProgress = useCallback(() => {
-    setProgress(initialProgress(bookId, chapters));
-  }, [bookId, chapters]);
+    setProgress(initialProgress(chapters));
+  }, [chapters]);
 
   return {
     hydrated,

@@ -1,4 +1,5 @@
 import { BOOKS_CATALOG } from "@/app/book/data/booksCatalog";
+import { getBookChaptersBundle } from "@/app/book/data/mockChapters";
 
 export type BookStatus = "completed" | "in_progress" | "not_started";
 
@@ -44,53 +45,14 @@ export function buildRecentBooks(selectedBookIds: string[]): RecentBookProgress[
   const fallback = BOOKS_CATALOG.map((book) => book.id).filter((id) => !selected.includes(id));
   const ordered = [...selected, ...fallback].slice(0, 5);
 
-  return ordered.map((bookId, index) => {
-    if (index === 0) {
-      return {
-        bookId,
-        status: "in_progress",
-        progressPercent: 62,
-        chapter: 7,
-        totalChapters: 18,
-        lastOpenedAt: "Today",
-      };
-    }
-    if (index === 1) {
-      return {
-        bookId,
-        status: "completed",
-        progressPercent: 100,
-        chapter: 14,
-        totalChapters: 14,
-        lastOpenedAt: "2 days ago",
-      };
-    }
-    if (index === 2) {
-      return {
-        bookId,
-        status: "in_progress",
-        progressPercent: 28,
-        chapter: 3,
-        totalChapters: 12,
-        lastOpenedAt: "Yesterday",
-      };
-    }
-    if (index === 3) {
-      return {
-        bookId,
-        status: "not_started",
-        progressPercent: 0,
-        chapter: 0,
-        totalChapters: 16,
-        lastOpenedAt: "Not started",
-      };
-    }
+  return ordered.map((bookId) => {
+    const totalChapters = Math.max(1, getBookChaptersBundle(bookId).chapters.length);
     return {
       bookId,
       status: "not_started",
       progressPercent: 0,
-      chapter: 0,
-      totalChapters: 10,
+      chapter: 1,
+      totalChapters,
       lastOpenedAt: "Not started",
     };
   });
@@ -181,4 +143,3 @@ export function buildDailyInsight(bookTitle: string): DailyInsight {
       "Try one uninterrupted 25-minute reading sprint before your first meeting.",
   };
 }
-
