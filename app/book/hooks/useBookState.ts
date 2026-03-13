@@ -1,16 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BOOKS_CATALOG } from "@/app/book/data/booksCatalog";
 import {
   type RecentBookProgress,
   type SessionTask,
   buildRecentBooks,
   buildTodaySessionTasks,
 } from "@/app/book/data/mockProgress";
+import { emitBookStorageChanged } from "@/app/book/hooks/bookStorageEvents";
 
 export type BookDashboardState = {
-  streakDays: number;
-  minutesReadToday: number;
   currentBookId: string;
   searchQuery: string;
   dismissMobileCta: boolean;
@@ -23,12 +23,8 @@ type DashboardSeed = {
   dailyGoalMinutes: number;
 };
 
-const STORAGE_KEY = "book-accelerator:dashboard:v1";
-
-function clampNonNegative(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.floor(value));
-}
+const STORAGE_KEY = "book-accelerator:dashboard:v3";
+const AVAILABLE_BOOK_IDS = new Set(BOOKS_CATALOG.map((book) => book.id));
 
 function createDefaultState(seed: DashboardSeed): BookDashboardState {
   const recentBooks = buildRecentBooks(seed.selectedBookIds);
@@ -36,8 +32,6 @@ function createDefaultState(seed: DashboardSeed): BookDashboardState {
   const currentChapter = Math.max(1, primary?.chapter ?? 1);
 
   return {
-    streakDays: 0,
-    minutesReadToday: 0,
     currentBookId: primary?.bookId || seed.selectedBookIds[0] || "",
     searchQuery: "",
     dismissMobileCta: false,
@@ -51,25 +45,28 @@ function parseStored(value: string | null, seed: DashboardSeed): BookDashboardSt
   try {
     const parsed = JSON.parse(value) as Partial<BookDashboardState>;
     const defaults = createDefaultState(seed);
-    const recentBooks = Array.isArray(parsed.recentBooks) && parsed.recentBooks.length
-      ? parsed.recentBooks
-      : defaults.recentBooks;
+    const recentBooks =
+      Array.isArray(parsed.recentBooks) && parsed.recentBooks.length
+        ? parsed.recentBooks.filter(
+            (book): book is RecentBookProgress =>
+              typeof book?.bookId === "string" && AVAILABLE_BOOK_IDS.has(book.bookId)
+          )
+        : defaults.recentBooks;
+    const normalizedRecentBooks = recentBooks.length ? recentBooks : defaults.recentBooks;
 
-    const fallbackCurrent = recentBooks[0]?.bookId || defaults.currentBookId;
+    const fallbackCurrent = normalizedRecentBooks[0]?.bookId || defaults.currentBookId;
     const currentBookId =
-      typeof parsed.currentBookId === "string" && parsed.currentBookId.trim()
+      typeof parsed.currentBookId === "string" &&
+      parsed.currentBookId.trim() &&
+      AVAILABLE_BOOK_IDS.has(parsed.currentBookId)
         ? parsed.currentBookId
         : fallbackCurrent;
 
     return {
       ...defaults,
       ...parsed,
-      streakDays: clampNonNegative(Number(parsed.streakDays ?? defaults.streakDays)),
-      minutesReadToday: clampNonNegative(
-        Number(parsed.minutesReadToday ?? defaults.minutesReadToday)
-      ),
       currentBookId,
-      recentBooks,
+      recentBooks: normalizedRecentBooks,
       todaySession:
         Array.isArray(parsed.todaySession) && parsed.todaySession.length
           ? parsed.todaySession
@@ -84,27 +81,33 @@ function parseStored(value: string | null, seed: DashboardSeed): BookDashboardSt
 }
 
 export function useBookState(seed: DashboardSeed) {
-  const seedKey = useMemo(
-    () => `${seed.selectedBookIds.join("|")}::${seed.dailyGoalMinutes}`,
+  const stableSeed = useMemo(
+    () => ({
+      selectedBookIds: [...seed.selectedBookIds],
+      dailyGoalMinutes: seed.dailyGoalMinutes,
+    }),
     [seed.dailyGoalMinutes, seed.selectedBookIds]
   );
 
   const [hydrated, setHydrated] = useState(false);
-  const [state, setState] = useState<BookDashboardState>(() => createDefaultState(seed));
+  const [state, setState] = useState<BookDashboardState>(() =>
+    createDefaultState(stableSeed)
+  );
 
   useEffect(() => {
-    const stored = parseStored(window.localStorage.getItem(STORAGE_KEY), seed);
+    const stored = parseStored(window.localStorage.getItem(STORAGE_KEY), stableSeed);
     if (stored) {
       setState(stored);
     } else {
-      setState(createDefaultState(seed));
+      setState(createDefaultState(stableSeed));
     }
     setHydrated(true);
-  }, [seedKey]);
+  }, [stableSeed]);
 
   useEffect(() => {
     if (!hydrated) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    emitBookStorageChanged("dashboard");
   }, [hydrated, state]);
 
   useEffect(() => {
@@ -117,13 +120,6 @@ export function useBookState(seed: DashboardSeed) {
 
   const setSearchQuery = useCallback((searchQuery: string) => {
     setState((prev) => ({ ...prev, searchQuery }));
-  }, []);
-
-  const addReadMinutes = useCallback((minutes: number) => {
-    setState((prev) => ({
-      ...prev,
-      minutesReadToday: clampNonNegative(prev.minutesReadToday + minutes),
-    }));
   }, []);
 
   const setCurrentBookId = useCallback((currentBookId: string) => {
@@ -147,7 +143,6 @@ export function useBookState(seed: DashboardSeed) {
     state,
     hydrated,
     setSearchQuery,
-    addReadMinutes,
     setCurrentBookId,
     toggleSessionTask,
     dismissMobileCta,

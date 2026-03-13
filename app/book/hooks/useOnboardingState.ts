@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BOOKS_CATALOG } from "@/app/book/data/booksCatalog";
 
 export type LearningStyle = "concise" | "balanced" | "deep";
 export type QuizIntensity = "easy" | "standard" | "challenging";
@@ -27,8 +28,9 @@ export type BookOnboardingState = {
 };
 
 const MAX_STEPS = 5;
-const MAX_BOOK_SELECTION = 3;
-const STORAGE_KEY = "book-accelerator:onboarding:v1";
+const MAX_BOOK_SELECTION = Math.max(1, BOOKS_CATALOG.length);
+const STORAGE_KEY = "book-accelerator:onboarding:v2";
+const AVAILABLE_BOOK_IDS = new Set(BOOKS_CATALOG.map((book) => book.id));
 
 const defaultState: BookOnboardingState = {
   currentStep: 0,
@@ -65,7 +67,12 @@ function parseStoredState(value: string | null): BookOnboardingState | null {
         Number(parsed.dailyGoalMinutes ?? defaultState.dailyGoalMinutes)
       ),
       selectedBookIds: Array.isArray(parsed.selectedBookIds)
-        ? parsed.selectedBookIds.slice(0, MAX_BOOK_SELECTION)
+        ? parsed.selectedBookIds
+            .filter(
+              (bookId): bookId is string =>
+                typeof bookId === "string" && AVAILABLE_BOOK_IDS.has(bookId)
+            )
+            .slice(0, MAX_BOOK_SELECTION)
         : [],
     };
   } catch {
@@ -186,4 +193,3 @@ export function useOnboardingState() {
     resetSetup,
   };
 }
-

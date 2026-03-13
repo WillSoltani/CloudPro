@@ -21,7 +21,7 @@ const DEFAULT_LAST_ACTIVITY = "1970-01-01T00:00:00.000Z";
 function initialChaptersTotal(book: BookCatalogItem): number {
   const bundleSize = getBookChaptersBundle(book.id).chapters.length;
   if (bundleSize > 0) return bundleSize;
-  return Math.max(8, Math.round(book.estimatedMinutes / 18));
+  return Math.max(1, Math.round(book.estimatedMinutes / 15));
 }
 
 export function buildLibraryCatalog(): LibraryBookEntry[] {
@@ -40,33 +40,21 @@ export function getLibraryBookById(bookId: string): LibraryBookEntry | undefined
   return buildLibraryCatalog().find((entry) => entry.id === bookId);
 }
 
-export const LIBRARY_CATEGORY_OPTIONS = [
-  "All",
-  "Productivity",
-  "Business",
-  "Psychology",
-  "History",
-  "Philosophy",
-  "Tech",
-] as const;
+const derivedCategories = Array.from(new Set(BOOKS_CATALOG.map((book) => book.category)));
+const derivedDifficulties = Array.from(new Set(BOOKS_CATALOG.map((book) => book.difficulty)));
 
-export const LIBRARY_DIFFICULTY_OPTIONS = [
-  "All",
-  "Easy",
-  "Medium",
-  "Hard",
-] as const;
-
-export const LIBRARY_STATUS_OPTIONS = [
+export const LIBRARY_CATEGORY_OPTIONS: string[] = ["All", ...derivedCategories];
+export const LIBRARY_DIFFICULTY_OPTIONS: string[] = ["All", ...derivedDifficulties];
+export const LIBRARY_STATUS_OPTIONS: string[] = [
   "All",
   "In Progress",
   "Completed",
   "Not Started",
-] as const;
+];
 
-export type LibraryCategoryFilter = (typeof LIBRARY_CATEGORY_OPTIONS)[number];
-export type LibraryDifficultyFilter = (typeof LIBRARY_DIFFICULTY_OPTIONS)[number];
-export type LibraryStatusFilter = (typeof LIBRARY_STATUS_OPTIONS)[number];
+export type LibraryCategoryFilter = string;
+export type LibraryDifficultyFilter = string;
+export type LibraryStatusFilter = string;
 
 export type LibrarySortOption =
   | "most_recent"

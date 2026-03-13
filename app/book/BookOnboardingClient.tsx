@@ -26,7 +26,7 @@ import {
 } from "@/app/book/hooks/useOnboardingState";
 
 const TOTAL_STEPS = 5;
-const MAX_BOOKS = 3;
+const MAX_BOOKS = 1;
 
 const pronounOptions: PronounOption[] = [
   "Prefer not to say",
@@ -70,9 +70,9 @@ const stepContent = [
     subtitle: "Tell us your name so we can tailor your first reading path.",
   },
   {
-    title: "Pick your first books",
+    title: "Pick your first book",
     subtitle:
-      "Choose 3 books to shape your recommendations. You can change this anytime later.",
+      "Choose your starting book. You can add more titles later as the library grows.",
   },
   {
     title: "Set your daily goal",
@@ -130,7 +130,7 @@ function HowItWorksRow({
   description: string;
 }) {
   return (
-    <li className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
+    <li className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/3 p-3.5">
       <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-sky-300/25 bg-sky-500/15 text-sky-200">
         {icon}
       </span>
@@ -164,7 +164,7 @@ export function BookOnboardingClient() {
   useEffect(() => {
     if (!hydrated) return;
     if (state.setupComplete) {
-      router.replace("/book/home");
+      router.replace("/book/workspace");
     }
   }, [hydrated, router, state.setupComplete]);
 
@@ -186,7 +186,7 @@ export function BookOnboardingClient() {
     if (!canContinue) return;
     if (step === TOTAL_STEPS - 1) {
       completeSetup();
-      router.push("/book/home");
+      router.push("/book/workspace");
       return;
     }
     goNextStep();
@@ -201,7 +201,7 @@ export function BookOnboardingClient() {
         <button
           type="button"
           onClick={handleContinue}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-400 px-5 py-3.5 text-lg font-semibold text-white shadow-[0_10px_30px_rgba(14,165,233,0.38)] transition hover:brightness-105 active:translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/55"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-linear-to-r from-sky-500 to-cyan-400 px-5 py-3.5 text-lg font-semibold text-white shadow-[0_10px_30px_rgba(14,165,233,0.38)] transition hover:brightness-105 active:translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/55"
         >
           Get Started
           <ArrowRight className="h-5 w-5" />
@@ -224,8 +224,8 @@ export function BookOnboardingClient() {
           className={[
             "inline-flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-3 text-lg font-semibold transition focus-visible:outline-none focus-visible:ring-2",
             step === TOTAL_STEPS - 1
-              ? "bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-900 shadow-[0_12px_28px_rgba(250,204,21,0.38)] focus-visible:ring-amber-300/60"
-              : "bg-gradient-to-r from-sky-500 to-cyan-400 text-white shadow-[0_12px_28px_rgba(14,165,233,0.35)] focus-visible:ring-sky-300/60",
+              ? "bg-linear-to-r from-amber-400 to-yellow-300 text-slate-900 shadow-[0_12px_28px_rgba(250,204,21,0.38)] focus-visible:ring-amber-300/60"
+              : "bg-linear-to-r from-sky-500 to-cyan-400 text-white shadow-[0_12px_28px_rgba(14,165,233,0.35)] focus-visible:ring-sky-300/60",
             canContinue
               ? "hover:brightness-105 active:translate-y-0.5"
               : "cursor-not-allowed opacity-45",
@@ -250,7 +250,7 @@ export function BookOnboardingClient() {
       actions={actions}
     >
       {!hydrated ? (
-        <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-8 text-center text-slate-300">
+        <div className="rounded-3xl border border-white/10 bg-white/3 p-8 text-center text-slate-300">
           Loading your onboarding setup...
         </div>
       ) : (
@@ -264,7 +264,7 @@ export function BookOnboardingClient() {
           >
             {step === 0 ? (
               <div className="mx-auto max-w-4xl space-y-5">
-                <div className="mx-auto inline-flex h-24 w-24 items-center justify-center rounded-[28px] border border-sky-300/35 bg-gradient-to-b from-sky-400/30 to-cyan-500/25 text-sky-100 shadow-[0_0_35px_rgba(56,189,248,0.28)]">
+                <div className="mx-auto inline-flex h-24 w-24 items-center justify-center rounded-[28px] border border-sky-300/35 bg-linear-to-b from-sky-400/30 to-cyan-500/25 text-sky-100 shadow-[0_0_35px_rgba(56,189,248,0.28)]">
                   <BookOpen className="h-10 w-10" />
                 </div>
 
@@ -336,7 +336,7 @@ export function BookOnboardingClient() {
                   <span className="font-semibold">
                     {state.name.trim() || "there"}
                   </span>
-                  . Let's set up your first books.
+                  . Let&apos;s set up your first book.
                 </div>
               </div>
             ) : null}
@@ -348,7 +348,7 @@ export function BookOnboardingClient() {
                     {selectedCount}/{MAX_BOOKS} selected
                   </p>
                   <p className="text-sm text-slate-400">
-                    We'll use your picks to tailor categories and daily examples.
+                    Start with this book and unlock the rest of the experience chapter by chapter.
                   </p>
                 </div>
 
@@ -378,7 +378,7 @@ export function BookOnboardingClient() {
                   <span className="font-semibold text-amber-200">
                     {formatMinutesLabel(state.dailyGoalMinutes)}
                   </span>{" "}
-                  per day, you'll finish a typical book in about{" "}
+                  per day, you&apos;ll finish a typical book in about{" "}
                   <span className="font-semibold text-slate-100">
                     {estimateSessions(state.dailyGoalMinutes)} sessions
                   </span>
@@ -435,7 +435,7 @@ export function BookOnboardingClient() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/3 px-4 py-3">
                   <div>
                     <p className="text-sm font-medium text-slate-200">Track streaks</p>
                     <p className="text-sm text-slate-400">
@@ -482,4 +482,3 @@ export function BookOnboardingClient() {
     </OnboardingShell>
   );
 }
-

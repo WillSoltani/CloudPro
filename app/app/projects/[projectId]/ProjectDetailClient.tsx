@@ -559,7 +559,7 @@ export default function ProjectDetailClient({ projectId, initialFiles, guestMode
               </p>
               {quota.exhausted ? (
                 <p className="mt-1 text-xs text-amber-200/90">
-                  You've reached your conversion limit.{" "}
+                  You&apos;ve reached your conversion limit.{" "}
                   {quota.scope === "guest"
                     ? "Sign in to get 10 conversions."
                     : "Contact an admin to request a higher limit."}

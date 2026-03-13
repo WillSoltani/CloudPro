@@ -62,6 +62,7 @@ const VARIANT_CONTENT_KEYS = new Set([
   "importantSummary",
   "takeaways",
   "keyTakeaways",
+  "practice",
 ]);
 const EMH_VARIANTS: VariantKey[] = ["easy", "medium", "hard"];
 const PBC_VARIANTS: VariantKey[] = ["precise", "balanced", "challenging"];
@@ -336,6 +337,12 @@ function parseChapter(chapterRaw: unknown, path: string, issues: ValidationIssue
         }`,
         issues,
         { minItems: 1, maxItems: 15, itemMax: 500 }
+      ),
+      practice: readStringArray(
+        variantValue.practice,
+        `${path}.contentVariants.${variantKey}.practice`,
+        issues,
+        { optional: true, minItems: 0, maxItems: 15, itemMax: 500 }
       ),
     };
   }

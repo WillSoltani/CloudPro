@@ -1,5 +1,6 @@
 "use client";
 
+import { Lock } from "lucide-react";
 import type { BadgeItem } from "@/app/book/data/mockProgress";
 
 type BadgeStripProps = {
@@ -8,27 +9,45 @@ type BadgeStripProps = {
 };
 
 export function BadgeStrip({ badges, onSelectBadge }: BadgeStripProps) {
+  const earnedCount = badges.filter((b) => b.earned).length;
+
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2">
-      {badges.map((badge) => (
-        <button
-          key={badge.id}
-          type="button"
-          onClick={() => onSelectBadge(badge)}
-          className={[
-            "min-w-[160px] rounded-2xl border px-3 py-3 text-left transition duration-200",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/45",
-            badge.earned
-              ? "border-amber-300/40 bg-amber-300/12 text-amber-100 hover:-translate-y-0.5 hover:shadow-[0_10px_25px_rgba(251,191,36,0.22)]"
-              : "border-white/12 bg-white/[0.03] text-slate-400 hover:border-white/25",
-          ].join(" ")}
-          aria-label={`Open badge details for ${badge.name}`}
-        >
-          <p className="text-2xl">{badge.icon}</p>
-          <p className="mt-2 text-sm font-semibold">{badge.name}</p>
-          <p className="mt-1 text-xs">{badge.earned ? "Earned" : "Locked"}</p>
-        </button>
-      ))}
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500">
+        {earnedCount} of {badges.length} earned
+      </p>
+      <div className="flex gap-2.5 overflow-x-auto pb-2">
+        {badges.map((badge) => (
+          <button
+            key={badge.id}
+            type="button"
+            onClick={() => onSelectBadge(badge)}
+            className={[
+              "group relative min-w-32.5 rounded-2xl border px-3.5 py-3.5 text-left transition duration-200",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/45",
+              badge.earned
+                ? "border-amber-300/35 bg-[linear-gradient(140deg,rgba(251,191,36,0.14),rgba(251,191,36,0.06))] text-amber-100 shadow-[0_4px_16px_rgba(251,191,36,0.10)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(251,191,36,0.24)]"
+                : "border-white/8 bg-white/3 text-slate-500 hover:border-white/16 hover:bg-white/5",
+            ].join(" ")}
+            aria-label={`${badge.name} — ${badge.earned ? "Earned" : "Locked"}`}
+          >
+            {/* Lock overlay */}
+            {!badge.earned && (
+              <span className="absolute right-2.5 top-2.5 opacity-40">
+                <Lock className="h-3 w-3" />
+              </span>
+            )}
+
+            <p className={["text-2xl", !badge.earned && "opacity-40 grayscale"].join(" ")}>
+              {badge.icon}
+            </p>
+            <p className="mt-2 text-xs font-semibold leading-snug">{badge.name}</p>
+            <p className={["mt-0.5 text-[10px]", badge.earned ? "text-amber-300/80" : "text-slate-600"].join(" ")}>
+              {badge.earned ? "Earned" : "Locked"}
+            </p>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

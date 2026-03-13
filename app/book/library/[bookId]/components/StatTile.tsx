@@ -14,7 +14,7 @@ const accentClass: Record<NonNullable<StatTileProps["accent"]>, string> = {
 
 export function StatTile({ label, value, accent = "sky" }: StatTileProps) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-4 text-center">
+    <div className="rounded-2xl border border-white/10 bg-white/4 px-3 py-4 text-center">
       <p className={["text-4xl font-semibold tracking-tight", accentClass[accent]].join(" ")}>
         {value}
       </p>

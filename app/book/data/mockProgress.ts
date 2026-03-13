@@ -8,6 +8,7 @@ export type RecentBookProgress = {
   status: BookStatus;
   progressPercent: number;
   chapter: number;
+  resumeChapterId: string;
   totalChapters: number;
   lastOpenedAt: string;
 };
@@ -33,9 +34,9 @@ export type DailyInsight = {
 };
 
 export const QUICK_REVIEW_PROMPTS = [
-  "What is the main idea of your current chapter?",
-  "Name one practical example you can apply today.",
-  "Which concept from yesterday still feels fuzzy?",
+  "What one social habit from this chapter can you use today?",
+  "Which example feels most realistic for your current week?",
+  "What follow-up question would make your next conversation better?",
 ];
 
 export function buildRecentBooks(selectedBookIds: string[]): RecentBookProgress[] {
@@ -46,12 +47,14 @@ export function buildRecentBooks(selectedBookIds: string[]): RecentBookProgress[
   const ordered = [...selected, ...fallback].slice(0, 5);
 
   return ordered.map((bookId) => {
-    const totalChapters = Math.max(1, getBookChaptersBundle(bookId).chapters.length);
+    const chapters = getBookChaptersBundle(bookId).chapters;
+    const totalChapters = Math.max(1, chapters.length);
     return {
       bookId,
       status: "not_started",
       progressPercent: 0,
       chapter: 1,
+      resumeChapterId: chapters[0]?.id ?? "",
       totalChapters,
       lastOpenedAt: "Not started",
     };
@@ -96,7 +99,7 @@ export function buildBadges(streakDays: number): BadgeItem[] {
       name: "First Chapter",
       description: "Finish your first chapter summary and quiz.",
       icon: "📘",
-      earned: true,
+      earned: false,
     },
     {
       id: "7-day-streak",
@@ -110,7 +113,7 @@ export function buildBadges(streakDays: number): BadgeItem[] {
       name: "First Book",
       description: "Complete your first book from start to finish.",
       icon: "🏁",
-      earned: true,
+      earned: false,
     },
     {
       id: "perfect-score",
@@ -138,8 +141,8 @@ export function buildBadges(streakDays: number): BadgeItem[] {
 
 export function buildDailyInsight(bookTitle: string): DailyInsight {
   return {
-    takeaway: `Today's takeaway from ${bookTitle}: Focus beats intensity when repeated daily.`,
+    takeaway: `Today's takeaway from ${bookTitle}: low-pressure repetition builds social confidence faster than trying to perform perfectly.`,
     action:
-      "Try one uninterrupted 25-minute reading sprint before your first meeting.",
+      "Try one simple context opener today, then stay on the same topic with a real follow-up question.",
   };
 }

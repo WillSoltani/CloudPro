@@ -46,7 +46,7 @@ export function BookSectionPlaceholder({
 
       <section className="mx-auto w-full max-w-6xl px-4 pb-20 pt-8 sm:px-6">
         <Link
-          href="/book/home"
+          href="/book/workspace"
           className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/6 px-3 py-1.5 text-sm text-slate-300 transition hover:bg-white/10 hover:text-slate-100"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -64,4 +64,3 @@ export function BookSectionPlaceholder({
     </main>
   );
 }
-

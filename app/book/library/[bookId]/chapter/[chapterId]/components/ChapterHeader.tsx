@@ -36,56 +36,73 @@ export function ChapterHeader({
   fontScale,
   onChangeFontScale,
 }: ChapterHeaderProps) {
+  const progressPercent = Math.round((chapterOrder / totalChapters) * 100);
+
   return (
-    <header className="space-y-5">
-      <div className="flex flex-col gap-3 border-b border-white/10 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-2 text-sm text-slate-400">
-          <Link href={`/book/library/${encodeURIComponent(bookId)}`} className="inline-flex items-center gap-1 text-slate-300 hover:text-slate-100">
-            <ArrowLeft className="h-4 w-4" />
+    <header className="space-y-4">
+      {/* Nav bar */}
+      <div className="flex flex-col gap-3 border-b border-white/8 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-1.5 text-sm">
+          <Link
+            href={`/book/library/${encodeURIComponent(bookId)}`}
+            className="inline-flex items-center gap-1 rounded-lg border border-white/12 bg-white/4 px-2.5 py-1 text-slate-300 transition hover:bg-white/8 hover:text-slate-100"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
             Back
           </Link>
-          <span>Library</span>
-          <span>›</span>
-          <span>{bookTitle}</span>
-          <span>›</span>
-          <span className="truncate text-slate-100">{chapterLabel}</span>
+          <span className="text-slate-600">/</span>
+          <span className="hidden truncate text-slate-500 sm:inline">{bookTitle}</span>
+          <span className="hidden text-slate-600 sm:inline">/</span>
+          <span className="truncate text-slate-300">{chapterLabel}</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <p className="mr-1 text-sm text-slate-400">
-            {chapterOrder} / {totalChapters}
-          </p>
+          {/* Chapter progress */}
+          <div className="flex items-center gap-2">
+            <div className="hidden h-1 w-20 overflow-hidden rounded-full bg-slate-800 sm:block">
+              <div
+                className="h-full rounded-full bg-sky-500/60 transition-[width] duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            <span className="text-xs text-slate-500">{chapterOrder}/{totalChapters}</span>
+          </div>
+
           <button
             type="button"
             onClick={onToggleFocus}
             className={[
-              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-sm transition",
+              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition",
               focusMode
-                ? "border-sky-300/45 bg-sky-500/16 text-sky-100"
-                : "border-white/25 bg-white/6 text-slate-200 hover:bg-white/10",
+                ? "border-sky-300/40 bg-sky-500/16 text-sky-100"
+                : "border-white/15 bg-white/5 text-slate-300 hover:bg-white/8 hover:text-slate-100",
             ].join(" ")}
           >
-            <Focus className="h-4 w-4" />
+            <Focus className="h-3.5 w-3.5" />
             Focus
           </button>
           <button
             type="button"
             onClick={onOpenNotes}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300/35 bg-amber-500/14 px-3 py-1.5 text-sm text-amber-100"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300/30 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200 transition hover:bg-amber-500/16"
           >
-            <NotebookPen className="h-4 w-4" />
+            <NotebookPen className="h-3.5 w-3.5" />
             Notes
           </button>
           <FontSizeControls value={fontScale} onChange={onChangeFontScale} />
         </div>
       </div>
 
-      <div className="space-y-2">
-        <h1 className="text-5xl font-semibold tracking-tight text-slate-50 sm:text-6xl">{chapterLabel}: {chapterTitle}</h1>
-        <p className="flex flex-wrap items-center gap-2 text-2xl text-slate-400">
-          <BookOpen className="h-4 w-4" />
-          {bookTitle} · {author} · {minutes} min read
+      {/* Title block */}
+      <div>
+        <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-sky-400/80">
+          <BookOpen className="h-3.5 w-3.5" />
+          {bookTitle} · {author}
         </p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
+          {chapterLabel}: {chapterTitle}
+        </h1>
+        <p className="mt-1.5 text-sm text-slate-500">{minutes} min read</p>
       </div>
     </header>
   );

@@ -18,7 +18,7 @@ type LibraryFilterState = {
   sort: LibrarySortOption;
 };
 
-const STORAGE_KEY = "book-accelerator:library-filters:v1";
+const STORAGE_KEY = "book-accelerator:library-filters:v2";
 
 const defaultFilters: LibraryFilterState = {
   searchQuery: "",

@@ -6,19 +6,24 @@ import {
   buildLibraryCatalog,
   type LibraryBookEntry,
 } from "@/app/book/data/mockUserLibraryState";
+import { BOOK_STORAGE_EVENT } from "@/app/book/hooks/bookStorageEvents";
 
 type StoredBookProgress = {
   currentChapterId: string;
   completedChapterIds: string[];
   unlockedChapterIds: string[];
   chapterScores: Record<string, number>;
-  streakDays: number;
+  chapterCompletedAt: Record<string, string>;
   lastReadChapterId: string;
+  lastOpenedAt: string;
 };
 
-type DashboardSnapshot = {
-  streakDays: number;
-  minutesReadToday: number;
+type CompletionActivity = {
+  bookId: string;
+  chapterId: string;
+  completedAt: string;
+  minutes: number;
+  dayKey: string;
 };
 
 export type BookProgressSnapshot = {
@@ -30,6 +35,7 @@ export type BookProgressSnapshot = {
   bestScore: number;
   avgScore: number;
   lastOpenedLabel: string;
+  lastActivityAt: string;
   resumeChapterId: string;
 };
 
@@ -57,41 +63,52 @@ export type AnalyticsState = {
   maxQuizScore: number;
   totalCompletedChapters: number;
   longestStreak: number;
+  lastActiveLabel: string;
   bookSnapshots: BookProgressSnapshot[];
   heatmapCells: HeatmapCell[];
   upcomingReviews: UpcomingReviewItem[];
   hasAnyProgress: boolean;
 };
 
-const DASHBOARD_KEY = "book-accelerator:dashboard:v1";
-const PROGRESS_PREFIX = "book-accelerator:book-progress:v2:";
+const PROGRESS_PREFIX = "book-accelerator:book-progress:v3:";
+const EMPTY_ACTIVITY_LABEL = "No activity yet";
 
-function parseDashboard(raw: string | null): DashboardSnapshot {
-  if (!raw) {
-    return {
-      streakDays: 0,
-      minutesReadToday: 0,
-    };
-  }
+function isValidTimestamp(value: string): boolean {
+  return Number.isFinite(new Date(value).getTime());
+}
 
-  try {
-    const parsed = JSON.parse(raw) as Partial<DashboardSnapshot>;
-    return {
-      streakDays:
-        Number.isFinite(Number(parsed.streakDays)) && Number(parsed.streakDays) >= 0
-          ? Math.floor(Number(parsed.streakDays))
-          : 0,
-      minutesReadToday:
-        Number.isFinite(Number(parsed.minutesReadToday)) && Number(parsed.minutesReadToday) >= 0
-          ? Math.floor(Number(parsed.minutesReadToday))
-          : 0,
-    };
-  } catch {
-    return {
-      streakDays: 0,
-      minutesReadToday: 0,
-    };
-  }
+function toDayKey(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function dayKeyToDate(dayKey: string): Date {
+  return new Date(`${dayKey}T12:00:00`);
+}
+
+function previousDayKey(dayKey: string): string {
+  const date = dayKeyToDate(dayKey);
+  date.setDate(date.getDate() - 1);
+  return toDayKey(date);
+}
+
+function formatDayLabel(dayKey: string): string {
+  return dayKeyToDate(dayKey).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatRelativeDayLabel(dayKey: string | null): string {
+  if (!dayKey) return EMPTY_ACTIVITY_LABEL;
+  const today = toDayKey(new Date());
+  if (dayKey === today) return "Today";
+  if (dayKey === previousDayKey(today)) return "Yesterday";
+  return formatDayLabel(dayKey);
 }
 
 function parseBookProgress(raw: string | null): StoredBookProgress | null {
@@ -102,10 +119,14 @@ function parseBookProgress(raw: string | null): StoredBookProgress | null {
       currentChapterId:
         typeof parsed.currentChapterId === "string" ? parsed.currentChapterId : "",
       completedChapterIds: Array.isArray(parsed.completedChapterIds)
-        ? parsed.completedChapterIds.filter((value): value is string => typeof value === "string")
+        ? parsed.completedChapterIds.filter(
+            (value): value is string => typeof value === "string"
+          )
         : [],
       unlockedChapterIds: Array.isArray(parsed.unlockedChapterIds)
-        ? parsed.unlockedChapterIds.filter((value): value is string => typeof value === "string")
+        ? parsed.unlockedChapterIds.filter(
+            (value): value is string => typeof value === "string"
+          )
         : [],
       chapterScores:
         parsed.chapterScores && typeof parsed.chapterScores === "object"
@@ -116,12 +137,24 @@ function parseBookProgress(raw: string | null): StoredBookProgress | null {
               )
             )
           : {},
-      streakDays:
-        Number.isFinite(Number(parsed.streakDays)) && Number(parsed.streakDays) >= 0
-          ? Math.floor(Number(parsed.streakDays))
-          : 0,
+      chapterCompletedAt:
+        parsed.chapterCompletedAt && typeof parsed.chapterCompletedAt === "object"
+          ? Object.fromEntries(
+              Object.entries(parsed.chapterCompletedAt).filter(
+                ([chapterId, completedAt]) =>
+                  typeof chapterId === "string" &&
+                  typeof completedAt === "string" &&
+                  completedAt.trim() &&
+                  isValidTimestamp(completedAt)
+              )
+            )
+          : {},
       lastReadChapterId:
         typeof parsed.lastReadChapterId === "string" ? parsed.lastReadChapterId : "",
+      lastOpenedAt:
+        typeof parsed.lastOpenedAt === "string" && parsed.lastOpenedAt.trim()
+          ? parsed.lastOpenedAt
+          : new Date(0).toISOString(),
     };
   } catch {
     return null;
@@ -130,61 +163,78 @@ function parseBookProgress(raw: string | null): StoredBookProgress | null {
 
 function chapterLabelById(bookId: string, chapterId: string): string {
   if (!chapterId) return "Not started";
-  const chapter = getBookChaptersBundle(bookId).chapters.find((item) => item.id === chapterId);
+  const chapter = getBookChaptersBundle(bookId).chapters.find(
+    (item) => item.id === chapterId
+  );
   if (!chapter) return "Not started";
   return `${chapter.code} ${chapter.title}`;
 }
 
-function statusFromCounts(completed: number, total: number): "completed" | "in_progress" | "not_started" {
+function statusFromCounts(
+  completed: number,
+  total: number
+): "completed" | "in_progress" | "not_started" {
   if (total > 0 && completed >= total) return "completed";
   if (completed > 0) return "in_progress";
   return "not_started";
 }
 
-function generateHeatmap(
-  totalCompletedChapters: number,
-  streakDays: number,
-  minutesReadToday: number
+function buildActivities(
+  bookId: string,
+  chapterCompletedAt: Record<string, string>
+): CompletionActivity[] {
+  const chapters = getBookChaptersBundle(bookId).chapters;
+  const chapterMap = new Map(chapters.map((chapter) => [chapter.id, chapter]));
+
+  return Object.entries(chapterCompletedAt)
+    .map(([chapterId, completedAt]) => {
+      const chapter = chapterMap.get(chapterId);
+      if (!chapter) return null;
+      const dayKey = toDayKey(completedAt);
+      if (!dayKey) return null;
+      return {
+        bookId,
+        chapterId,
+        completedAt,
+        minutes: chapter.minutes,
+        dayKey,
+      };
+    })
+    .filter((activity): activity is CompletionActivity => Boolean(activity));
+}
+
+function buildHeatmap(
+  activityByDay: Map<string, { minutes: number; chapters: number }>
 ): HeatmapCell[] {
-  const now = new Date();
-  const days = 84;
   const cells: HeatmapCell[] = [];
-  const noProgress =
-    totalCompletedChapters <= 0 && streakDays <= 0 && minutesReadToday <= 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  for (let index = days - 1; index >= 0; index -= 1) {
-    const date = new Date(now);
-    date.setHours(0, 0, 0, 0);
-    date.setDate(now.getDate() - index);
-
-    const seed = (index * 37 + totalCompletedChapters * 11 + streakDays * 13) % 100;
-    let minutes = 0;
-
-    if (noProgress) {
-      minutes = 0;
-    } else if (index === 0) {
-      minutes = minutesReadToday;
-    } else if (index < streakDays) {
-      minutes = 12 + (seed % 54);
-    } else if (seed > 78) {
-      minutes = 15 + (seed % 40);
-    } else if (seed > 62) {
-      minutes = 5 + (seed % 20);
-    }
-
-    const chapters = minutes > 35 ? 2 : minutes > 0 ? 1 : 0;
+  for (let offset = 83; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - offset);
+    const dayKey = toDayKey(date);
+    const stats = activityByDay.get(dayKey) ?? { minutes: 0, chapters: 0 };
 
     const level =
-      minutes === 0 ? 0 : minutes < 15 ? 1 : minutes < 30 ? 2 : minutes < 50 ? 3 : 4;
+      stats.minutes <= 0
+        ? 0
+        : stats.minutes < 15
+          ? 1
+          : stats.minutes < 30
+            ? 2
+            : stats.minutes < 50
+              ? 3
+              : 4;
 
     cells.push({
-      key: date.toISOString(),
+      key: dayKey,
       dateLabel: date.toLocaleDateString(undefined, {
         month: "short",
         day: "numeric",
       }),
-      minutes,
-      chapters,
+      minutes: stats.minutes,
+      chapters: stats.chapters,
       level,
     });
   }
@@ -192,9 +242,44 @@ function generateHeatmap(
   return cells;
 }
 
+function calculateCurrentStreak(activityDays: Set<string>): number {
+  if (activityDays.size === 0) return 0;
+
+  let cursor = toDayKey(new Date());
+  let streak = 0;
+
+  while (activityDays.has(cursor)) {
+    streak += 1;
+    cursor = previousDayKey(cursor);
+  }
+
+  return streak;
+}
+
+function calculateLongestStreak(dayKeys: string[]): number {
+  if (!dayKeys.length) return 0;
+
+  let longest = 1;
+  let current = 1;
+
+  for (let index = 1; index < dayKeys.length; index += 1) {
+    const previous = dayKeys[index - 1];
+    const currentDay = dayKeys[index];
+    if (previousDayKey(currentDay) === previous) {
+      current += 1;
+      longest = Math.max(longest, current);
+    } else {
+      current = 1;
+    }
+  }
+
+  return longest;
+}
+
 export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: number) {
   const [hydrated, setHydrated] = useState(false);
   const [analytics, setAnalytics] = useState<AnalyticsState | null>(null);
+  const [revision, setRevision] = useState(0);
 
   const seedKey = useMemo(
     () => `${selectedBookIds.join("|")}::${dailyGoalMinutes}`,
@@ -202,30 +287,49 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
   );
 
   useEffect(() => {
-    const dashboard = parseDashboard(window.localStorage.getItem(DASHBOARD_KEY));
+    function onStorageChange() {
+      setRevision((value) => value + 1);
+    }
+
+    window.addEventListener(BOOK_STORAGE_EVENT, onStorageChange as EventListener);
+    window.addEventListener("storage", onStorageChange);
+    window.addEventListener("focus", onStorageChange);
+    return () => {
+      window.removeEventListener(BOOK_STORAGE_EVENT, onStorageChange as EventListener);
+      window.removeEventListener("storage", onStorageChange);
+      window.removeEventListener("focus", onStorageChange);
+    };
+  }, []);
+
+  useEffect(() => {
     const entries = buildLibraryCatalog();
+    const allActivities: CompletionActivity[] = [];
 
     const bookSnapshots = entries.map((entry): BookProgressSnapshot => {
+      const chaptersBundle = getBookChaptersBundle(entry.id);
+      const chapters = chaptersBundle.chapters;
+      const totalChapters = chapters.length || entry.chaptersTotal;
       const stored = parseBookProgress(
         window.localStorage.getItem(`${PROGRESS_PREFIX}${entry.id}`)
       );
 
-      const totalChapters = getBookChaptersBundle(entry.id).chapters.length || entry.chaptersTotal;
-
       if (!stored) {
-        const status: BookProgressSnapshot["status"] = "not_started";
         return {
           book: entry,
-          status,
+          status: "not_started",
           completedChapters: 0,
           totalChapters,
           progressPercent: 0,
           bestScore: 0,
           avgScore: 0,
           lastOpenedLabel: "Not started",
-          resumeChapterId: "ch-01",
+          lastActivityAt: entry.lastActivityAt,
+          resumeChapterId: chapters[0]?.id ?? "",
         };
       }
+
+      const activities = buildActivities(entry.id, stored.chapterCompletedAt);
+      allActivities.push(...activities);
 
       const completedChapters = new Set(stored.completedChapterIds).size;
       const status = statusFromCounts(completedChapters, totalChapters);
@@ -239,9 +343,21 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
         ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length)
         : 0;
 
-      const resumeChapterId =
-        stored.currentChapterId ||
-        `ch-${String(Math.min(completedChapters + 1, totalChapters)).padStart(2, "0")}`;
+      const resumeChapterId = stored.currentChapterId || chapters[0]?.id || "";
+
+      const latestCompletionAt = activities
+        .map((activity) => activity.completedAt)
+        .sort()
+        .at(-1);
+
+      const lastActivityAt =
+        [stored.lastOpenedAt, latestCompletionAt]
+          .filter(
+            (value): value is string =>
+              typeof value === "string" && value.length > 0 && isValidTimestamp(value)
+          )
+          .sort()
+          .at(-1) ?? entry.lastActivityAt;
 
       return {
         book: entry,
@@ -251,10 +367,27 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
         progressPercent,
         bestScore,
         avgScore,
-        lastOpenedLabel: chapterLabelById(entry.id, stored.lastReadChapterId),
+        lastOpenedLabel:
+          stored.lastReadChapterId && stored.lastOpenedAt !== new Date(0).toISOString()
+            ? chapterLabelById(entry.id, stored.lastReadChapterId)
+            : "Not started",
+        lastActivityAt,
         resumeChapterId,
       };
     });
+
+    const activityByDay = new Map<string, { minutes: number; chapters: number }>();
+    for (const activity of allActivities) {
+      const current = activityByDay.get(activity.dayKey) ?? { minutes: 0, chapters: 0 };
+      activityByDay.set(activity.dayKey, {
+        minutes: current.minutes + activity.minutes,
+        chapters: current.chapters + 1,
+      });
+    }
+
+    const activityDays = Array.from(activityByDay.keys()).sort();
+    const todayKey = toDayKey(new Date());
+    const todayStats = activityByDay.get(todayKey) ?? { minutes: 0, chapters: 0 };
 
     const scoreValues = bookSnapshots
       .map((item) => item.avgScore)
@@ -265,18 +398,17 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
       : 0;
 
     const maxQuizScore = Math.max(0, ...bookSnapshots.map((item) => item.bestScore));
-
-    const booksCompleted = bookSnapshots.filter((item) => item.status === "completed").length;
+    const booksCompleted = bookSnapshots.filter(
+      (item) => item.status === "completed"
+    ).length;
     const totalCompletedChapters = bookSnapshots.reduce(
       (sum, item) => sum + item.completedChapters,
       0
     );
 
-    const heatmapCells = generateHeatmap(
-      totalCompletedChapters,
-      dashboard.streakDays,
-      dashboard.minutesReadToday
-    );
+    const currentStreak = calculateCurrentStreak(new Set(activityDays));
+    const longestStreak = calculateLongestStreak(activityDays);
+    const heatmapCells = buildHeatmap(activityByDay);
 
     const inProgress = bookSnapshots.filter((item) => item.status === "in_progress");
     const upcomingReviews: UpcomingReviewItem[] = inProgress.slice(0, 3).map((item, index) => {
@@ -284,7 +416,10 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
       dueDate.setDate(dueDate.getDate() + index + 1);
       return {
         id: `${item.book.id}-review-${index}`,
-        prompt: `Review ${item.book.title}: chapter ${Math.max(item.completedChapters, 1)} takeaways`,
+        prompt: `Review ${item.book.title}: chapter ${Math.max(
+          item.completedChapters,
+          1
+        )} takeaways`,
         dueLabel: dueDate.toLocaleDateString(undefined, {
           weekday: "short",
           month: "short",
@@ -295,14 +430,15 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
     });
 
     setAnalytics({
-      streakDays: dashboard.streakDays,
+      streakDays: currentStreak,
       dailyGoalMinutes,
-      minutesReadToday: dashboard.minutesReadToday,
+      minutesReadToday: todayStats.minutes,
       booksCompleted,
       avgQuizScore,
       maxQuizScore,
       totalCompletedChapters,
-      longestStreak: dashboard.streakDays,
+      longestStreak,
+      lastActiveLabel: formatRelativeDayLabel(activityDays.at(-1) ?? null),
       bookSnapshots,
       heatmapCells,
       upcomingReviews,
@@ -310,7 +446,7 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
     });
 
     setHydrated(true);
-  }, [seedKey, dailyGoalMinutes]);
+  }, [seedKey, dailyGoalMinutes, revision]);
 
   return {
     hydrated,

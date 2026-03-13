@@ -45,11 +45,11 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
     currentChapter,
     completedCount,
     totalCount,
+    unlockedCount,
     progressPercent,
     avgScore,
     getChapterState,
     setLastReadChapter,
-    markBookComplete,
     resetProgress,
   } = useBookProgress(bookId, chapters);
 
@@ -93,7 +93,7 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
     });
   }, [chapterFilter, chapterQuery, chapters, getChapterState]);
 
-  const openChapter = (chapter: BookChapter) => {
+  const openChapter = (chapter: BookChapter, options?: { sessionMode?: boolean }) => {
     const state = getChapterState(chapter.id);
     if (state === "locked") {
       setLockedToast("Locked. Pass the current chapter quiz to unlock.");
@@ -101,7 +101,8 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
     }
 
     setLastReadChapter(chapter.id);
-    router.push(`/book/library/${encodeURIComponent(bookId)}/chapter/${encodeURIComponent(chapter.id)}`);
+    const route = `/book/library/${encodeURIComponent(bookId)}/chapter/${encodeURIComponent(chapter.id)}`;
+    router.push(options?.sessionMode ? `${route}?session=1` : route);
   };
 
   if (!entry || !onboardingHydrated || !hydrated || !onboarding.setupComplete) {
@@ -129,7 +130,7 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
         showSearch={false}
       />
 
-      <section className="mx-auto w-full max-w-7xl px-4 pb-24 pt-6 sm:px-6">
+      <section className="mx-auto w-full max-w-7xl px-4 pb-28 pt-6 sm:px-6 md:pb-24">
         <div className="mb-5 flex items-center gap-2 text-sm text-slate-300">
           <Link href="/book/library" className="hover:text-slate-100">
             Library
@@ -149,13 +150,15 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
             )}
             progressPercent={progressPercent}
             avgScore={avgScore}
-            streakDays={progress.streakDays}
+            unlockedCount={unlockedCount}
             completedCount={completedCount}
             totalCount={totalCount}
             currentChapterOrder={currentChapter?.order ?? 1}
             currentChapterMinutes={currentChapter?.minutes ?? 10}
-            onContinue={() => currentChapter && openChapter(currentChapter)}
-            onMarkAsCompleted={() => markBookComplete(100)}
+            onContinue={() =>
+              currentChapter &&
+              openChapter(currentChapter, { sessionMode: progressPercent === 0 })
+            }
             onResetProgress={() => setShowResetModal(true)}
             onRemoveFromLibrary={() => setShowRemoveModal(true)}
           />
@@ -177,10 +180,13 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
               </p>
               <button
                 type="button"
-                onClick={() => currentChapter && openChapter(currentChapter)}
+                onClick={() =>
+                  currentChapter &&
+                  openChapter(currentChapter, { sessionMode: progressPercent === 0 })
+                }
                 className="mt-2 rounded-xl border border-sky-300/35 bg-sky-500/16 px-3 py-1.5 text-sm text-sky-100"
               >
-                Continue →
+                {completedCount > 0 ? "Continue ->" : "Start ->"}
               </button>
             </div>
 
@@ -235,13 +241,17 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
       </section>
 
       {currentChapter ? (
-        <div className="fixed bottom-4 left-4 right-4 z-40 lg:hidden">
+        <div className="fixed bottom-20 left-4 right-4 z-50 lg:hidden">
           <button
             type="button"
-            onClick={() => openChapter(currentChapter)}
-            className="w-full rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-400 px-4 py-3 text-base font-semibold text-white shadow-[0_16px_35px_rgba(14,165,233,0.36)]"
+            onClick={() =>
+              openChapter(currentChapter, { sessionMode: progressPercent === 0 })
+            }
+            className="w-full rounded-2xl bg-linear-to-r from-sky-500 to-cyan-400 px-4 py-3 text-base font-semibold text-white shadow-[0_16px_35px_rgba(14,165,233,0.36)]"
           >
-            Continue Chapter {currentChapter.order} →
+            {completedCount > 0
+              ? `Continue Chapter ${currentChapter.order} ->`
+              : `Start Chapter ${currentChapter.order} ->`}
           </button>
         </div>
       ) : null}
@@ -260,7 +270,7 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
         title="Remove from library?"
         onClose={() => setShowRemoveModal(false)}
       >
-        <p>This action is not connected yet. Backend removal will be added next.</p>
+        <p>Removing this book will clear your reading progress for this title. This cannot be undone.</p>
         <button
           type="button"
           onClick={() => setShowRemoveModal(false)}

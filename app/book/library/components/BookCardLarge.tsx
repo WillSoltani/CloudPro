@@ -74,6 +74,7 @@ export function BookCardLarge({ entry, onOpen }: BookCardLargeProps) {
             icon={entry.icon}
             coverImage={entry.coverImage}
             className="h-full w-full rounded-2xl border border-white/10 bg-white/6"
+            imageClassName="object-contain bg-white"
             fallbackClassName="text-6xl drop-shadow-[0_10px_22px_rgba(2,6,23,0.55)]"
             sizes="(max-width: 768px) 70vw, 28vw"
           />
@@ -87,43 +88,45 @@ export function BookCardLarge({ entry, onOpen }: BookCardLargeProps) {
       </div>
 
       <div className="mt-4">
-        <h3 className="text-3xl font-semibold tracking-tight text-slate-100">{entry.title}</h3>
-        <p className="mt-1 text-xl text-slate-300">{entry.author}</p>
+        <h3 className="text-xl font-semibold tracking-tight text-slate-100 group-hover:text-white transition duration-150">
+          {entry.title}
+        </h3>
+        <p className="mt-0.5 text-sm text-slate-400">{entry.author}</p>
 
-        <div className="mt-3 flex flex-wrap gap-2.5 text-sm">
-          <span className="rounded-xl border border-white/28 bg-white/7 px-3 py-1 text-slate-200">
+        <div className="mt-2.5 flex flex-wrap gap-2 text-xs">
+          <span className="rounded-lg border border-white/20 bg-white/6 px-2.5 py-1 text-slate-300">
             {entry.category}
           </span>
           <span
             className={[
-              "rounded-xl border px-3 py-1",
+              "rounded-lg border px-2.5 py-1",
               difficultyChipClass(entry.difficulty),
             ].join(" ")}
           >
             {entry.difficulty}
           </span>
-          <span className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/[0.03] px-3 py-1 text-slate-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            ~{Math.round((entry.estimatedMinutes / 60) * 10) / 10} hours
+          <span className="inline-flex items-center gap-1 rounded-lg border border-white/12 bg-white/3 px-2.5 py-1 text-slate-400">
+            <Sparkles className="h-3 w-3" />
+            ~{Math.round((entry.estimatedMinutes / 60) * 10) / 10}h
           </span>
         </div>
 
-        <div className="mt-4">
-          <div className="flex items-center justify-between text-sm text-slate-300">
-            <span>
-              {entry.chaptersCompleted}/{entry.chaptersTotal} chapters
+        <div className="mt-3.5">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>{entry.chaptersCompleted}/{entry.chaptersTotal} chapters</span>
+            <span className={entry.status === "completed" ? "text-emerald-300 font-medium" : entry.status === "in_progress" ? "text-sky-300 font-medium" : ""}>
+              {entry.progressPercent}%
             </span>
-            <span>{entry.progressPercent}%</span>
           </div>
-          <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-900/55">
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-900/60">
             <div
               className={[
-                "h-full rounded-full transition-[width] duration-300",
+                "h-full rounded-full transition-[width] duration-500",
                 entry.status === "completed"
-                  ? "bg-emerald-300"
+                  ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]"
                   : entry.status === "in_progress"
-                    ? "bg-sky-300"
-                    : "bg-white/25",
+                    ? "bg-sky-400 shadow-[0_0_6px_rgba(56,189,248,0.4)]"
+                    : "bg-white/20",
               ].join(" ")}
               style={{ width: `${Math.max(entry.progressPercent, 0)}%` }}
             />

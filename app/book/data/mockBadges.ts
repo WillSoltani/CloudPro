@@ -119,7 +119,7 @@ export function evaluateBadges(stats: BadgeProgressStats): BadgeState[] {
     return {
       ...definition,
       earned,
-      earnedAt: earned ? new Date().toISOString() : null,
+      earnedAt: null,
     };
   });
 }

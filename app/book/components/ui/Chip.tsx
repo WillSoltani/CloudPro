@@ -6,7 +6,7 @@ import { cn } from "@/app/book/components/ui/cn";
 type ChipTone = "neutral" | "sky" | "emerald" | "amber" | "rose";
 
 const toneClass: Record<ChipTone, string> = {
-  neutral: "border-white/25 bg-white/[0.06] text-slate-200",
+  neutral: "border-white/25 bg-white/6 text-slate-200",
   sky: "border-sky-300/35 bg-sky-500/14 text-sky-100",
   emerald: "border-emerald-300/35 bg-emerald-500/14 text-emerald-100",
   amber: "border-amber-300/35 bg-amber-500/14 text-amber-100",

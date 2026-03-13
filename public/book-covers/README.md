@@ -5,6 +5,7 @@ Drop book cover images in this folder to override emoji placeholders across the 
 ## Naming rule
 Use the exact `bookId` filename, with one of these extensions:
 
+- `.svg`
 - `.png`
 - `.jpg`
 - `.jpeg`
@@ -13,6 +14,7 @@ Use the exact `bookId` filename, with one of these extensions:
 
 Examples:
 
+- `friends-and-influence-student-edition.svg`
 - `deep-work.png`
 - `atomic-habits.jpg`
 - `zero-to-one.webp`
@@ -36,8 +38,8 @@ Example:
 
 ```ts
 {
-  id: "deep-work",
-  coverImage: "/book-covers/deep-work-special-edition.png",
+  id: "friends-and-influence-student-edition",
+  coverImage: "/book-covers/friends-and-influence-student-edition-special-edition.png",
   // ...
 }
 ```

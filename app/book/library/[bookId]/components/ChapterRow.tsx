@@ -30,7 +30,7 @@ export function ChapterRow({ chapter, state, score, onClick, hint }: ChapterRowP
           ? "border-sky-300/40 bg-sky-500/10 shadow-[0_0_0_1px_rgba(56,189,248,0.25)]"
           : completed
             ? "border-emerald-300/20 bg-emerald-500/6 hover:border-emerald-300/30"
-            : "border-white/8 bg-white/[0.02]",
+            : "border-white/8 bg-white/2",
         locked
           ? "cursor-not-allowed opacity-40"
           : "hover:-translate-y-0.5 hover:border-white/20",

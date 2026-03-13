@@ -15,7 +15,7 @@ const controls: Array<{ id: FontScale; label: string; short: string }> = [
 
 export function FontSizeControls({ value, onChange }: FontSizeControlsProps) {
   return (
-    <div className="inline-flex rounded-xl border border-white/40 bg-white/[0.03] p-0.5">
+    <div className="inline-flex rounded-xl border border-white/40 bg-white/3 p-0.5">
       {controls.map((control) => {
         const active = control.id === value;
         return (

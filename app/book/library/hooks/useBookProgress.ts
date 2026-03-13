@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BookChapter } from "@/app/book/data/mockChapters";
+import { emitBookStorageChanged } from "@/app/book/hooks/bookStorageEvents";
 
 type ChapterState = "completed" | "current" | "locked";
 
@@ -10,11 +11,12 @@ type PersistedBookProgress = {
   completedChapterIds: string[];
   unlockedChapterIds: string[];
   chapterScores: Record<string, number>;
-  streakDays: number;
+  chapterCompletedAt: Record<string, string>;
   lastReadChapterId: string;
+  lastOpenedAt: string;
 };
 
-const STORAGE_PREFIX = "book-accelerator:book-progress:v2";
+const STORAGE_PREFIX = "book-accelerator:book-progress:v3";
 
 function uniqueIds(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
@@ -28,9 +30,14 @@ function initialProgress(chapters: BookChapter[]): PersistedBookProgress {
     completedChapterIds: [],
     unlockedChapterIds: firstChapterId ? [firstChapterId] : [],
     chapterScores: {},
-    streakDays: 0,
+    chapterCompletedAt: {},
     lastReadChapterId: firstChapterId,
+    lastOpenedAt: new Date(0).toISOString(),
   };
+}
+
+function isValidTimestamp(value: string): boolean {
+  return Number.isFinite(new Date(value).getTime());
 }
 
 function getNextChapterId(chapters: BookChapter[], currentChapterId: string): string {
@@ -58,10 +65,28 @@ function normalizeProgress(
 ): PersistedBookProgress {
   const chapterIds = new Set(chapters.map((chapter) => chapter.id));
 
+  const chapterCompletedAt =
+    raw.chapterCompletedAt && typeof raw.chapterCompletedAt === "object"
+      ? Object.fromEntries(
+          Object.entries(raw.chapterCompletedAt).filter(
+            ([chapterId, completedAt]) =>
+              chapterIds.has(chapterId) &&
+              typeof completedAt === "string" &&
+              completedAt.trim() &&
+              isValidTimestamp(completedAt)
+          )
+        )
+      : fallback.chapterCompletedAt;
+
   const completedChapterIds = uniqueIds(
-    Array.isArray(raw.completedChapterIds)
-      ? raw.completedChapterIds.filter((id): id is string => typeof id === "string" && chapterIds.has(id))
-      : fallback.completedChapterIds
+    [
+      ...(Array.isArray(raw.completedChapterIds)
+        ? raw.completedChapterIds.filter(
+            (id): id is string => typeof id === "string" && chapterIds.has(id)
+          )
+        : fallback.completedChapterIds),
+      ...Object.keys(chapterCompletedAt),
+    ]
   );
 
   const baseUnlocked = Array.isArray(raw.unlockedChapterIds)
@@ -83,10 +108,10 @@ function normalizeProgress(
         )
       : fallback.chapterScores;
 
-  const streakDays =
-    Number.isFinite(Number(raw.streakDays)) && Number(raw.streakDays) >= 0
-      ? Math.floor(Number(raw.streakDays))
-      : fallback.streakDays;
+  const lastOpenedAt =
+    typeof raw.lastOpenedAt === "string" && raw.lastOpenedAt.trim()
+      ? raw.lastOpenedAt
+      : fallback.lastOpenedAt;
 
   const completedSet = new Set(completedChapterIds);
   const unlockedSet = new Set(unlockedChapterIds);
@@ -113,8 +138,9 @@ function normalizeProgress(
     completedChapterIds,
     unlockedChapterIds: uniqueIds([...unlockedChapterIds, currentChapterId]),
     chapterScores,
-    streakDays,
+    chapterCompletedAt,
     lastReadChapterId,
+    lastOpenedAt,
   };
 }
 
@@ -147,7 +173,8 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
   useEffect(() => {
     if (!hydrated) return;
     window.localStorage.setItem(storageKey, JSON.stringify(progress));
-  }, [hydrated, progress, storageKey]);
+    emitBookStorageChanged(`progress:${bookId}`);
+  }, [bookId, hydrated, progress, storageKey]);
 
   const completedSet = useMemo(
     () => new Set(progress.completedChapterIds),
@@ -170,6 +197,7 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
 
   const completedCount = progress.completedChapterIds.length;
   const totalCount = chapters.length;
+  const unlockedCount = progress.unlockedChapterIds.length;
   const progressPercent = totalCount
     ? Math.round((completedCount / totalCount) * 100)
     : 0;
@@ -198,7 +226,11 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
   const setLastReadChapter = useCallback((chapterId: string) => {
     setProgress((prev) => {
       if (!chapters.some((chapter) => chapter.id === chapterId)) return prev;
-      return { ...prev, lastReadChapterId: chapterId };
+      return {
+        ...prev,
+        lastReadChapterId: chapterId,
+        lastOpenedAt: new Date().toISOString(),
+      };
     });
   }, [chapters]);
 
@@ -211,6 +243,7 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
           ...prev,
           currentChapterId: chapterId,
           lastReadChapterId: chapterId,
+          lastOpenedAt: new Date().toISOString(),
         };
       });
     },
@@ -246,17 +279,25 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
             : getFirstIncompleteUnlocked(chapters, completedSetLocal, unlockedSetLocal)) ||
           chapterId;
 
+        const chapterCompletedAt = prev.chapterCompletedAt[chapterId]
+          ? prev.chapterCompletedAt
+          : {
+              ...prev.chapterCompletedAt,
+              [chapterId]: new Date().toISOString(),
+            };
+
         return {
           ...prev,
           completedChapterIds,
           unlockedChapterIds,
+          chapterCompletedAt,
           chapterScores: {
             ...prev.chapterScores,
             [chapterId]: Math.max(prev.chapterScores[chapterId] ?? 0, clampedScore),
           },
           currentChapterId: nextCurrent,
           lastReadChapterId: chapterId,
-          streakDays: alreadyCompleted ? prev.streakDays : prev.streakDays + 1,
+          lastOpenedAt: new Date().toISOString(),
         };
       });
     },
@@ -272,30 +313,6 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
     [markChapterComplete, progress.currentChapterId]
   );
 
-  const markBookComplete = useCallback(
-    (score = 100) => {
-      const clampedScore = Math.max(0, Math.min(100, Math.round(score)));
-      setProgress((prev) => {
-        const chapterIds = chapters.map((chapter) => chapter.id);
-        const chapterScores = { ...prev.chapterScores };
-        for (const chapterId of chapterIds) {
-          chapterScores[chapterId] = Math.max(chapterScores[chapterId] ?? 0, clampedScore);
-        }
-
-        return {
-          ...prev,
-          completedChapterIds: chapterIds,
-          unlockedChapterIds: chapterIds,
-          chapterScores,
-          currentChapterId: chapterIds[chapterIds.length - 1] ?? prev.currentChapterId,
-          lastReadChapterId: chapterIds[chapterIds.length - 1] ?? prev.lastReadChapterId,
-          streakDays: prev.streakDays + 1,
-        };
-      });
-    },
-    [chapters]
-  );
-
   const resetProgress = useCallback(() => {
     setProgress(initialProgress(chapters));
   }, [chapters]);
@@ -307,6 +324,7 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
     lastReadChapter,
     completedCount,
     totalCount,
+    unlockedCount,
     progressPercent,
     avgScore,
     getChapterState,
@@ -315,7 +333,6 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
     setLastReadChapter,
     markChapterComplete,
     markCurrentChapterComplete,
-    markBookComplete,
     resetProgress,
   };
 }

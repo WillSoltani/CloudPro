@@ -112,14 +112,14 @@ export function BookSettingsClient() {
         searchPlaceholder="Search settings..."
       />
 
-      <section className="mx-auto w-full max-w-6xl space-y-4 px-4 pb-24 pt-7 sm:px-6">
+      <section className="mx-auto w-full max-w-6xl space-y-4 px-4 pb-28 pt-7 sm:px-6 md:pb-24">
         <h1 className="text-4xl font-semibold tracking-tight text-slate-50 sm:text-5xl">Settings</h1>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
           <Card>
             <h2 className="text-lg font-semibold text-slate-100">Profile</h2>
             <div className="mt-3 flex items-center gap-3">
-              <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-cyan-300 text-base font-semibold text-slate-900">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-full bg-linear-to-br from-sky-400 to-cyan-300 text-base font-semibold text-slate-900">
                 {(onboarding.name || "R").trim().charAt(0).toUpperCase() || "R"}
               </span>
               <label className="flex-1">
@@ -128,7 +128,7 @@ export function BookSettingsClient() {
                   value={onboarding.name}
                   onChange={(event) => setName(event.target.value)}
                   onBlur={() => showToast("Profile updated", "success")}
-                  className="w-full rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2 text-sm text-slate-100"
+                  className="w-full rounded-xl border border-white/15 bg-white/4 px-3 py-2 text-sm text-slate-100"
                 />
               </label>
             </div>
@@ -137,7 +137,7 @@ export function BookSettingsClient() {
           <Card>
             <h2 className="text-lg font-semibold text-slate-100">About</h2>
             <p className="mt-3 text-sm text-slate-300">Version: Book Accelerator UI v0.9.0</p>
-            <p className="mt-2 text-sm text-slate-300">What's new: chapter reader, progress heatmap, session mode, badge rules.</p>
+            <p className="mt-2 text-sm text-slate-300">What&apos;s new: chapter reader, progress heatmap, session mode, badge rules.</p>
           </Card>
         </div>
 
@@ -201,7 +201,7 @@ export function BookSettingsClient() {
                   max={240}
                   value={onboarding.dailyGoalMinutes}
                   onChange={(event) => setDailyGoalMinutes(Number(event.target.value))}
-                  className="w-24 rounded-lg border border-white/15 bg-white/[0.04] px-2 py-1 text-sm"
+                  className="w-24 rounded-lg border border-white/15 bg-white/4 px-2 py-1 text-sm"
                 />
                 <span className="text-sm text-slate-400">minutes</span>
               </div>
@@ -219,35 +219,32 @@ export function BookSettingsClient() {
                   type="time"
                   value={onboarding.reminderTime}
                   onChange={(event) => setReminderTime(event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/[0.04] px-3 py-2"
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-white/4 px-3 py-2"
                 />
               </label>
 
-              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+              <label className="flex cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 text-sm text-slate-200">
                 Daily reminder
-                <input
-                  type="checkbox"
-                  checked={preferences.dailyReminderEnabled}
-                  onChange={(event) => patch({ dailyReminderEnabled: event.target.checked })}
-                />
+                <span className={["relative inline-flex h-6 w-10 items-center rounded-full transition", preferences.dailyReminderEnabled ? "bg-sky-500" : "bg-white/20"].join(" ")}>
+                  <input type="checkbox" className="sr-only" checked={preferences.dailyReminderEnabled} onChange={(event) => patch({ dailyReminderEnabled: event.target.checked })} />
+                  <span className={["inline-block h-4 w-4 transform rounded-full bg-white shadow transition", preferences.dailyReminderEnabled ? "translate-x-5" : "translate-x-1"].join(" ")} />
+                </span>
               </label>
 
-              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+              <label className="flex cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 text-sm text-slate-200">
                 Streak reminder
-                <input
-                  type="checkbox"
-                  checked={preferences.streakReminderEnabled}
-                  onChange={(event) => patch({ streakReminderEnabled: event.target.checked })}
-                />
+                <span className={["relative inline-flex h-6 w-10 items-center rounded-full transition", preferences.streakReminderEnabled ? "bg-sky-500" : "bg-white/20"].join(" ")}>
+                  <input type="checkbox" className="sr-only" checked={preferences.streakReminderEnabled} onChange={(event) => patch({ streakReminderEnabled: event.target.checked })} />
+                  <span className={["inline-block h-4 w-4 transform rounded-full bg-white shadow transition", preferences.streakReminderEnabled ? "translate-x-5" : "translate-x-1"].join(" ")} />
+                </span>
               </label>
 
-              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+              <label className="flex cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 text-sm text-slate-200">
                 Track streak mode
-                <input
-                  type="checkbox"
-                  checked={onboarding.streakMode}
-                  onChange={(event) => setStreakMode(event.target.checked)}
-                />
+                <span className={["relative inline-flex h-6 w-10 items-center rounded-full transition", onboarding.streakMode ? "bg-sky-500" : "bg-white/20"].join(" ")}>
+                  <input type="checkbox" className="sr-only" checked={onboarding.streakMode} onChange={(event) => setStreakMode(event.target.checked)} />
+                  <span className={["inline-block h-4 w-4 transform rounded-full bg-white shadow transition", onboarding.streakMode ? "translate-x-5" : "translate-x-1"].join(" ")} />
+                </span>
               </label>
             </div>
           </Card>
@@ -276,13 +273,12 @@ export function BookSettingsClient() {
                 </div>
               </div>
 
-              <label className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm">
+              <label className="flex cursor-pointer items-center justify-between rounded-xl border border-white/10 bg-white/3 px-3 py-2.5 text-sm text-slate-200">
                 Reduced motion
-                <input
-                  type="checkbox"
-                  checked={preferences.reducedMotion}
-                  onChange={(event) => patch({ reducedMotion: event.target.checked })}
-                />
+                <span className={["relative inline-flex h-6 w-10 items-center rounded-full transition", preferences.reducedMotion ? "bg-sky-500" : "bg-white/20"].join(" ")}>
+                  <input type="checkbox" className="sr-only" checked={preferences.reducedMotion} onChange={(event) => patch({ reducedMotion: event.target.checked })} />
+                  <span className={["inline-block h-4 w-4 transform rounded-full bg-white shadow transition", preferences.reducedMotion ? "translate-x-5" : "translate-x-1"].join(" ")} />
+                </span>
               </label>
             </div>
           </Card>
@@ -293,7 +289,7 @@ export function BookSettingsClient() {
           <div className="mt-3 flex flex-wrap gap-2">
             <Button
               variant="secondary"
-              onClick={() => showToast("Export will be available with backend sync.", "info")}
+              onClick={() => showToast("Data export coming in a future update.", "info")}
             >
               <Download className="h-4 w-4" />
               Export my data
@@ -323,7 +319,7 @@ export function BookSettingsClient() {
 
       <Toast open={toast.open} message={toast.message} tone={toast.tone} />
 
-      <div className="pointer-events-none fixed bottom-6 right-6 hidden rounded-xl border border-white/20 bg-white/[0.05] px-3 py-1.5 text-xs text-slate-300 md:inline-flex md:items-center md:gap-1.5">
+      <div className="pointer-events-none fixed bottom-6 right-6 hidden rounded-xl border border-white/20 bg-white/5 px-3 py-1.5 text-xs text-slate-300 md:inline-flex md:items-center md:gap-1.5">
         <RefreshCcw className="h-4 w-4" />
         Changes save automatically
       </div>

@@ -63,6 +63,11 @@ export function ChapterReaderClient({
   const [toast, setToast] = useState<string | null>(null);
   const [sessionMode, setSessionMode] = useState(false);
 
+  const pauseSessionMode = () => {
+    setSessionMode(false);
+    router.replace(pathname);
+  };
+
   const { state: onboarding, hydrated: onboardingHydrated } = useOnboardingState();
 
   const entry = useMemo(() => getLibraryBookById(bookId), [bookId]);
@@ -199,11 +204,12 @@ export function ChapterReaderClient({
     if (state.exampleFilter === "all") return true;
     return example.scope === state.exampleFilter;
   });
+  const quizQuestions = chapter.quizByDepth[state.readingDepth];
 
   const textScaleClass = fontScaleClass(state.fontScale);
 
   const handleSubmitQuiz = () => {
-    const score = calculateScore(chapter.quiz, state.quizAnswers);
+    const score = calculateScore(quizQuestions, state.quizAnswers);
     const passed = score >= REQUIRED_SCORE;
     const nextResult = { score, passed };
 
@@ -223,11 +229,6 @@ export function ChapterReaderClient({
     router.push(`/book/library/${encodeURIComponent(bookId)}`);
   };
 
-  const pauseSessionMode = () => {
-    setSessionMode(false);
-    router.replace(pathname);
-  };
-
   const showSummary = state.activeTab === "summary";
   const showExamples = state.activeTab === "examples";
   const showQuiz = state.activeTab === "quiz";
@@ -239,7 +240,7 @@ export function ChapterReaderClient({
 
       <section
         className={[
-          "mx-auto w-full px-4 pb-24 pt-4 sm:px-6 sm:pt-5",
+          "mx-auto w-full px-4 pb-28 pt-4 sm:px-6 sm:pt-5 md:pb-24",
           state.focusMode ? "max-w-5xl" : "max-w-4xl",
         ].join(" ")}
       >
@@ -294,7 +295,7 @@ export function ChapterReaderClient({
 
           {showQuiz ? (
             <QuizPanel
-              questions={chapter.quiz}
+              questions={quizQuestions}
               answers={state.quizAnswers}
               result={state.quizResult}
               explanationOpen={state.explanationOpen}
@@ -319,7 +320,7 @@ export function ChapterReaderClient({
         onAddNote={() => {
           appendNote(`• ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} — `);
         }}
-        onExport={() => setToast("Export coming soon.")}
+        onExport={() => setToast("Notes export coming in a future update.")}
         onPinTakeaway={() => {
           appendNote(`Pinned takeaway: ${chapter.takeaways[0] ?? ""}`);
           setToast("Takeaway pinned.");
@@ -332,15 +333,16 @@ export function ChapterReaderClient({
           quizPassed={Boolean(state.quizResult?.passed)}
           onSelectStep={setActiveTab}
           onPause={pauseSessionMode}
+          onClose={pauseSessionMode}
         />
       ) : null}
 
       {currentChapter ? (
-        <div className="fixed bottom-4 left-4 right-4 z-40 lg:hidden">
+        <div className="fixed bottom-20 left-4 right-4 z-50 lg:hidden">
           <button
             type="button"
             onClick={() => router.push(`/book/library/${encodeURIComponent(bookId)}/chapter/${encodeURIComponent(currentChapter.id)}`)}
-            className="w-full rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-400 px-4 py-3 text-base font-semibold text-white shadow-[0_16px_35px_rgba(14,165,233,0.36)]"
+            className="w-full rounded-2xl bg-linear-to-r from-sky-500 to-cyan-400 px-4 py-3 text-base font-semibold text-white shadow-[0_16px_35px_rgba(14,165,233,0.36)]"
           >
             Continue Chapter {currentChapter.order} →
           </button>
@@ -359,7 +361,7 @@ export function ChapterReaderClient({
           Focus mode enabled
         </div>
       ) : (
-        <div className="pointer-events-none fixed bottom-6 right-6 hidden rounded-xl border border-white/20 bg-white/[0.04] px-3 py-1.5 text-xs text-slate-300 md:inline-flex md:items-center md:gap-1.5">
+        <div className="pointer-events-none fixed bottom-6 right-6 hidden rounded-xl border border-white/20 bg-white/4 px-3 py-1.5 text-xs text-slate-300 md:inline-flex md:items-center md:gap-1.5">
           <Sparkles className="h-4 w-4" />
           Tip: press N for notes, F for focus
         </div>

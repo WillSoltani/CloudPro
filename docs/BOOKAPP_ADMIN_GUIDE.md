@@ -22,6 +22,8 @@ The backend validator now accepts all of these:
 - chapter variants using either:
   - `summaryBullets` + `takeaways`, OR
   - `importantSummary` + `keyTakeaways`
+- optional variant practice arrays:
+  - `practice`
 - quiz answer index using either:
   - `correctAnswerIndex`, OR
   - `correctIndex`
@@ -35,7 +37,7 @@ Use the helper script from repo root:
 node scripts/book/upload-book-package.mjs \
   --origin https://your-app-domain \
   --token "<COGNITO_ID_TOKEN>" \
-  --file book-packages/atomic-habits.reference.json \
+  --file book-packages/friends-and-influence-student-edition.student.json \
   --publish
 ```
 
@@ -67,6 +69,7 @@ Use this folder:
 
 ### Naming convention
 Use the exact `bookId` with one of these extensions:
+- `.svg`
 - `.png`
 - `.jpg`
 - `.jpeg`
@@ -74,7 +77,7 @@ Use the exact `bookId` with one of these extensions:
 - `.avif`
 
 Example:
-- `public/book-covers/atomic-habits.jpg`
+- `public/book-covers/friends-and-influence-student-edition.svg`
 
 ### Where covers automatically appear
 - onboarding book cards

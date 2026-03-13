@@ -87,7 +87,7 @@ export function NotesDrawer({
           value={notes}
           onChange={(event) => onNotesChange(event.target.value)}
           placeholder="Write your notes here..."
-          className="h-[48vh] w-full resize-none rounded-2xl border border-white/12 bg-white/[0.03] p-4 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/45 md:h-[calc(100vh-12.5rem)]"
+          className="h-[48vh] w-full resize-none rounded-2xl border border-white/12 bg-white/3 p-4 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/45 md:h-[calc(100vh-12.5rem)]"
         />
       </aside>
     </>

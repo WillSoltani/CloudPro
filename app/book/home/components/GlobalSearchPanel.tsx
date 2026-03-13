@@ -82,7 +82,7 @@ export function GlobalSearchPanel({ open, query, onClose }: GlobalSearchPanelPro
           </p>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
-            <section className="rounded-xl border border-white/10 bg-white/[0.02] p-2">
+            <section className="rounded-xl border border-white/10 bg-white/2 p-2">
               <p className="px-2 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
                 Books
               </p>
@@ -109,7 +109,7 @@ export function GlobalSearchPanel({ open, query, onClose }: GlobalSearchPanelPro
               </div>
             </section>
 
-            <section className="rounded-xl border border-white/10 bg-white/[0.02] p-2">
+            <section className="rounded-xl border border-white/10 bg-white/2 p-2">
               <p className="px-2 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
                 Chapters
               </p>

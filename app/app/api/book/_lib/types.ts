@@ -5,6 +5,7 @@ export type VariantKey = "easy" | "medium" | "hard" | "precise" | "balanced" | "
 export type ChapterVariantContent = {
   summaryBullets: string[];
   takeaways: string[];
+  practice?: string[];
 };
 
 export type BookPackageQuizQuestion = {

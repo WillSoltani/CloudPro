@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { TopNav } from "@/app/book/home/components/TopNav";
 import { useOnboardingState } from "@/app/book/hooks/useOnboardingState";
+import { useBookAnalytics } from "@/app/book/hooks/useBookAnalytics";
 import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
 import {
   LIBRARY_CATEGORY_OPTIONS,
   LIBRARY_DIFFICULTY_OPTIONS,
   LIBRARY_SORT_OPTIONS,
   LIBRARY_STATUS_OPTIONS,
+  type LibraryBookEntry,
   buildLibraryCatalog,
 } from "@/app/book/data/mockUserLibraryState";
 import { useLibraryFilters } from "@/app/book/library/hooks/useLibraryFilters";
@@ -19,7 +21,7 @@ import { BookCardLarge } from "@/app/book/library/components/BookCardLarge";
 
 function SkeletonCard() {
   return (
-    <div className="animate-pulse rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
+    <div className="animate-pulse rounded-3xl border border-white/10 bg-white/3 p-4 sm:p-5">
       <div className="h-72 rounded-2xl bg-slate-800/55 sm:h-80" />
       <div className="mt-4 h-7 w-2/3 rounded bg-slate-800/55" />
       <div className="mt-2 h-5 w-1/2 rounded bg-slate-800/45" />
@@ -34,8 +36,45 @@ export function BookLibraryClient() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const { state: onboarding, hydrated: onboardingHydrated } = useOnboardingState();
+  const { analytics, hydrated: analyticsHydrated } = useBookAnalytics(
+    onboarding.selectedBookIds,
+    onboarding.dailyGoalMinutes
+  );
 
-  const libraryEntries = useMemo(() => buildLibraryCatalog(), []);
+  const libraryEntries = useMemo<LibraryBookEntry[]>(() => {
+    if (!analytics) return buildLibraryCatalog();
+
+    const selectedSet = new Set(onboarding.selectedBookIds);
+    const selectedOrder = new Map(
+      onboarding.selectedBookIds.map((bookId, index) => [bookId, index])
+    );
+
+    const ranked = [...analytics.bookSnapshots].sort((left, right) => {
+      const leftSelected = selectedSet.has(left.book.id);
+      const rightSelected = selectedSet.has(right.book.id);
+      if (leftSelected !== rightSelected) return leftSelected ? -1 : 1;
+      if (leftSelected && rightSelected) {
+        return (
+          (selectedOrder.get(left.book.id) ?? Number.MAX_SAFE_INTEGER) -
+          (selectedOrder.get(right.book.id) ?? Number.MAX_SAFE_INTEGER)
+        );
+      }
+      if (left.progressPercent !== right.progressPercent) {
+        return right.progressPercent - left.progressPercent;
+      }
+      return left.book.title.localeCompare(right.book.title);
+    });
+
+    return ranked.map((snapshot) => ({
+      ...snapshot.book,
+      status: snapshot.status,
+      progressPercent: snapshot.progressPercent,
+      chaptersTotal: snapshot.totalChapters,
+      chaptersCompleted: snapshot.completedChapters,
+      isNew: snapshot.status === "not_started",
+      lastActivityAt: snapshot.lastActivityAt,
+    }));
+  }, [analytics, onboarding.selectedBookIds]);
   const {
     hydrated,
     loading,
@@ -67,7 +106,7 @@ export function BookLibraryClient() {
     }
   }, [onboarding.setupComplete, onboardingHydrated, router]);
 
-  if (!onboardingHydrated || !hydrated || !onboarding.setupComplete) {
+  if (!onboardingHydrated || !analyticsHydrated || !hydrated || !onboarding.setupComplete) {
     return (
       <main className="relative min-h-screen text-slate-100">
         <div className="pointer-events-none absolute inset-0 -z-20 bg-[#050813]" />
@@ -92,10 +131,12 @@ export function BookLibraryClient() {
         showSearch={false}
       />
 
-      <section className="mx-auto w-full max-w-7xl px-4 pb-20 pt-7 sm:px-6 sm:pt-8">
+      <section className="mx-auto w-full max-w-7xl px-4 pb-28 pt-7 sm:px-6 sm:pt-8">
         <div className="mb-5 flex items-end justify-between gap-3">
           <h1 className="text-5xl font-semibold tracking-tight text-slate-50">Library</h1>
-          <p className="text-sm text-slate-400">{totalCount} books</p>
+          <p className="text-sm text-slate-400">
+            {totalCount} {totalCount === 1 ? "book" : "books"}
+          </p>
         </div>
 
         <LibrarySearchBar
@@ -125,19 +166,19 @@ export function BookLibraryClient() {
 
         <div className="mt-6 border-t border-white/10 pt-6">
           {onboarding.selectedBookIds.length === 0 ? (
-            <div className="rounded-3xl border border-white/12 bg-white/[0.03] px-6 py-14 text-center">
+            <div className="rounded-3xl border border-white/12 bg-white/3 px-6 py-14 text-center">
               <h2 className="text-2xl font-semibold text-slate-100">
                 Your library is empty.
               </h2>
               <p className="mt-2 text-slate-300">
-                Finish setup to pick your first books and start your reading path.
+                Finish setup to choose your first book and start your reading path.
               </p>
               <button
                 type="button"
                 onClick={() => router.push("/book")}
                 className="mt-5 rounded-2xl border border-sky-300/35 bg-sky-400/15 px-4 py-2.5 text-sm font-medium text-sky-100 transition hover:bg-sky-400/22"
               >
-                Add books
+                Finish setup
               </button>
             </div>
           ) : loading ? (
@@ -147,7 +188,7 @@ export function BookLibraryClient() {
               ))}
             </div>
           ) : displayedEntries.length === 0 ? (
-            <div className="rounded-3xl border border-white/12 bg-white/[0.03] px-6 py-14 text-center">
+            <div className="rounded-3xl border border-white/12 bg-white/3 px-6 py-14 text-center">
               <h2 className="text-2xl font-semibold text-slate-100">
                 No books match your filters.
               </h2>

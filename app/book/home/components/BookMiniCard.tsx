@@ -59,7 +59,7 @@ export function BookMiniCard({ book, progress, onOpen }: BookMiniCardProps) {
 
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-900/45">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-sky-300 to-cyan-200"
+          className="h-full rounded-full bg-linear-to-r from-sky-300 to-cyan-200"
           style={{ width: `${Math.max(progress.progressPercent, 0)}%` }}
         />
       </div>

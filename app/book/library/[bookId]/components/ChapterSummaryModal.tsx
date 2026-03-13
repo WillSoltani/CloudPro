@@ -53,7 +53,7 @@ export function ChapterSummaryModal({
           <button
             type="button"
             onClick={onOpenReader}
-            className="rounded-xl bg-gradient-to-r from-sky-500 to-cyan-400 px-4 py-2 text-sm font-semibold text-white"
+            className="rounded-xl bg-linear-to-r from-sky-500 to-cyan-400 px-4 py-2 text-sm font-semibold text-white"
           >
             Open Chapter Reader
           </button>

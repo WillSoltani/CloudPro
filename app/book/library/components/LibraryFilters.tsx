@@ -22,7 +22,7 @@ function FilterChip({ label, selected, onClick }: FilterChipProps) {
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/45",
         selected
           ? "border-sky-300/55 bg-sky-400/20 text-sky-100"
-          : "border-white/35 bg-white/[0.02] text-slate-300 hover:border-white/50 hover:text-slate-100",
+          : "border-white/35 bg-white/2 text-slate-300 hover:border-white/50 hover:text-slate-100",
       ].join(" ")}
       aria-pressed={selected}
     >

@@ -99,7 +99,10 @@ export function BookProgressClient() {
   }
 
   const dailyProgressPercent = analytics.dailyGoalMinutes
-    ? Math.round((analytics.minutesReadToday / analytics.dailyGoalMinutes) * 100)
+    ? Math.min(
+        100,
+        Math.round((analytics.minutesReadToday / analytics.dailyGoalMinutes) * 100)
+      )
     : 0;
 
   return (
@@ -116,53 +119,80 @@ export function BookProgressClient() {
         searchPlaceholder="Search by title or author..."
       />
 
-      <section className="mx-auto w-full max-w-7xl px-4 pb-24 pt-7 sm:px-6 sm:pt-8">
+      <section className="mx-auto w-full max-w-7xl px-4 pb-28 pt-7 sm:px-6 sm:pt-8 md:pb-24">
         <div>
           <h1 className="text-4xl font-semibold tracking-tight text-slate-50 sm:text-5xl">Progress</h1>
           <p className="mt-2 text-lg text-slate-300">Your reading momentum at a glance.</p>
         </div>
 
         <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {/* Daily goal ring */}
           <Card>
-            <p className="text-sm text-slate-400">Daily goal</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Today&apos;s Goal</p>
+              <Target className="h-4 w-4 text-sky-400/60" />
+            </div>
             <div className="mt-3 flex items-center gap-3">
-              <div className="relative h-14 w-14 rounded-full" style={ringStyle(dailyProgressPercent)}>
-                <div className="absolute inset-[5px] flex items-center justify-center rounded-full bg-[#0b1120] text-xs font-semibold text-slate-100">
+              <div className="relative h-14 w-14 shrink-0 rounded-full" style={ringStyle(dailyProgressPercent)}>
+                <div className="absolute inset-1.5 flex items-center justify-center rounded-full bg-[#0b1120] text-xs font-bold text-slate-100">
                   {Math.max(0, dailyProgressPercent)}%
                 </div>
               </div>
-              <p className="text-sm text-slate-200">
-                {analytics.minutesReadToday} / {analytics.dailyGoalMinutes} min
-              </p>
+              <div>
+                <p className="text-lg font-semibold tabular-nums text-slate-100">
+                  {analytics.minutesReadToday}<span className="text-sm font-normal text-slate-500">m</span>
+                </p>
+                <p className="text-xs text-slate-500">of {analytics.dailyGoalMinutes} min</p>
+              </div>
             </div>
           </Card>
 
+          {/* Streak */}
           <Card>
-            <p className="text-sm text-slate-400">Streak</p>
-            <p className="mt-3 flex items-center gap-2 text-3xl font-semibold text-amber-100">
-              <Flame className="h-6 w-6" />
-              {analytics.streakDays} days
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Streak</p>
+              <Flame className="h-4 w-4 text-amber-400/60" />
+            </div>
+            <p className="mt-3 text-3xl font-bold tabular-nums text-amber-100">
+              {analytics.streakDays}
+              <span className="ml-1 text-lg font-normal text-amber-300/70">days</span>
             </p>
-            <p className="mt-1 text-xs text-slate-400">Last active: today</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Last progress: {analytics.lastActiveLabel}
+            </p>
           </Card>
 
+          {/* Books */}
           <Card>
-            <p className="text-sm text-slate-400">Books completed</p>
-            <p className="mt-3 text-3xl font-semibold text-emerald-100">{analytics.booksCompleted}</p>
-            <p className="mt-1 text-xs text-slate-400">Across your current library</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Completed</p>
+              <GraduationCap className="h-4 w-4 text-emerald-400/60" />
+            </div>
+            <p className="mt-3 text-3xl font-bold tabular-nums text-emerald-100">
+              {analytics.booksCompleted}
+              <span className="ml-1 text-lg font-normal text-emerald-300/70">books</span>
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Across your library</p>
           </Card>
 
+          {/* Quiz */}
           <Card>
-            <p className="text-sm text-slate-400">Avg quiz score</p>
-            <p className="mt-3 text-3xl font-semibold text-sky-100">{analytics.avgQuizScore}%</p>
-            <p className="mt-1 text-xs text-slate-400">Best score: {analytics.maxQuizScore}%</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Quiz Avg</p>
+              <Target className="h-4 w-4 text-sky-400/60" />
+            </div>
+            <p className="mt-3 text-3xl font-bold tabular-nums text-sky-100">
+              {analytics.avgQuizScore}
+              <span className="ml-0.5 text-lg font-normal text-sky-300/70">%</span>
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Best: {analytics.maxQuizScore}%</p>
           </Card>
         </div>
 
         <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
           <Card>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-xl font-semibold text-slate-100">Weekly activity</h2>
+              <h2 className="text-xl font-semibold text-slate-100">Reading activity</h2>
               <div className="flex gap-2">
                 <ChipButton tone={mode === "minutes" ? "sky" : "neutral"} active={mode === "minutes"} onClick={() => setMode("minutes")}>
                   Minutes
@@ -174,29 +204,49 @@ export function BookProgressClient() {
             </div>
 
             <div className="overflow-x-auto pb-2">
-              <div className="inline-grid grid-flow-col grid-rows-7 gap-1.5">
-                {analytics.heatmapCells.map((cell) => (
-                  <button
-                    key={cell.key}
-                    type="button"
-                    onMouseEnter={() => setHoveredCell(cell.key)}
-                    onFocus={() => setHoveredCell(cell.key)}
-                    onMouseLeave={() => setHoveredCell(null)}
-                    className={[
-                      "h-4 w-4 rounded-[5px] border transition",
-                      levelClass(mode === "minutes" ? cell.level : Math.min(cell.chapters, 4)),
-                    ].join(" ")}
-                    aria-label={`${cell.dateLabel}: ${cell.minutes} minutes, ${cell.chapters} chapters`}
-                  />
-                ))}
+              <div className="flex gap-2">
+                <div className="grid grid-rows-7 gap-1.5 select-none" style={{ gridAutoRows: "1rem" }}>
+                  {["", "Mon", "", "Wed", "", "Fri", ""].map((label, i) => (
+                    <span key={i} className="flex h-4 items-center text-[9px] leading-none text-slate-600 w-6 justify-end pr-1">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                <div className="inline-grid grid-flow-col grid-rows-7 gap-1.5">
+                  {analytics.heatmapCells.map((cell) => (
+                    <button
+                      key={cell.key}
+                      type="button"
+                      onMouseEnter={() => setHoveredCell(cell.key)}
+                      onFocus={() => setHoveredCell(cell.key)}
+                      onMouseLeave={() => setHoveredCell(null)}
+                      className={[
+                        "h-4 w-4 rounded-[5px] border transition",
+                        levelClass(mode === "minutes" ? cell.level : Math.min(cell.chapters, 4)),
+                      ].join(" ")}
+                      aria-label={`${cell.dateLabel}: ${cell.minutes} minutes, ${cell.chapters} chapters`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
 
-            <p className="mt-3 text-xs text-slate-400">
-              {selectedCell
-                ? `${selectedCell.dateLabel} · ${selectedCell.minutes} min · ${selectedCell.chapters} chapters`
-                : "Hover a day to inspect activity details."}
-            </p>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs text-slate-400">
+                {selectedCell
+                  ? `${selectedCell.dateLabel} · ${selectedCell.minutes} min · ${selectedCell.chapters} chapters`
+                  : "Hover a day to inspect activity details."}
+              </p>
+              <div className="flex shrink-0 items-center gap-1 text-[9px] text-slate-600">
+                <span>Less</span>
+                <span className="h-3 w-3 rounded-sm border border-white/8 bg-slate-800/65" />
+                <span className="h-3 w-3 rounded-sm border border-sky-700/45 bg-sky-900/70" />
+                <span className="h-3 w-3 rounded-sm border border-sky-500/45 bg-sky-700/70" />
+                <span className="h-3 w-3 rounded-sm border border-cyan-300/45 bg-cyan-500/70" />
+                <span className="h-3 w-3 rounded-sm border border-emerald-200/50 bg-emerald-400/80" />
+                <span>More</span>
+              </div>
+            </div>
           </Card>
 
           <Card>
@@ -204,7 +254,7 @@ export function BookProgressClient() {
             {analytics.upcomingReviews.length ? (
               <div className="mt-3 space-y-2">
                 {analytics.upcomingReviews.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                  <div key={item.id} className="rounded-xl border border-white/10 bg-white/3 px-3 py-2">
                     <p className="text-sm text-slate-100">{item.prompt}</p>
                     <p className="mt-1 text-xs text-slate-400">Due {item.dueLabel}</p>
                   </div>
@@ -226,7 +276,7 @@ export function BookProgressClient() {
           </div>
 
           {!analytics.hasAnyProgress ? (
-            <div className="rounded-2xl border border-white/12 bg-white/[0.03] p-5 text-center">
+            <div className="rounded-2xl border border-white/12 bg-white/3 p-5 text-center">
               <p className="text-lg font-medium text-slate-100">No progress yet</p>
               <p className="mt-2 text-sm text-slate-300">Start your first chapter to unlock your progress dashboard.</p>
               <Link href="/book/library" className="mt-4 inline-flex rounded-xl border border-sky-300/35 bg-sky-500/14 px-4 py-2 text-sm text-sky-100">
@@ -236,7 +286,7 @@ export function BookProgressClient() {
           ) : (
             <div className="space-y-2">
               {filteredRows.map((row) => (
-                <div key={row.book.id} className="grid gap-2 rounded-2xl border border-white/10 bg-white/[0.02] p-3 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] md:items-center">
+                <div key={row.book.id} className="grid gap-2 rounded-2xl border border-white/10 bg-white/2 p-3 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] md:items-center">
                   <div>
                     <p className="text-sm font-medium text-slate-100">{row.book.title}</p>
                     <p className="text-xs text-slate-400">{row.book.author}</p>
@@ -254,7 +304,7 @@ export function BookProgressClient() {
                       )
                     }
                   >
-                    Resume
+                    {row.status === "not_started" ? "Start" : "Resume"}
                   </Button>
                 </div>
               ))}
@@ -271,10 +321,10 @@ export function BookProgressClient() {
         <p className="text-sm text-slate-200">
           Review mode will combine spaced repetition cards and adaptive quiz prompts.
         </p>
-        <div className="mt-3 rounded-xl border border-white/12 bg-white/[0.03] p-3 text-sm text-slate-300">
+        <div className="mt-3 rounded-xl border border-white/12 bg-white/3 p-3 text-sm text-slate-300">
           <p className="flex items-center gap-2 text-slate-100">
             <Target className="h-4 w-4 text-sky-300" />
-            Personalized review queue coming soon.
+            Adaptive review with spaced repetition.
           </p>
           <p className="mt-2">You already have {analytics.upcomingReviews.length} items queued.</p>
         </div>

@@ -13,13 +13,12 @@ type BookOverviewPanelProps = {
   estimatedDaysToFinish: number;
   progressPercent: number;
   avgScore: number;
-  streakDays: number;
+  unlockedCount: number;
   completedCount: number;
   totalCount: number;
   currentChapterOrder: number;
   currentChapterMinutes: number;
   onContinue: () => void;
-  onMarkAsCompleted: () => void;
   onResetProgress: () => void;
   onRemoveFromLibrary: () => void;
 };
@@ -37,13 +36,12 @@ export function BookOverviewPanel({
   estimatedDaysToFinish,
   progressPercent,
   avgScore,
-  streakDays,
+  unlockedCount,
   completedCount,
   totalCount,
   currentChapterOrder,
   currentChapterMinutes,
   onContinue,
-  onMarkAsCompleted,
   onResetProgress,
   onRemoveFromLibrary,
 }: BookOverviewPanelProps) {
@@ -77,8 +75,8 @@ export function BookOverviewPanel({
         </span>
       </div>
 
-      <h1 className="mt-5 text-5xl font-semibold tracking-tight text-slate-50">{entry.title}</h1>
-      <p className="mt-1 text-4xl text-slate-300">{entry.author}</p>
+      <h1 className="mt-5 text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">{entry.title}</h1>
+      <p className="mt-1 text-sm text-slate-400">by {entry.author}</p>
 
       <div className="mt-4 flex flex-wrap gap-2 text-sm">
         <span className="rounded-xl border border-white/25 bg-white/8 px-3 py-1 text-slate-200">
@@ -92,7 +90,7 @@ export function BookOverviewPanel({
         </span>
       </div>
 
-      <div className="mt-4 space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+      <div className="mt-4 space-y-2 rounded-2xl border border-white/10 bg-white/3 p-3">
         <p className="text-sm text-slate-200">{synopsis}</p>
         <p className="text-xs text-slate-400">
           Estimated finish pace: about {estimatedDaysToFinish} day{estimatedDaysToFinish === 1 ? "" : "s"} at your daily goal.
@@ -103,7 +101,7 @@ export function BookOverviewPanel({
       <div className="mt-5 grid grid-cols-3 gap-2.5">
         <StatTile label="Progress" value={`${progressPercent}%`} accent="sky" />
         <StatTile label="Avg Score" value={`${avgScore}%`} accent="emerald" />
-        <StatTile label="Streak" value={`${streakDays}d`} accent="amber" />
+        <StatTile label="Unlocked" value={`${unlockedCount}`} accent="amber" />
       </div>
 
       <div className="mt-5">
@@ -115,7 +113,7 @@ export function BookOverviewPanel({
         </div>
         <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-900/55">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-sky-300 to-cyan-200 transition-[width] duration-300"
+            className="h-full rounded-full bg-linear-to-r from-sky-300 to-cyan-200 transition-[width] duration-300"
             style={{ width: `${Math.max(progressPercent, 0)}%` }}
           />
         </div>
@@ -124,16 +122,11 @@ export function BookOverviewPanel({
       <button
         type="button"
         onClick={onContinue}
-        className="mt-5 inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-400 px-4 py-3 text-lg font-semibold text-white shadow-[0_14px_30px_rgba(14,165,233,0.34)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+        className="mt-5 inline-flex w-full items-center justify-center rounded-2xl bg-linear-to-r from-sky-500 to-cyan-400 px-4 py-3 text-lg font-semibold text-white shadow-[0_14px_30px_rgba(14,165,233,0.34)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
       >
-        Continue Chapter {currentChapterOrder} →
-      </button>
-      <button
-        type="button"
-        onClick={onMarkAsCompleted}
-        className="mt-2 inline-flex w-full items-center justify-center rounded-2xl border border-emerald-300/35 bg-emerald-500/14 px-4 py-2.5 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/22"
-      >
-        Mark as completed
+        {progressPercent > 0
+          ? `Continue Chapter ${currentChapterOrder} ->`
+          : `Start Chapter ${currentChapterOrder} ->`}
       </button>
       <p className="mt-2 text-sm text-slate-400">Next session: ~{currentChapterMinutes} min</p>
 

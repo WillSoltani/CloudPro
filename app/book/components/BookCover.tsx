@@ -50,7 +50,7 @@ export function BookCover({
           fill
           sizes={sizes}
           className={[
-            "object-cover",
+            "object-contain bg-white",
             imageClassName,
           ]
             .filter(Boolean)

@@ -170,7 +170,13 @@ export function useChapterState(bookId: string, chapterId: string) {
   }, []);
 
   const setReadingDepth = useCallback((readingDepth: ReadingDepth) => {
-    setState((prev) => ({ ...prev, readingDepth }));
+    setState((prev) => ({
+      ...prev,
+      readingDepth,
+      quizAnswers: {},
+      quizResult: null,
+      explanationOpen: {},
+    }));
   }, []);
 
   const setExampleFilter = useCallback((exampleFilter: ExampleFilter) => {
