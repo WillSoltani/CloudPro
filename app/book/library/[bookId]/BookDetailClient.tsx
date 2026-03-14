@@ -8,6 +8,7 @@ import { TopNav } from "@/app/book/home/components/TopNav";
 import { InfoModal } from "@/app/book/home/components/InfoModal";
 import { useOnboardingState } from "@/app/book/hooks/useOnboardingState";
 import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
+import { useSavedBooks } from "@/app/book/hooks/useSavedBooks";
 import { getLibraryBookById } from "@/app/book/data/mockUserLibraryState";
 import { getBookSynopsis } from "@/app/book/data/booksCatalog";
 import { getBookChaptersBundle, type BookChapter } from "@/app/book/data/mockChapters";
@@ -35,6 +36,9 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
   const [showRemoveModal, setShowRemoveModal] = useState(false);
 
   const { state: onboarding, hydrated: onboardingHydrated } = useOnboardingState();
+  const { savedSet, toggleSaved, hydrated: savedHydrated } = useSavedBooks(
+    onboarding.setupComplete
+  );
 
   const entry = useMemo(() => getLibraryBookById(bookId), [bookId]);
   const bundle = useMemo(() => getBookChaptersBundle(bookId), [bookId]);
@@ -105,7 +109,7 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
     router.push(options?.sessionMode ? `${route}?session=1` : route);
   };
 
-  if (!entry || !onboardingHydrated || !hydrated || !onboarding.setupComplete) {
+  if (!entry || !onboardingHydrated || !hydrated || !savedHydrated || !onboarding.setupComplete) {
     return (
       <main className="relative min-h-screen text-slate-100">
         <div className="pointer-events-none absolute inset-0 -z-20 bg-[#050813]" />
@@ -159,6 +163,8 @@ export function BookDetailClient({ bookId }: { bookId: string }) {
               currentChapter &&
               openChapter(currentChapter, { sessionMode: progressPercent === 0 })
             }
+            isSaved={savedSet.has(entry.id)}
+            onToggleSaved={() => void toggleSaved(entry.id, { source: "book-detail" })}
             onResetProgress={() => setShowResetModal(true)}
             onRemoveFromLibrary={() => setShowRemoveModal(true)}
           />

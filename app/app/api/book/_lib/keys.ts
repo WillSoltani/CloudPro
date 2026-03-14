@@ -50,6 +50,34 @@ export function progressSk(bookId: string): string {
   return `PROGRESS#${bookId}`;
 }
 
+export function profileSk(): string {
+  return "PROFILE";
+}
+
+export function settingsSk(): string {
+  return "SETTINGS";
+}
+
+export function savedBookSk(bookId: string): string {
+  return `SAVED#${bookId}`;
+}
+
+export function bookStateSk(bookId: string): string {
+  return `BOOKSTATE#${bookId}`;
+}
+
+export function chapterStateSk(bookId: string, chapterNumber: number): string {
+  return `CHAPTERSTATE#${bookId}#${padChapterNumber(chapterNumber)}`;
+}
+
+export function readingDaySk(dayKey: string): string {
+  return `READINGDAY#${dayKey}`;
+}
+
+export function badgeAwardSk(badgeId: string): string {
+  return `BADGE#${badgeId}`;
+}
+
 export function quizAttemptPk(userId: string, bookId: string, chapterNumber: number): string {
   return `QUIZATTEMPT#${userId}#${bookId}#${padChapterNumber(chapterNumber)}`;
 }

@@ -8,12 +8,15 @@ import {
 import { ddbDoc } from "@/app/app/api/_lib/aws";
 import { BookApiError } from "./errors";
 import {
+  badgeAwardSk,
+  bookStateSk,
   bookMetaSk,
   bookPk,
   bookUserPk,
   bookVersionSk,
   catalogPk,
   catalogSk,
+  chapterStateSk,
   entitlementSk,
   ingestJobPk,
   ingestJobSk,
@@ -21,6 +24,10 @@ import {
   progressSk,
   quizAttemptPk,
   quizAttemptSk,
+  profileSk,
+  readingDaySk,
+  savedBookSk,
+  settingsSk,
   stripeCustomerPk,
   stripeCustomerSk,
   webhookPk,
@@ -29,8 +36,15 @@ import {
 import type {
   BookCatalogItem,
   BookManifest,
+  BookUserBadgeAwardItem,
+  BookUserBookStateItem,
+  BookUserChapterStateItem,
   BookUserEntitlement,
+  BookUserProfileItem,
   BookUserProgress,
+  BookUserReadingDayItem,
+  BookUserSavedBookItem,
+  BookUserSettingsItem,
   BookVersionItem,
   QuizAttemptItem,
 } from "./types";
@@ -61,6 +75,30 @@ function parseNumberArray(value: unknown): number[] {
     return Array.from(value).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   }
   return [];
+}
+
+function parseRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function parseStringRecord(value: unknown): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(parseRecord(value)).filter(
+      ([key, entryValue]) => typeof key === "string" && typeof entryValue === "string"
+    )
+  ) as Record<string, string>;
+}
+
+function parseNumberRecord(value: unknown): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(parseRecord(value)).filter(
+      ([key, entryValue]) =>
+        typeof key === "string" &&
+        typeof entryValue === "number" &&
+        Number.isFinite(entryValue)
+    )
+  ) as Record<string, number>;
 }
 
 function isConditionalCheckFailed(error: unknown): boolean {
@@ -1082,6 +1120,508 @@ export function summarizeProgress(
     freeBookSlots: ent?.freeBookSlots ?? 2,
     unlockedBooksCount: ent?.unlockedBookIds.length ?? 0,
   };
+}
+
+export async function getUserProfileItem(
+  tableName: string,
+  userId: string
+): Promise<BookUserProfileItem | null> {
+  const res = await ddbDoc.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: {
+        PK: bookUserPk(userId),
+        SK: profileSk(),
+      },
+    })
+  );
+  const item = res.Item;
+  if (!item) return null;
+  return {
+    userId,
+    profile: parseRecord(item.profile),
+    createdAt: readStr(item.createdAt) || "",
+    updatedAt: readStr(item.updatedAt) || "",
+  };
+}
+
+export async function putUserProfileItem(
+  tableName: string,
+  params: {
+    userId: string;
+    profile: Record<string, unknown>;
+    createdAt?: string;
+  }
+): Promise<BookUserProfileItem> {
+  const now = nowIso();
+  const createdAt = params.createdAt || now;
+  await ddbDoc.send(
+    new PutCommand({
+      TableName: tableName,
+      Item: {
+        PK: bookUserPk(params.userId),
+        SK: profileSk(),
+        entity: "BOOK_USER_PROFILE",
+        userId: params.userId,
+        profile: params.profile,
+        createdAt,
+        updatedAt: now,
+      },
+    })
+  );
+  return {
+    userId: params.userId,
+    profile: params.profile,
+    createdAt,
+    updatedAt: now,
+  };
+}
+
+export async function getUserSettingsItem(
+  tableName: string,
+  userId: string
+): Promise<BookUserSettingsItem | null> {
+  const res = await ddbDoc.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: {
+        PK: bookUserPk(userId),
+        SK: settingsSk(),
+      },
+    })
+  );
+  const item = res.Item;
+  if (!item) return null;
+  return {
+    userId,
+    settings: parseRecord(item.settings),
+    createdAt: readStr(item.createdAt) || "",
+    updatedAt: readStr(item.updatedAt) || "",
+  };
+}
+
+export async function putUserSettingsItem(
+  tableName: string,
+  params: {
+    userId: string;
+    settings: Record<string, unknown>;
+    createdAt?: string;
+  }
+): Promise<BookUserSettingsItem> {
+  const now = nowIso();
+  const createdAt = params.createdAt || now;
+  await ddbDoc.send(
+    new PutCommand({
+      TableName: tableName,
+      Item: {
+        PK: bookUserPk(params.userId),
+        SK: settingsSk(),
+        entity: "BOOK_USER_SETTINGS",
+        userId: params.userId,
+        settings: params.settings,
+        createdAt,
+        updatedAt: now,
+      },
+    })
+  );
+  return {
+    userId: params.userId,
+    settings: params.settings,
+    createdAt,
+    updatedAt: now,
+  };
+}
+
+export async function listSavedBooks(
+  tableName: string,
+  userId: string
+): Promise<BookUserSavedBookItem[]> {
+  const res = await ddbDoc.send(
+    new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": bookUserPk(userId),
+        ":prefix": "SAVED#",
+      },
+      ScanIndexForward: true,
+    })
+  );
+  const items: Array<BookUserSavedBookItem | null> = (res.Items ?? [])
+    .map((item) => {
+      const bookId = readStr(item.bookId);
+      if (!bookId) return null;
+      return {
+        userId,
+        bookId,
+        savedAt: readStr(item.savedAt) || "",
+        updatedAt: readStr(item.updatedAt) || "",
+        source: readStr(item.source),
+        priority: readNum(item.priority),
+        pinned: item.pinned === true,
+      } satisfies BookUserSavedBookItem;
+    });
+  return items.filter((item): item is BookUserSavedBookItem => item !== null);
+}
+
+export async function putSavedBook(
+  tableName: string,
+  params: {
+    userId: string;
+    bookId: string;
+    source?: string;
+    priority?: number;
+    pinned?: boolean;
+  }
+): Promise<BookUserSavedBookItem> {
+  const existing = await ddbDoc.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: {
+        PK: bookUserPk(params.userId),
+        SK: savedBookSk(params.bookId),
+      },
+    })
+  );
+  const now = nowIso();
+  const savedAt = readStr(existing.Item?.savedAt) || now;
+  await ddbDoc.send(
+    new PutCommand({
+      TableName: tableName,
+      Item: {
+        PK: bookUserPk(params.userId),
+        SK: savedBookSk(params.bookId),
+        entity: "BOOK_SAVED_BOOK",
+        userId: params.userId,
+        bookId: params.bookId,
+        savedAt,
+        updatedAt: now,
+        source: params.source,
+        priority: params.priority,
+        pinned: params.pinned === true,
+      },
+    })
+  );
+  return {
+    userId: params.userId,
+    bookId: params.bookId,
+    savedAt,
+    updatedAt: now,
+    source: params.source,
+    priority: params.priority,
+    pinned: params.pinned === true,
+  };
+}
+
+export async function deleteSavedBook(
+  tableName: string,
+  userId: string,
+  bookId: string
+): Promise<void> {
+  await ddbDoc.send(
+    new DeleteCommand({
+      TableName: tableName,
+      Key: {
+        PK: bookUserPk(userId),
+        SK: savedBookSk(bookId),
+      },
+    })
+  );
+}
+
+export async function getUserBookState(
+  tableName: string,
+  userId: string,
+  bookId: string
+): Promise<BookUserBookStateItem | null> {
+  const res = await ddbDoc.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: {
+        PK: bookUserPk(userId),
+        SK: bookStateSk(bookId),
+      },
+    })
+  );
+  const item = res.Item;
+  if (!item) return null;
+  return {
+    userId,
+    bookId,
+    currentChapterId: readStr(item.currentChapterId) || "",
+    completedChapterIds: parseStringArray(item.completedChapterIds),
+    unlockedChapterIds: parseStringArray(item.unlockedChapterIds),
+    chapterScores: parseNumberRecord(item.chapterScores),
+    chapterCompletedAt: parseStringRecord(item.chapterCompletedAt),
+    lastReadChapterId: readStr(item.lastReadChapterId) || "",
+    lastOpenedAt: readStr(item.lastOpenedAt) || "",
+    createdAt: readStr(item.createdAt) || "",
+    updatedAt: readStr(item.updatedAt) || "",
+  };
+}
+
+export async function putUserBookState(
+  tableName: string,
+  state: BookUserBookStateItem
+): Promise<void> {
+  await ddbDoc.send(
+    new PutCommand({
+      TableName: tableName,
+      Item: {
+        PK: bookUserPk(state.userId),
+        SK: bookStateSk(state.bookId),
+        entity: "BOOK_USER_BOOK_STATE",
+        ...state,
+      },
+    })
+  );
+}
+
+export async function listAllUserBookStates(
+  tableName: string,
+  userId: string
+): Promise<BookUserBookStateItem[]> {
+  const res = await ddbDoc.send(
+    new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": bookUserPk(userId),
+        ":prefix": "BOOKSTATE#",
+      },
+      ScanIndexForward: true,
+    })
+  );
+  const items: Array<BookUserBookStateItem | null> = (res.Items ?? [])
+    .map((item) => {
+      const bookId = readStr(item.bookId);
+      if (!bookId) return null;
+      return {
+        userId,
+        bookId,
+        currentChapterId: readStr(item.currentChapterId) || "",
+        completedChapterIds: parseStringArray(item.completedChapterIds),
+        unlockedChapterIds: parseStringArray(item.unlockedChapterIds),
+        chapterScores: parseNumberRecord(item.chapterScores),
+        chapterCompletedAt: parseStringRecord(item.chapterCompletedAt),
+        lastReadChapterId: readStr(item.lastReadChapterId) || "",
+        lastOpenedAt: readStr(item.lastOpenedAt) || "",
+        createdAt: readStr(item.createdAt) || "",
+        updatedAt: readStr(item.updatedAt) || "",
+      } satisfies BookUserBookStateItem;
+    });
+  return items.filter((item): item is BookUserBookStateItem => item !== null);
+}
+
+export async function getUserChapterState(
+  tableName: string,
+  userId: string,
+  bookId: string,
+  chapterNumber: number
+): Promise<BookUserChapterStateItem | null> {
+  const res = await ddbDoc.send(
+    new GetCommand({
+      TableName: tableName,
+      Key: {
+        PK: bookUserPk(userId),
+        SK: chapterStateSk(bookId, chapterNumber),
+      },
+    })
+  );
+  const item = res.Item;
+  if (!item) return null;
+  return {
+    userId,
+    bookId,
+    chapterNumber,
+    chapterId: readStr(item.chapterId),
+    state: parseRecord(item.state),
+    createdAt: readStr(item.createdAt) || "",
+    updatedAt: readStr(item.updatedAt) || "",
+  };
+}
+
+export async function putUserChapterState(
+  tableName: string,
+  item: BookUserChapterStateItem
+): Promise<void> {
+  await ddbDoc.send(
+    new PutCommand({
+      TableName: tableName,
+      Item: {
+        PK: bookUserPk(item.userId),
+        SK: chapterStateSk(item.bookId, item.chapterNumber),
+        entity: "BOOK_USER_CHAPTER_STATE",
+        ...item,
+      },
+    })
+  );
+}
+
+export async function listUserChapterStates(
+  tableName: string,
+  userId: string
+): Promise<BookUserChapterStateItem[]> {
+  const res = await ddbDoc.send(
+    new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": bookUserPk(userId),
+        ":prefix": "CHAPTERSTATE#",
+      },
+      ScanIndexForward: true,
+    })
+  );
+  const items: Array<BookUserChapterStateItem | null> = (res.Items ?? [])
+    .map((item) => {
+      const bookId = readStr(item.bookId);
+      const chapterNumber = readNum(item.chapterNumber);
+      if (!bookId || !chapterNumber) return null;
+      return {
+        userId,
+        bookId,
+        chapterNumber,
+        chapterId: readStr(item.chapterId),
+        state: parseRecord(item.state),
+        createdAt: readStr(item.createdAt) || "",
+        updatedAt: readStr(item.updatedAt) || "",
+      } satisfies BookUserChapterStateItem;
+    });
+  return items.filter((item): item is BookUserChapterStateItem => item !== null);
+}
+
+export async function addReadingDayActivity(
+  tableName: string,
+  params: {
+    userId: string;
+    dayKey: string;
+    deltaMs: number;
+    occurredAt?: string;
+  }
+): Promise<BookUserReadingDayItem> {
+  const safeDelta = Math.max(0, Math.round(params.deltaMs));
+  const now = params.occurredAt || nowIso();
+  const res = await ddbDoc.send(
+    new UpdateCommand({
+      TableName: tableName,
+      Key: {
+        PK: bookUserPk(params.userId),
+        SK: readingDaySk(params.dayKey),
+      },
+      UpdateExpression:
+        "SET entity = :entity, userId = :userId, dayKey = :dayKey, updatedAt = :updatedAt, lastActivityAt = :lastActivityAt ADD totalActiveMs :delta",
+      ExpressionAttributeValues: {
+        ":entity": "BOOK_USER_READING_DAY",
+        ":userId": params.userId,
+        ":dayKey": params.dayKey,
+        ":updatedAt": now,
+        ":lastActivityAt": now,
+        ":delta": safeDelta,
+      },
+      ReturnValues: "ALL_NEW",
+    })
+  );
+  const item = res.Attributes ?? {};
+  return {
+    userId: params.userId,
+    dayKey: params.dayKey,
+    totalActiveMs: readNum(item.totalActiveMs) ?? safeDelta,
+    updatedAt: readStr(item.updatedAt) || now,
+    lastActivityAt: readStr(item.lastActivityAt) || now,
+  };
+}
+
+export async function listReadingDays(
+  tableName: string,
+  userId: string
+): Promise<BookUserReadingDayItem[]> {
+  const res = await ddbDoc.send(
+    new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": bookUserPk(userId),
+        ":prefix": "READINGDAY#",
+      },
+      ScanIndexForward: true,
+    })
+  );
+  const items: Array<BookUserReadingDayItem | null> = (res.Items ?? [])
+    .map((item) => {
+      const dayKey = readStr(item.dayKey);
+      if (!dayKey) return null;
+      return {
+        userId,
+        dayKey,
+        totalActiveMs: readNum(item.totalActiveMs) ?? 0,
+        updatedAt: readStr(item.updatedAt) || "",
+        lastActivityAt: readStr(item.lastActivityAt),
+      } satisfies BookUserReadingDayItem;
+    });
+  return items.filter((item): item is BookUserReadingDayItem => item !== null);
+}
+
+export async function listBadgeAwards(
+  tableName: string,
+  userId: string
+): Promise<BookUserBadgeAwardItem[]> {
+  const res = await ddbDoc.send(
+    new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+      ExpressionAttributeValues: {
+        ":pk": bookUserPk(userId),
+        ":prefix": "BADGE#",
+      },
+      ScanIndexForward: true,
+    })
+  );
+  const items: Array<BookUserBadgeAwardItem | null> = (res.Items ?? [])
+    .map((item) => {
+      const badgeId = readStr(item.badgeId);
+      if (!badgeId) return null;
+      return {
+        userId,
+        badgeId,
+        earnedAt: readStr(item.earnedAt) || "",
+        updatedAt: readStr(item.updatedAt) || "",
+        tier: readStr(item.tier),
+      } satisfies BookUserBadgeAwardItem;
+    });
+  return items.filter((item): item is BookUserBadgeAwardItem => item !== null);
+}
+
+export async function putBadgeAward(
+  tableName: string,
+  params: {
+    userId: string;
+    badgeId: string;
+    earnedAt: string;
+    tier?: string;
+  }
+): Promise<void> {
+  try {
+    await ddbDoc.send(
+      new PutCommand({
+        TableName: tableName,
+        Item: {
+          PK: bookUserPk(params.userId),
+          SK: badgeAwardSk(params.badgeId),
+          entity: "BOOK_USER_BADGE_AWARD",
+          userId: params.userId,
+          badgeId: params.badgeId,
+          earnedAt: params.earnedAt,
+          updatedAt: nowIso(),
+          tier: params.tier,
+        },
+        ConditionExpression: "attribute_not_exists(PK) AND attribute_not_exists(SK)",
+      })
+    );
+  } catch (error: unknown) {
+    if (isConditionalCheckFailed(error)) return;
+    throw error;
+  }
 }
 
 export async function putBookManifest(

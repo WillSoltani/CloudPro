@@ -471,6 +471,7 @@ export function ConvertedFiles({
                     </span>
                   </div>
                   {f.previewUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element -- signed preview URLs are generated at runtime.
                     <img
                       key={f.previewUrl}
                       src={f.previewUrl}

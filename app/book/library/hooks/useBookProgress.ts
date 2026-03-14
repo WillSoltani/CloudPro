@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BookChapter } from "@/app/book/data/mockChapters";
+import { fetchBookJson } from "@/app/book/_lib/book-api";
+import { getBookProgressStorageKey } from "@/app/book/_lib/reader-storage";
 import { emitBookStorageChanged } from "@/app/book/hooks/bookStorageEvents";
 
 type ChapterState = "completed" | "current" | "locked";
@@ -15,8 +17,6 @@ type PersistedBookProgress = {
   lastReadChapterId: string;
   lastOpenedAt: string;
 };
-
-const STORAGE_PREFIX = "book-accelerator:book-progress:v3";
 
 function uniqueIds(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
@@ -158,11 +158,12 @@ function parseStored(
 }
 
 export function useBookProgress(bookId: string, chapters: BookChapter[]) {
-  const storageKey = `${STORAGE_PREFIX}:${bookId}`;
+  const storageKey = getBookProgressStorageKey(bookId);
   const [hydrated, setHydrated] = useState(false);
   const [progress, setProgress] = useState<PersistedBookProgress>(() =>
     initialProgress(chapters)
   );
+  const [serverReady, setServerReady] = useState(false);
 
   useEffect(() => {
     const parsed = parseStored(window.localStorage.getItem(storageKey), chapters);
@@ -171,10 +172,40 @@ export function useBookProgress(bookId: string, chapters: BookChapter[]) {
   }, [chapters, storageKey]);
 
   useEffect(() => {
+    let mounted = true;
+    fetchBookJson<{ state: PersistedBookProgress | null }>(
+      `/app/api/book/me/books/${encodeURIComponent(bookId)}/state`
+    )
+      .then((payload) => {
+        if (!mounted || !payload.state) return;
+        setProgress(normalizeProgress(payload.state, initialProgress(chapters), chapters));
+        setServerReady(true);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setServerReady(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [bookId, chapters]);
+
+  useEffect(() => {
     if (!hydrated) return;
     window.localStorage.setItem(storageKey, JSON.stringify(progress));
     emitBookStorageChanged(`progress:${bookId}`);
   }, [bookId, hydrated, progress, storageKey]);
+
+  useEffect(() => {
+    if (!hydrated || !serverReady) return;
+    const timeout = window.setTimeout(() => {
+      fetchBookJson(`/app/api/book/me/books/${encodeURIComponent(bookId)}/state`, {
+        method: "PATCH",
+        body: JSON.stringify({ state: progress }),
+      }).catch(() => {});
+    }, 200);
+    return () => window.clearTimeout(timeout);
+  }, [bookId, hydrated, progress, serverReady]);
 
   const completedSet = useMemo(
     () => new Set(progress.completedChapterIds),

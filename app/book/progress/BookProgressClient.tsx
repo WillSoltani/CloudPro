@@ -31,6 +31,12 @@ function levelClass(level: number) {
   return "bg-emerald-400/80 border-emerald-200/50";
 }
 
+function progressStatusLabel(status: "completed" | "in_progress" | "not_started") {
+  if (status === "completed") return "completed";
+  if (status === "in_progress") return "in progress";
+  return "active";
+}
+
 export function BookProgressClient() {
   const router = useRouter();
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -64,8 +70,8 @@ export function BookProgressClient() {
   const filteredRows = useMemo(() => {
     if (!analytics) return [];
     const search = query.trim().toLowerCase();
-    if (!search) return analytics.bookSnapshots;
-    return analytics.bookSnapshots.filter((snapshot) => {
+    if (!search) return analytics.engagedBookSnapshots;
+    return analytics.engagedBookSnapshots.filter((snapshot) => {
       const haystack = `${snapshot.book.title} ${snapshot.book.author}`.toLowerCase();
       return haystack.includes(search);
     });
@@ -142,7 +148,7 @@ export function BookProgressClient() {
                 <p className="text-lg font-semibold tabular-nums text-slate-100">
                   {analytics.minutesReadToday}<span className="text-sm font-normal text-slate-500">m</span>
                 </p>
-                <p className="text-xs text-slate-500">of {analytics.dailyGoalMinutes} min</p>
+                <p className="text-xs text-slate-500">of {analytics.dailyGoalMinutes} min tracked today</p>
               </div>
             </div>
           </Card>
@@ -272,16 +278,21 @@ export function BookProgressClient() {
         <Card className="mt-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-xl font-semibold text-slate-100">Book progress</h2>
-            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Resume any title</p>
+            <p className="text-xs uppercase tracking-[0.14em] text-slate-400">Meaningful activity only</p>
           </div>
 
-          {!analytics.hasAnyProgress ? (
+          {!analytics.hasAnyEngagement ? (
             <div className="rounded-2xl border border-white/12 bg-white/3 p-5 text-center">
-              <p className="text-lg font-medium text-slate-100">No progress yet</p>
-              <p className="mt-2 text-sm text-slate-300">Start your first chapter to unlock your progress dashboard.</p>
+              <p className="text-lg font-medium text-slate-100">No books in progress yet</p>
+              <p className="mt-2 text-sm text-slate-300">Start reading a book and your progress will show up here.</p>
               <Link href="/book/library" className="mt-4 inline-flex rounded-xl border border-sky-300/35 bg-sky-500/14 px-4 py-2 text-sm text-sky-100">
-                Go to Library
+                Browse library
               </Link>
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="rounded-2xl border border-white/12 bg-white/3 p-5 text-center">
+              <p className="text-lg font-medium text-slate-100">No engaged books match this search</p>
+              <p className="mt-2 text-sm text-slate-300">Try another title or clear the search to see the books you have actually worked on.</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -291,7 +302,7 @@ export function BookProgressClient() {
                     <p className="text-sm font-medium text-slate-100">{row.book.title}</p>
                     <p className="text-xs text-slate-400">{row.book.author}</p>
                   </div>
-                  <p className="text-xs text-slate-300">{row.status.replace("_", " ")}</p>
+                  <p className="text-xs text-slate-300">{progressStatusLabel(row.status)}</p>
                   <p className="text-xs text-slate-300">{row.completedChapters}/{row.totalChapters} chapters</p>
                   <p className="text-xs text-slate-300">Best {row.bestScore}%</p>
                   <p className="text-xs text-slate-300 truncate">{row.lastOpenedLabel}</p>
@@ -300,11 +311,13 @@ export function BookProgressClient() {
                     variant="secondary"
                     onClick={() =>
                       router.push(
-                        `/book/library/${encodeURIComponent(row.book.id)}/chapter/${encodeURIComponent(row.resumeChapterId)}`
+                        row.status === "completed"
+                          ? `/book/library/${encodeURIComponent(row.book.id)}`
+                          : `/book/library/${encodeURIComponent(row.book.id)}/chapter/${encodeURIComponent(row.resumeChapterId)}`
                       )
                     }
                   >
-                    {row.status === "not_started" ? "Start" : "Resume"}
+                    {row.status === "completed" ? "Open" : row.status === "in_progress" ? "Resume" : "Continue"}
                   </Button>
                 </div>
               ))}

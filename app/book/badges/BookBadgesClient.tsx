@@ -1,30 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Lock, Share2 } from "lucide-react";
+import { Award, Compass, Lock, Search, Sparkles, Trophy } from "lucide-react";
 import { TopNav } from "@/app/book/home/components/TopNav";
-import { useOnboardingState } from "@/app/book/hooks/useOnboardingState";
-import { useBookAnalytics } from "@/app/book/hooks/useBookAnalytics";
-import { evaluateBadges, type BadgeState } from "@/app/book/data/mockBadges";
-import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
-import { Card } from "@/app/book/components/ui/Card";
-import { ChipButton } from "@/app/book/components/ui/Chip";
 import { InfoModal } from "@/app/book/home/components/InfoModal";
-import { Button } from "@/app/book/components/ui/Button";
-import { Toast } from "@/app/book/components/ui/Toast";
-import { useToast } from "@/app/book/hooks/useToast";
-
-type BadgeFilter = "All" | "Earned" | "Locked" | "Streak" | "Quiz" | "Books";
-
-const filters: BadgeFilter[] = ["All", "Earned", "Locked", "Streak", "Quiz", "Books"];
-
-function filterBadges(badges: BadgeState[], filter: BadgeFilter): BadgeState[] {
-  if (filter === "All") return badges;
-  if (filter === "Earned") return badges.filter((badge) => badge.earned);
-  if (filter === "Locked") return badges.filter((badge) => !badge.earned);
-  return badges.filter((badge) => badge.category === filter);
-}
+import { useOnboardingState } from "@/app/book/hooks/useOnboardingState";
+import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
+import { useBadgeSystem } from "@/app/book/hooks/useBadgeSystem";
+import { BADGE_FILTERS, filterBadges, type BadgeFilter, type BadgeState } from "@/app/book/data/mockBadges";
+import {
+  BadgeCategorySection,
+  BadgeDetailPanel,
+  BadgeFilterBar,
+  BadgeTimelineItem,
+  FeaturedBadgeCard,
+  ProgressToNextBadgeCard,
+} from "@/app/book/badges/components/BadgeSystemCards";
+import { Card } from "@/app/book/components/ui/Card";
+import { Chip } from "@/app/book/components/ui/Chip";
 
 export function BookBadgesClient() {
   const router = useRouter();
@@ -34,13 +28,11 @@ export function BookBadgesClient() {
   const [filter, setFilter] = useState<BadgeFilter>("All");
   const [selectedBadge, setSelectedBadge] = useState<BadgeState | null>(null);
 
-  const { toast, showToast } = useToast();
-
   const { state: onboarding, hydrated: onboardingHydrated } = useOnboardingState();
-  const { analytics, hydrated } = useBookAnalytics(
-    onboarding.selectedBookIds,
-    onboarding.dailyGoalMinutes
-  );
+  const badgeSystem = useBadgeSystem({
+    selectedBookIds: onboarding.selectedBookIds,
+    dailyGoalMinutes: onboarding.dailyGoalMinutes,
+  });
 
   useKeyboardShortcut(
     "/",
@@ -58,60 +50,63 @@ export function BookBadgesClient() {
     }
   }, [onboarding.setupComplete, onboardingHydrated, router]);
 
-  const badges = useMemo(() => {
-    if (!analytics) return [];
-    return evaluateBadges({
-      totalCompletedChapters: analytics.totalCompletedChapters,
-      completedBooks: analytics.booksCompleted,
-      streakDays: analytics.streakDays,
-      avgQuizScore: analytics.avgQuizScore,
-      maxQuizScore: analytics.maxQuizScore,
-      longestStreak: analytics.longestStreak,
-    });
-  }, [analytics]);
-
-  const displayedBadges = useMemo(() => {
-    const byFilter = filterBadges(badges, filter);
+  const visibleBadges = useMemo(() => {
+    const filtered = filterBadges(badgeSystem.visibleBadges, filter);
     const search = query.trim().toLowerCase();
-    if (!search) return byFilter;
-    return byFilter.filter((badge) => {
-      const text = `${badge.name} ${badge.description} ${badge.category}`.toLowerCase();
-      return text.includes(search);
+    if (!search) return filtered;
+    return filtered.filter((badge) => {
+      const searchable = [
+        badge.name,
+        badge.description,
+        badge.category,
+        badge.howToEarn,
+        badge.whyItMatters,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return searchable.includes(search);
     });
-  }, [badges, filter, query]);
+  }, [badgeSystem.visibleBadges, filter, query]);
 
-  const timeline = useMemo(
-    () => [
-      {
-        label: "First chapter completed",
-        done: (analytics?.totalCompletedChapters ?? 0) >= 1,
-      },
-      {
-        label: "First quiz passed",
-        done: (analytics?.avgQuizScore ?? 0) > 0,
-      },
-      {
-        label: "7-day streak unlocked",
-        done: (analytics?.streakDays ?? 0) >= 7,
-      },
-      {
-        label: "First book completed",
-        done: (analytics?.booksCompleted ?? 0) >= 1,
-      },
-      {
-        label: "Quiz Master pace",
-        done: (analytics?.avgQuizScore ?? 0) >= 90,
-      },
-    ],
-    [analytics]
+  const visibleById = useMemo(() => new Set(visibleBadges.map((badge) => badge.id)), [visibleBadges]);
+
+  const groupedBadges = useMemo(
+    () =>
+      badgeSystem.categoryGroups
+        .map((group) => ({
+          ...group,
+          badges: group.badges.filter((badge) => visibleById.has(badge.id)),
+        }))
+        .filter((group) => group.badges.length > 0),
+    [badgeSystem.categoryGroups, visibleById]
   );
 
-  if (!onboardingHydrated || !hydrated || !onboarding.setupComplete) {
+  const featuredBadges = useMemo(
+    () => badgeSystem.featuredBadges.filter((badge) => visibleById.has(badge.id)).slice(0, 4),
+    [badgeSystem.featuredBadges, visibleById]
+  );
+
+  const nextMilestone = useMemo(
+    () => badgeSystem.nextMilestones.find((milestone) => visibleById.has(milestone.badge.id)) ?? badgeSystem.nextMilestones[0] ?? null,
+    [badgeSystem.nextMilestones, visibleById]
+  );
+
+  const timelineEntries = useMemo(
+    () => badgeSystem.badgeTimeline.filter((entry) => visibleById.has(entry.badgeId)).slice(0, 8),
+    [badgeSystem.badgeTimeline, visibleById]
+  );
+
+  const selectedNextTier = useMemo(
+    () => badgeSystem.badges.find((badge) => badge.id === selectedBadge?.nextTierId) ?? null,
+    [badgeSystem.badges, selectedBadge?.nextTierId]
+  );
+
+  if (!onboardingHydrated || !badgeSystem.hydrated || !onboarding.setupComplete) {
     return (
       <main className="relative min-h-screen text-slate-100">
         <div className="pointer-events-none absolute inset-0 -z-20 bg-[#050813]" />
         <div className="mx-auto flex min-h-screen items-center justify-center px-4 text-slate-300">
-          Loading badges...
+          Loading achievements...
         </div>
       </main>
     );
@@ -120,7 +115,7 @@ export function BookBadgesClient() {
   return (
     <main className="relative min-h-screen overflow-x-hidden text-slate-100">
       <div className="pointer-events-none absolute inset-0 -z-20 bg-[#050813]" />
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(920px_circle_at_10%_-8%,rgba(56,189,248,0.12),transparent_58%),radial-gradient(820px_circle_at_100%_0%,rgba(251,191,36,0.08),transparent_52%)]" />
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(980px_circle_at_8%_-8%,rgba(56,189,248,0.12),transparent_58%),radial-gradient(820px_circle_at_100%_0%,rgba(251,191,36,0.08),transparent_52%)]" />
 
       <TopNav
         name={onboarding.name || "Reader"}
@@ -128,100 +123,162 @@ export function BookBadgesClient() {
         searchQuery={query}
         onSearchChange={setQuery}
         searchInputRef={searchRef}
-        searchPlaceholder="Search badges..."
+        searchPlaceholder="Search badges"
       />
 
       <section className="mx-auto w-full max-w-7xl px-4 pb-28 pt-7 sm:px-6 sm:pt-8 md:pb-24">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h1 className="text-4xl font-semibold tracking-tight text-slate-50 sm:text-5xl">Badges</h1>
-          {badges.length > 0 && (
-            <div className="flex items-center gap-3 text-sm">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300/35 bg-amber-300/12 px-3 py-1 text-amber-100">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />
-                {badges.filter((b) => b.earned).length} earned
-              </span>
-              <span className="text-slate-500">{badges.filter((b) => !b.earned).length} locked</span>
+        <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+          <Card className="overflow-hidden border-white/10 bg-[linear-gradient(145deg,rgba(9,14,28,0.96),rgba(14,20,37,0.88))] p-6 sm:p-7">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-white/12 bg-white/8 text-slate-100">
+                  <Award className="h-6 w-6" />
+                </div>
+                <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-50 sm:text-5xl">Badges and milestones</h1>
+                <p className="mt-3 max-w-3xl text-base leading-7 text-slate-300">
+                  Achievements reward depth, consistency, and completion. The system stays quiet most of the time, but the next meaningful milestone is always visible.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <StatPill label="Earned" value={badgeSystem.earnedCount} tone="amber" />
+                <StatPill label="Visible" value={badgeSystem.visibleCount} tone="sky" />
+              </div>
             </div>
-          )}
+            <div className="mt-6 flex flex-wrap items-center gap-3 rounded-[24px] border border-white/10 bg-black/16 px-4 py-3">
+              <Search className="h-4 w-4 text-slate-500" />
+              <p className="text-sm text-slate-300">
+                Search matches badge names, descriptions, and unlock guidance so it stays fast even as the system grows.
+              </p>
+            </div>
+          </Card>
+
+          <ProgressToNextBadgeCard
+            milestone={nextMilestone}
+            onOpen={nextMilestone ? () => setSelectedBadge(nextMilestone.badge) : undefined}
+            secondary={
+              <div className="grid gap-3 sm:grid-cols-2">
+                <MiniNote
+                  icon={<Sparkles className="h-4 w-4 text-sky-300" />}
+                  label="Unlock cadence"
+                  value="Small wins stay subtle. Major milestones earn richer reveal treatment."
+                />
+                <MiniNote
+                  icon={<Compass className="h-4 w-4 text-amber-300" />}
+                  label="Design principle"
+                  value="Progress matters more than noise, so visible tracks focus on meaningful movement."
+                />
+              </div>
+            }
+          />
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {filters.map((option) => (
-            <ChipButton
-              key={option}
-              tone={filter === option ? "sky" : "neutral"}
-              active={filter === option}
-              onClick={() => setFilter(option)}
-            >
-              {option}
-            </ChipButton>
-          ))}
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <BadgeFilterBar filters={BADGE_FILTERS} activeFilter={filter} onChange={setFilter} />
+          <div className="flex flex-wrap gap-2">
+            <Chip tone="neutral">{badgeSystem.lockedBadges.length} locked</Chip>
+            <Chip tone="neutral">{badgeSystem.badgeTimeline.length} timeline items</Chip>
+          </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_1fr]">
-          <Card>
-            {displayedBadges.length === 0 ? (
-              <p className="py-6 text-center text-sm text-slate-400">No badges match this filter.</p>
+        {featuredBadges.length ? (
+          <div className="mt-6">
+            <div className="mb-3 flex items-center gap-2 text-sm text-slate-400">
+              <Trophy className="h-4 w-4 text-amber-300" />
+              Featured badges
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {featuredBadges.map((badge, index) => (
+                <FeaturedBadgeCard
+                  key={badge.id}
+                  badge={badge}
+                  subtitle={index < 2 ? "Recently earned" : "Prestige"}
+                  onOpen={() => setSelectedBadge(badge)}
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mt-6 grid gap-5 xl:grid-cols-[1.16fr_0.84fr]">
+          <div className="space-y-5">
+            {groupedBadges.length ? (
+              groupedBadges.map((group) => (
+                <BadgeCategorySection
+                  key={group.category}
+                  title={group.title}
+                  description={group.description}
+                  badges={group.badges}
+                  onOpen={setSelectedBadge}
+                />
+              ))
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {displayedBadges.map((badge) => (
+              <Card className="border-white/10 bg-white/[0.03]">
+                <div className="py-8 text-center">
+                  <p className="text-lg font-semibold text-slate-100">No badges match this view</p>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Try a broader filter or search term to see more achievements.
+                  </p>
+                </div>
+              </Card>
+            )}
+          </div>
+
+          <div className="space-y-5">
+            <Card className="border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Recent unlocks</p>
+                  <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-50">Badge timeline</h2>
+                </div>
+                <Chip tone="neutral">{timelineEntries.length} shown</Chip>
+              </div>
+              <div className="mt-5 space-y-3">
+                {timelineEntries.length ? (
+                  timelineEntries.map((entry) => (
+                    <BadgeTimelineItem
+                      key={entry.id}
+                      entry={entry}
+                      onOpen={() => {
+                        const badge = badgeSystem.badges.find((item) => item.id === entry.badgeId);
+                        if (badge) setSelectedBadge(badge);
+                      }}
+                    />
+                  ))
+                ) : (
+                  <div className="rounded-[22px] border border-white/8 bg-black/12 px-4 py-4 text-sm leading-6 text-slate-400">
+                    Earned badges will land here over time so progress feels reflective instead of noisy.
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            <Card className="border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.03))]">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Locked design</p>
+              <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-50">Progressive reveal</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                Hidden milestones stay out of the way until progress begins. Locked badges hint at what matters without flooding the page with empty goals.
+              </p>
+              <div className="mt-5 space-y-3">
+                {badgeSystem.lockedBadges.slice(0, 3).map((badge) => (
                   <button
                     key={badge.id}
                     type="button"
                     onClick={() => setSelectedBadge(badge)}
-                    className={[
-                      "group rounded-2xl border p-4 text-left transition duration-200",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/45",
-                      badge.earned
-                        ? "border-amber-300/35 bg-[linear-gradient(140deg,rgba(251,191,36,0.14),rgba(251,191,36,0.06))] hover:-translate-y-0.5 hover:shadow-[0_12px_26px_rgba(251,191,36,0.22)]"
-                        : "border-white/10 bg-white/3 hover:border-white/20 hover:bg-white/5",
-                    ].join(" ")}
+                    className="flex w-full items-center justify-between gap-3 rounded-[22px] border border-white/8 bg-black/12 px-4 py-3 text-left transition hover:border-white/14"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className={["text-3xl", !badge.earned && "opacity-40 grayscale"].join(" ")}>{badge.icon}</p>
-                      {!badge.earned ? <Lock className="h-3.5 w-3.5 text-slate-600" /> : null}
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="text-2xl opacity-40 grayscale">{badge.icon}</span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-slate-200">{badge.name}</p>
+                        <p className="mt-1 truncate text-xs uppercase tracking-[0.18em] text-slate-500">{badge.progressLabel}</p>
+                      </div>
                     </div>
-                    <p className={["mt-3 text-sm font-semibold", badge.earned ? "text-amber-100" : "text-slate-500"].join(" ")}>{badge.name}</p>
-                    <p className={["mt-0.5 text-xs", badge.earned ? "text-amber-300/70" : "text-slate-600"].join(" ")}>
-                      {badge.earned ? "Earned" : badge.category}
-                    </p>
+                    <Lock className="h-4 w-4 shrink-0 text-slate-600" />
                   </button>
                 ))}
               </div>
-            )}
-          </Card>
-
-          <Card>
-            <h2 className="text-lg font-semibold text-slate-100">Milestones</h2>
-            <ol className="mt-4 space-y-0">
-              {timeline.map((item, index) => {
-                const done = item.done;
-                const isLast = index === timeline.length - 1;
-                return (
-                  <li key={item.label} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <span
-                        className={[
-                          "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[9px] font-bold",
-                          done
-                            ? "border-emerald-300/50 bg-emerald-500/20 text-emerald-300"
-                            : "border-white/15 bg-white/5 text-slate-600",
-                        ].join(" ")}
-                      >
-                        {done ? "✓" : index + 1}
-                      </span>
-                      {!isLast && (
-                        <span className={["w-px flex-1 my-1", done ? "bg-emerald-500/30" : "bg-white/8"].join(" ")} />
-                      )}
-                    </div>
-                    <p className={["pb-4 pt-0.5 text-sm leading-snug", done ? "text-slate-200" : "text-slate-500"].join(" ")}>
-                      {item.label}
-                    </p>
-                  </li>
-                );
-              })}
-            </ol>
-          </Card>
+            </Card>
+          </div>
         </div>
       </section>
 
@@ -231,32 +288,40 @@ export function BookBadgesClient() {
         onClose={() => setSelectedBadge(null)}
       >
         {selectedBadge ? (
-          <div className="space-y-3">
-            <p className="text-4xl">{selectedBadge.icon}</p>
-            <p className="text-sm text-slate-200">{selectedBadge.description}</p>
-            <div className="rounded-xl border border-white/12 bg-white/3 p-3 text-sm text-slate-300">
-              <p className="text-xs uppercase tracking-[0.14em] text-slate-400">How to earn</p>
-              <p className="mt-1">{selectedBadge.howToEarn}</p>
-              <p className="mt-2 text-xs text-slate-400">
-                {selectedBadge.earned
-                  ? selectedBadge.earnedAt
-                    ? `Earned on ${new Date(selectedBadge.earnedAt).toLocaleDateString()}`
-                    : "Earned"
-                  : "Not earned yet"}
-              </p>
-            </div>
-            <Button
-              variant="secondary"
-              onClick={() => showToast("Share link copied (UI demo).", "success")}
-            >
-              <Share2 className="h-4 w-4" />
-              Share
-            </Button>
-          </div>
+          <BadgeDetailPanel badge={selectedBadge} nextTier={selectedNextTier} />
         ) : null}
       </InfoModal>
-
-      <Toast open={toast.open} message={toast.message} tone={toast.tone} />
     </main>
+  );
+}
+
+function StatPill({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "amber" | "sky";
+}) {
+  return (
+    <div className="rounded-[22px] border border-white/10 bg-black/16 px-4 py-3">
+      <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">{label}</p>
+      <p className={tone === "amber" ? "mt-2 text-2xl font-semibold text-amber-100" : "mt-2 text-2xl font-semibold text-sky-100"}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function MiniNote({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/16 p-4">
+      <div className="flex items-center gap-2 text-sm text-slate-400">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-300">{value}</p>
+    </div>
   );
 }

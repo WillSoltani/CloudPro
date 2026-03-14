@@ -17,6 +17,32 @@ export type LibraryBookEntry = BookCatalogItem & {
 };
 
 const DEFAULT_LAST_ACTIVITY = "1970-01-01T00:00:00.000Z";
+const FALLBACK_LIBRARY_CATEGORY_ORDER = [
+  "Communication",
+  "Psychology",
+  "Strategy",
+  "Productivity",
+  "Leadership",
+  "Learning",
+  "Negotiation",
+  "Entrepreneurship",
+  "Career",
+  "Personal Finance",
+  "Finance",
+  "Behavioral Economics",
+  "Mental Toughness",
+  "Resilience",
+  "Persuasion",
+  "Risk",
+  "Wealth",
+  "Philosophy",
+] as const;
+
+type LibraryCategoryMetadata = {
+  popularityRank?: number;
+};
+
+const LIBRARY_CATEGORY_METADATA: Record<string, LibraryCategoryMetadata> = {};
 
 function initialChaptersTotal(book: BookCatalogItem): number {
   const bundleSize = getBookChaptersBundle(book.id).chapters.length;
@@ -40,10 +66,43 @@ export function getLibraryBookById(bookId: string): LibraryBookEntry | undefined
   return buildLibraryCatalog().find((entry) => entry.id === bookId);
 }
 
-const derivedCategories = Array.from(new Set(BOOKS_CATALOG.map((book) => book.category)));
+function rankLibraryCategories(categories: string[]) {
+  const fallbackRank = new Map<string, number>(
+    FALLBACK_LIBRARY_CATEGORY_ORDER.map((category, index) => [category, index + 1])
+  );
+  const categoryCount = new Map<string, number>();
+
+  for (const book of BOOKS_CATALOG) {
+    categoryCount.set(book.category, (categoryCount.get(book.category) ?? 0) + 1);
+  }
+
+  return [...categories].sort((left, right) => {
+    const leftRank =
+      LIBRARY_CATEGORY_METADATA[left]?.popularityRank ??
+      fallbackRank.get(left) ??
+      Number.MAX_SAFE_INTEGER;
+    const rightRank =
+      LIBRARY_CATEGORY_METADATA[right]?.popularityRank ??
+      fallbackRank.get(right) ??
+      Number.MAX_SAFE_INTEGER;
+
+    if (leftRank !== rightRank) return leftRank - rightRank;
+
+    const leftCount = categoryCount.get(left) ?? 0;
+    const rightCount = categoryCount.get(right) ?? 0;
+    if (leftCount !== rightCount) return rightCount - leftCount;
+
+    return left.localeCompare(right);
+  });
+}
+
+const derivedCategories = rankLibraryCategories(
+  Array.from(new Set(BOOKS_CATALOG.map((book) => book.category)))
+);
 const derivedDifficulties = Array.from(new Set(BOOKS_CATALOG.map((book) => book.difficulty)));
 
 export const LIBRARY_CATEGORY_OPTIONS: string[] = ["All", ...derivedCategories];
+export const LIBRARY_CATEGORY_COUNT = derivedCategories.length;
 export const LIBRARY_DIFFICULTY_OPTIONS: string[] = ["All", ...derivedDifficulties];
 export const LIBRARY_STATUS_OPTIONS: string[] = [
   "All",

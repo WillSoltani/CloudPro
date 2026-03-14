@@ -62,7 +62,7 @@ export function useProjectMeta(projects: ProjectRow[]) {
     }
 
     void run();
-  }, [projectKey]); // intentionally not [projects]
+  }, [projectKey, projects]);
 
   return meta;
 }

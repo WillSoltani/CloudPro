@@ -20,6 +20,10 @@ import mindsetPackageJson from "@/book-packages/mindset.modern.json";
 import gritPackageJson from "@/book-packages/grit.modern.json";
 import courageToBeDislikedPackageJson from "@/book-packages/the-courage-to-be-disliked.modern.json";
 import attachedPackageJson from "@/book-packages/attached.modern.json";
+import startWithWhyPackageJson from "@/book-packages/start-with-why.modern.json";
+import sevenHabitsPackageJson from "@/book-packages/the-7-habits-of-highly-effective-people.modern.json";
+import millionaireFastlanePackageJson from "@/book-packages/the-millionaire-fastlane.modern.json";
+import richDadPoorDadPackageJson from "@/book-packages/rich-dad-poor-dad.modern.json";
 import makeTimePackageJson from "@/book-packages/make-time.modern.json";
 import psychologyOfMoneyPackageJson from "@/book-packages/the-psychology-of-money.modern.json";
 import thinkingFastAndSlowPackageJson from "@/book-packages/thinking-fast-and-slow.modern.json";
@@ -158,6 +162,14 @@ export const GRIT_PACKAGE = gritPackageJson as BookPackage;
 export const COURAGE_TO_BE_DISLIKED_PACKAGE =
   courageToBeDislikedPackageJson as BookPackage;
 export const ATTACHED_PACKAGE = attachedPackageJson as BookPackage;
+export const START_WITH_WHY_PACKAGE =
+  startWithWhyPackageJson as BookPackage;
+export const SEVEN_HABITS_PACKAGE =
+  sevenHabitsPackageJson as BookPackage;
+export const MILLIONAIRE_FASTLANE_PACKAGE =
+  millionaireFastlanePackageJson as BookPackage;
+export const RICH_DAD_POOR_DAD_PACKAGE =
+  richDadPoorDadPackageJson as BookPackage;
 export const MAKE_TIME_PACKAGE = makeTimePackageJson as BookPackage;
 export const PSYCHOLOGY_OF_MONEY_PACKAGE =
   psychologyOfMoneyPackageJson as BookPackage;
@@ -225,6 +237,10 @@ export const BOOK_PACKAGES: BookPackage[] = [
   GRIT_PACKAGE,
   COURAGE_TO_BE_DISLIKED_PACKAGE,
   ATTACHED_PACKAGE,
+  START_WITH_WHY_PACKAGE,
+  SEVEN_HABITS_PACKAGE,
+  MILLIONAIRE_FASTLANE_PACKAGE,
+  RICH_DAD_POOR_DAD_PACKAGE,
   MAKE_TIME_PACKAGE,
   PSYCHOLOGY_OF_MONEY_PACKAGE,
   THINKING_FAST_AND_SLOW_PACKAGE,
@@ -432,6 +448,38 @@ export const BOOK_PACKAGE_PRESENTATION: Record<string, BookPackagePresentation> 
     synopsis:
       "A modern reading of attachment styles, dating patterns, secure communication, conflict, and the relational habits that make love steadier and healthier.",
     pages: 304,
+  },
+  "start-with-why": {
+    icon: "🎯",
+    coverImage: "/book-covers/start-with-why.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of purpose, trust, leadership, strategy, communication, and how clear belief creates stronger alignment and followership.",
+    pages: 256,
+  },
+  "the-7-habits-of-highly-effective-people": {
+    icon: "🧭",
+    coverImage: "/book-covers/the-7-habits-of-highly-effective-people.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of principles, priorities, trust, proactivity, interdependence, and the habits that turn character into lasting effectiveness.",
+    pages: 432,
+  },
+  "the-millionaire-fastlane": {
+    icon: "🏎️",
+    coverImage: "/book-covers/the-millionaire-fastlane.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of leverage, control, value creation, entrepreneurship, and the systems that can accelerate financial freedom faster than conventional scripts.",
+    pages: 352,
+  },
+  "rich-dad-poor-dad": {
+    icon: "💼",
+    coverImage: "/book-covers/rich-dad-poor-dad.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of financial literacy, assets, cash flow, ownership, money habits, and the mindset shifts that can improve long term financial freedom.",
+    pages: 336,
   },
   "make-time": {
     icon: "⏳",

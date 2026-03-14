@@ -157,6 +157,7 @@ export function FilePreviewModal(props: {
                 </button>
               </div>
             ) : (
+              // eslint-disable-next-line @next/next/no-img-element -- preview content uses runtime signed URLs and zoom transforms.
               <img
                 src={preview.url}
                 alt={preview.filename}

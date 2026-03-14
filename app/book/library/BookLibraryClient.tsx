@@ -6,6 +6,7 @@ import { TopNav } from "@/app/book/home/components/TopNav";
 import { useOnboardingState } from "@/app/book/hooks/useOnboardingState";
 import { useBookAnalytics } from "@/app/book/hooks/useBookAnalytics";
 import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
+import { useSavedBooks } from "@/app/book/hooks/useSavedBooks";
 import {
   LIBRARY_CATEGORY_OPTIONS,
   LIBRARY_DIFFICULTY_OPTIONS,
@@ -15,9 +16,13 @@ import {
   buildLibraryCatalog,
 } from "@/app/book/data/mockUserLibraryState";
 import { useLibraryFilters } from "@/app/book/library/hooks/useLibraryFilters";
+import { useLibraryPagination } from "@/app/book/library/hooks/useLibraryPagination";
 import { LibrarySearchBar } from "@/app/book/library/components/LibrarySearchBar";
 import { LibraryFilters } from "@/app/book/library/components/LibraryFilters";
+import { LibraryPaginationControls } from "@/app/book/library/components/LibraryPaginationControls";
 import { BookCardLarge } from "@/app/book/library/components/BookCardLarge";
+
+const LIBRARY_PAGE_SIZE_OPTIONS = [10, 20, 30, 50];
 
 function SkeletonCard() {
   return (
@@ -39,6 +44,9 @@ export function BookLibraryClient() {
   const { analytics, hydrated: analyticsHydrated } = useBookAnalytics(
     onboarding.selectedBookIds,
     onboarding.dailyGoalMinutes
+  );
+  const { savedSet, toggleSaved, hydrated: savedHydrated } = useSavedBooks(
+    onboarding.setupComplete
   );
 
   const libraryEntries = useMemo<LibraryBookEntry[]>(() => {
@@ -89,6 +97,11 @@ export function BookLibraryClient() {
     clearChipFilters,
     hasActiveChipFilters,
   } = useLibraryFilters(libraryEntries);
+  const pagination = useLibraryPagination({
+    entries: displayedEntries,
+    defaultPageSize: 10,
+    pageSizeOptions: LIBRARY_PAGE_SIZE_OPTIONS,
+  });
 
   useKeyboardShortcut(
     "/",
@@ -106,7 +119,7 @@ export function BookLibraryClient() {
     }
   }, [onboarding.setupComplete, onboardingHydrated, router]);
 
-  if (!onboardingHydrated || !analyticsHydrated || !hydrated || !onboarding.setupComplete) {
+  if (!onboardingHydrated || !analyticsHydrated || !hydrated || !savedHydrated || !onboarding.setupComplete) {
     return (
       <main className="relative min-h-screen text-slate-100">
         <div className="pointer-events-none absolute inset-0 -z-20 bg-[#050813]" />
@@ -135,7 +148,7 @@ export function BookLibraryClient() {
         <div className="mb-5 flex items-end justify-between gap-3">
           <h1 className="text-5xl font-semibold tracking-tight text-slate-50">Library</h1>
           <p className="text-sm text-slate-400">
-            {totalCount} {totalCount === 1 ? "book" : "books"}
+            {totalCount} {totalCount === 1 ? "book" : "books"} found
           </p>
         </div>
 
@@ -204,14 +217,55 @@ export function BookLibraryClient() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {displayedEntries.map((entry) => (
-                <BookCardLarge
-                  key={entry.id}
-                  entry={entry}
-                  onOpen={() => router.push(`/book/library/${encodeURIComponent(entry.id)}`)}
+            <div className="space-y-5">
+              <LibraryPaginationControls
+                currentPage={pagination.currentPage}
+                totalPages={pagination.totalPages}
+                totalCount={pagination.totalCount}
+                rangeStart={pagination.rangeStart}
+                rangeEnd={pagination.rangeEnd}
+                pageSize={pagination.pageSize}
+                pageSizeOptions={pagination.pageSizeOptions}
+                pageNumbers={pagination.pageNumbers}
+                canGoPrevious={pagination.canGoPrevious}
+                canGoNext={pagination.canGoNext}
+                onPageChange={pagination.setPage}
+                onPageSizeChange={pagination.setPageSize}
+                onPrevious={pagination.goToPreviousPage}
+                onNext={pagination.goToNextPage}
+              />
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {pagination.pageEntries.map((entry) => (
+                  <BookCardLarge
+                    key={entry.id}
+                    entry={entry}
+                    saved={savedSet.has(entry.id)}
+                    onToggleSaved={() => void toggleSaved(entry.id, { source: "library-card" })}
+                    onOpen={() => router.push(`/book/library/${encodeURIComponent(entry.id)}`)}
+                  />
+                ))}
+              </div>
+
+              {pagination.totalPages > 1 ? (
+                <LibraryPaginationControls
+                  currentPage={pagination.currentPage}
+                  totalPages={pagination.totalPages}
+                  totalCount={pagination.totalCount}
+                  rangeStart={pagination.rangeStart}
+                  rangeEnd={pagination.rangeEnd}
+                  pageSize={pagination.pageSize}
+                  pageSizeOptions={pagination.pageSizeOptions}
+                  pageNumbers={pagination.pageNumbers}
+                  canGoPrevious={pagination.canGoPrevious}
+                  canGoNext={pagination.canGoNext}
+                  onPageChange={pagination.setPage}
+                  onPageSizeChange={pagination.setPageSize}
+                  onPrevious={pagination.goToPreviousPage}
+                  onNext={pagination.goToNextPage}
+                  showPageSize={false}
                 />
-              ))}
+              ) : null}
             </div>
           )}
         </div>

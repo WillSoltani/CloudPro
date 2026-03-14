@@ -174,3 +174,67 @@ export type QuizAttemptItem = {
   passed: boolean;
   createdAt: string;
 };
+
+export type BookUserProfileItem = {
+  userId: string;
+  profile: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BookUserSettingsItem = {
+  userId: string;
+  settings: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BookUserSavedBookItem = {
+  userId: string;
+  bookId: string;
+  savedAt: string;
+  updatedAt: string;
+  source?: string;
+  priority?: number;
+  pinned?: boolean;
+};
+
+export type BookUserBookStateItem = {
+  userId: string;
+  bookId: string;
+  currentChapterId: string;
+  completedChapterIds: string[];
+  unlockedChapterIds: string[];
+  chapterScores: Record<string, number>;
+  chapterCompletedAt: Record<string, string>;
+  lastReadChapterId: string;
+  lastOpenedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BookUserChapterStateItem = {
+  userId: string;
+  bookId: string;
+  chapterNumber: number;
+  chapterId?: string;
+  state: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BookUserReadingDayItem = {
+  userId: string;
+  dayKey: string;
+  totalActiveMs: number;
+  updatedAt: string;
+  lastActivityAt?: string;
+};
+
+export type BookUserBadgeAwardItem = {
+  userId: string;
+  badgeId: string;
+  earnedAt: string;
+  updatedAt: string;
+  tier?: string;
+};

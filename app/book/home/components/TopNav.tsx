@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { usePathname } from "next/navigation";
 import {
+  Bookmark,
   BookOpenText,
+  ChevronDown,
   Home,
   LayoutGrid,
   Settings,
@@ -16,7 +18,7 @@ import { SearchBox } from "@/app/book/home/components/SearchBox";
 import { GlobalSearchPanel } from "@/app/book/home/components/GlobalSearchPanel";
 import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
 
-export type BookNavTab = "home" | "library" | "progress" | "badges" | "settings";
+export type BookNavTab = "home" | "library" | "saved" | "progress" | "badges" | "settings" | "profile";
 
 type TopNavProps = {
   name: string;
@@ -192,17 +194,35 @@ export function TopNav({
                 <Settings className="h-4 w-4" />
               </Link>
 
-              <button
-                type="button"
-                onClick={() => setShowProfileMenu((prev) => !prev)}
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/12 bg-white/4 px-2.5 text-slate-200 transition hover:bg-white/8"
+              <Link
+                href="/book/profile"
+                className={[
+                  "inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 transition hover:bg-white/8",
+                  activeTab === "profile"
+                    ? "border-sky-300/35 bg-sky-500/16 text-sky-100"
+                    : "border-white/12 bg-white/4 text-slate-200",
+                ].join(" ")}
                 aria-label="Profile"
-                aria-expanded={showProfileMenu}
               >
                 <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-linear-to-br from-sky-400 to-cyan-300 text-xs font-bold text-slate-900 shadow-[0_0_10px_rgba(56,189,248,0.35)]">
                   {initial}
                 </span>
                 <span className="hidden text-sm font-medium md:inline-flex">{name || "Reader"}</span>
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => setShowProfileMenu((prev) => !prev)}
+                className={[
+                  "inline-flex h-9 w-9 items-center justify-center rounded-xl border transition hover:bg-white/8",
+                  activeTab === "profile"
+                    ? "border-sky-300/35 bg-sky-500/16 text-sky-100"
+                    : "border-white/12 bg-white/4 text-slate-400 hover:text-slate-200",
+                ].join(" ")}
+                aria-label="Open profile menu"
+                aria-expanded={showProfileMenu}
+              >
+                <ChevronDown className="h-4 w-4" />
               </button>
 
               {showProfileMenu ? (
@@ -213,22 +233,26 @@ export function TopNav({
                   </div>
                   <div className="mt-1 space-y-0.5">
                     <Link
+                      href="/book/profile"
+                      className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-300 transition hover:bg-white/6 hover:text-slate-100"
+                    >
+                      <User className="h-3.5 w-3.5 text-slate-400" />
+                      Profile
+                    </Link>
+                    <Link
+                      href="/book/saved"
+                      className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-300 transition hover:bg-white/6 hover:text-slate-100"
+                    >
+                      <Bookmark className="h-3.5 w-3.5 text-slate-400" />
+                      Read Next
+                    </Link>
+                    <Link
                       href="/book/settings"
                       className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-300 transition hover:bg-white/6 hover:text-slate-100"
                     >
                       <Settings className="h-3.5 w-3.5 text-slate-400" />
                       Settings
                     </Link>
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-slate-300 transition hover:bg-white/6 hover:text-slate-100"
-                    >
-                      <User className="h-3.5 w-3.5 text-slate-400" />
-                      Profile
-                      <span className="ml-auto rounded-full border border-white/12 bg-white/6 px-1.5 py-0.5 text-[10px] text-slate-500">
-                        soon
-                      </span>
-                    </button>
                     <div className="my-1 border-t border-white/8" />
                     <Link
                       href="/dashboard"

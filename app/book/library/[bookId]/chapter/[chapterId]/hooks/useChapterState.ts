@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { fetchBookJson } from "@/app/book/_lib/book-api";
+import { getChapterReaderStorageKey } from "@/app/book/_lib/reader-storage";
 import type { ReadingDepth } from "@/app/book/data/mockChapters";
+import { emitBookStorageChanged } from "@/app/book/hooks/bookStorageEvents";
 
 export type ChapterTab = "summary" | "examples" | "quiz";
 export type ExampleFilter = "all" | "work" | "school" | "personal";
@@ -25,7 +28,6 @@ type PersistedChapterState = {
   explanationOpen: Record<string, boolean>;
 };
 
-const STORAGE_PREFIX = "book-accelerator:chapter-reader:v1";
 const PREFS_KEY = "book-accelerator:reader-prefs:v1";
 
 type ReaderPrefs = {
@@ -132,13 +134,21 @@ function parsePrefs(value: string | null): ReaderPrefs | null {
   }
 }
 
-export function useChapterState(bookId: string, chapterId: string) {
+function inferChapterNumber(chapterId: string) {
+  const match = chapterId.match(/(\d+)/);
+  const value = match ? Number(match[1]) : NaN;
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
+}
+
+export function useChapterState(bookId: string, chapterId: string, chapterNumber?: number) {
   const storageKey = useMemo(
-    () => `${STORAGE_PREFIX}:${bookId}:${chapterId}`,
+    () => getChapterReaderStorageKey(bookId, chapterId),
     [bookId, chapterId]
   );
+  const resolvedChapterNumber = chapterNumber ?? inferChapterNumber(chapterId);
   const [hydrated, setHydrated] = useState(false);
   const [state, setState] = useState<PersistedChapterState>(defaultState);
+  const [serverReady, setServerReady] = useState(false);
 
   useEffect(() => {
     const parsed = parseStored(window.localStorage.getItem(storageKey));
@@ -152,9 +162,49 @@ export function useChapterState(bookId: string, chapterId: string) {
   }, [storageKey]);
 
   useEffect(() => {
+    let mounted = true;
+    fetchBookJson<{ state: { state?: Partial<PersistedChapterState>; chapterId?: string } | null }>(
+      `/app/api/book/me/books/${encodeURIComponent(bookId)}/chapters/${resolvedChapterNumber}/state`
+    )
+      .then((payload) => {
+        if (!mounted || !payload.state?.state) return;
+        setState((prev) => ({
+          ...prev,
+          ...(parseStored(JSON.stringify(payload.state?.state)) ?? prev),
+        }));
+        setServerReady(true);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setServerReady(true);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [bookId, resolvedChapterNumber]);
+
+  useEffect(() => {
     if (!hydrated) return;
     window.localStorage.setItem(storageKey, JSON.stringify(state));
-  }, [hydrated, state, storageKey]);
+    emitBookStorageChanged(`chapter-reader:${bookId}:${chapterId}`);
+  }, [bookId, chapterId, hydrated, state, storageKey]);
+
+  useEffect(() => {
+    if (!hydrated || !serverReady) return;
+    const timeout = window.setTimeout(() => {
+      fetchBookJson(
+        `/app/api/book/me/books/${encodeURIComponent(bookId)}/chapters/${resolvedChapterNumber}/state`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            chapterId,
+            state,
+          }),
+        }
+      ).catch(() => {});
+    }, 200);
+    return () => window.clearTimeout(timeout);
+  }, [bookId, chapterId, hydrated, resolvedChapterNumber, serverReady, state]);
 
   useEffect(() => {
     if (!hydrated) return;

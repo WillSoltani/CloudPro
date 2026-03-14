@@ -3,13 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  BookLock,
-  CheckCircle2,
-  Sparkles,
-} from "lucide-react";
+import { BookLock, CheckCircle2, Sparkles } from "lucide-react";
 import { getBookChaptersBundle, getChapterById } from "@/app/book/data/mockChapters";
 import { getLibraryBookById } from "@/app/book/data/mockUserLibraryState";
+import { fetchBookJson } from "@/app/book/_lib/book-api";
 import { useOnboardingState } from "@/app/book/hooks/useOnboardingState";
 import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
 import { ChapterHeader } from "@/app/book/library/[bookId]/chapter/[chapterId]/components/ChapterHeader";
@@ -22,19 +19,9 @@ import { SummaryCard } from "@/app/book/library/[bookId]/chapter/[chapterId]/com
 import { SessionModeOverlay } from "@/app/book/library/[bookId]/chapter/[chapterId]/components/SessionModeOverlay";
 import { useChapterState } from "@/app/book/library/[bookId]/chapter/[chapterId]/hooks/useChapterState";
 import { useBookProgress } from "@/app/book/library/hooks/useBookProgress";
+import { useReadingSessionTracker } from "@/app/book/library/hooks/useReadingSessionTracker";
 
 const REQUIRED_SCORE = 80;
-
-function calculateScore(
-  questions: Array<{ id: string; correctIndex: number }>,
-  answers: Record<string, number>
-): number {
-  if (!questions.length) return 0;
-  const correct = questions.reduce((sum, question) => {
-    return answers[question.id] === question.correctIndex ? sum + 1 : sum;
-  }, 0);
-  return Math.round((correct / questions.length) * 100);
-}
 
 function formatNoteWithTakeaways(takeaways: string[]): string {
   return [
@@ -98,7 +85,7 @@ export function ChapterReaderClient({
     setFontScale,
     toggleRecap,
     toggleExplanation,
-  } = useChapterState(bookId, chapterId);
+  } = useChapterState(bookId, chapterId, chapter?.order);
 
   useKeyboardShortcut(
     "n",
@@ -142,6 +129,13 @@ export function ChapterReaderClient({
   }, [chapter, hydrated, getChapterState, setLastReadChapter]);
 
   useEffect(() => {
+    if (!entry || !chapter || !onboardingHydrated || !onboarding.setupComplete) return;
+    fetchBookJson(`/app/api/book/me/books/${encodeURIComponent(bookId)}/start`, {
+      method: "POST",
+    }).catch(() => {});
+  }, [bookId, chapter, entry, onboarding.setupComplete, onboardingHydrated]);
+
+  useEffect(() => {
     if (!toast) return;
     const timeout = window.setTimeout(() => setToast(null), 1800);
     return () => window.clearTimeout(timeout);
@@ -152,6 +146,19 @@ export function ChapterReaderClient({
       setSessionMode(true);
     }
   }, [searchParams]);
+
+  const chapterState = chapter ? getChapterState(chapter.id) : "locked";
+  const isLocked = chapterState === "locked";
+  const readingSession = useReadingSessionTracker({
+    bookId,
+    chapterId,
+    enabled:
+      onboardingHydrated &&
+      hydrated &&
+      chapterHydrated &&
+      onboarding.setupComplete &&
+      !isLocked,
+  });
 
   if (
     !entry ||
@@ -170,9 +177,6 @@ export function ChapterReaderClient({
       </main>
     );
   }
-
-  const chapterState = getChapterState(chapter.id);
-  const isLocked = chapterState === "locked";
 
   if (isLocked) {
     return (
@@ -208,15 +212,35 @@ export function ChapterReaderClient({
 
   const textScaleClass = fontScaleClass(state.fontScale);
 
-  const handleSubmitQuiz = () => {
-    const score = calculateScore(quizQuestions, state.quizAnswers);
-    const passed = score >= REQUIRED_SCORE;
-    const nextResult = { score, passed };
+  const handleSubmitQuiz = async () => {
+    try {
+      const answers = quizQuestions.map((question) => state.quizAnswers[question.id] ?? -1);
+      const result = await fetchBookJson<{
+        scorePercent: number;
+        passed: boolean;
+      }>(
+        `/app/api/book/me/quiz/${encodeURIComponent(bookId)}/${chapter.order}/submit`,
+        {
+          method: "POST",
+          body: JSON.stringify({ answers }),
+        }
+      );
 
-    setQuizResult(nextResult);
-    if (passed) {
-      markChapterComplete(chapter.id, score);
-      setToast("Chapter unlocked.");
+      const nextResult = {
+        score: result.scorePercent,
+        passed: result.passed,
+      };
+      setQuizResult(nextResult);
+      if (result.passed) {
+        markChapterComplete(chapter.id, result.scorePercent);
+        setToast("Chapter unlocked.");
+      } else {
+        setToast("Review the explanations and try again.");
+      }
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : "Unable to submit quiz right now.";
+      setToast(message);
     }
   };
 
@@ -258,6 +282,7 @@ export function ChapterReaderClient({
           onOpenNotes={() => setNotesOpen(true)}
           fontScale={state.fontScale}
           onChangeFontScale={setFontScale}
+          trackedMinutesToday={readingSession.todayTrackedMinutes}
         />
 
         <div className="mt-6 flex justify-center">

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { BookSaveButton } from "@/app/book/components/BookSaveButton";
 import type { LibraryBookEntry } from "@/app/book/data/mockUserLibraryState";
 import { StatTile } from "@/app/book/library/[bookId]/components/StatTile";
 import { BookCover } from "@/app/book/components/BookCover";
@@ -19,6 +20,8 @@ type BookOverviewPanelProps = {
   currentChapterOrder: number;
   currentChapterMinutes: number;
   onContinue: () => void;
+  isSaved: boolean;
+  onToggleSaved: () => void;
   onResetProgress: () => void;
   onRemoveFromLibrary: () => void;
 };
@@ -42,6 +45,8 @@ export function BookOverviewPanel({
   currentChapterOrder,
   currentChapterMinutes,
   onContinue,
+  isSaved,
+  onToggleSaved,
   onResetProgress,
   onRemoveFromLibrary,
 }: BookOverviewPanelProps) {
@@ -119,15 +124,18 @@ export function BookOverviewPanel({
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={onContinue}
-        className="mt-5 inline-flex w-full items-center justify-center rounded-2xl bg-linear-to-r from-sky-500 to-cyan-400 px-4 py-3 text-lg font-semibold text-white shadow-[0_14px_30px_rgba(14,165,233,0.34)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
-      >
-        {progressPercent > 0
-          ? `Continue Chapter ${currentChapterOrder} ->`
-          : `Start Chapter ${currentChapterOrder} ->`}
-      </button>
+      <div className="mt-5 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onContinue}
+          className="inline-flex flex-1 items-center justify-center rounded-2xl bg-linear-to-r from-sky-500 to-cyan-400 px-4 py-3 text-lg font-semibold text-white shadow-[0_14px_30px_rgba(14,165,233,0.34)] transition hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/60"
+        >
+          {progressPercent > 0
+            ? `Continue Chapter ${currentChapterOrder} ->`
+            : `Start Chapter ${currentChapterOrder} ->`}
+        </button>
+        <BookSaveButton saved={isSaved} onToggle={onToggleSaved} className="h-12 w-12 rounded-2xl" />
+      </div>
       <p className="mt-2 text-sm text-slate-400">Next session: ~{currentChapterMinutes} min</p>
 
       <div className="mt-6 border-t border-white/10 pt-4">

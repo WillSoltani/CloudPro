@@ -1,180 +1,153 @@
 # Architecture
 
-Author: Will Soltani
+## Repository overview
 
-## 1) System Overview
-This project combines a Next.js application with AWS managed services to provide secure file conversion and PDF filling.
+The repo is a single Next.js application with two primary domains.
+
+### `Cloud Portfolio`
+A document workflow product for uploads, conversions, and PDF filling.
+
+### `Book Accelerator`
+A learning product for structured reading, quiz based review, reading analytics, badges, settings, profile, and subscription aware book access.
+
+The two domains live in the same deployment but are organized separately in the `app/` tree.
+
+## High level structure
 
 ```text
-Browser
-  |
-  | HTTPS (Next.js routes)
-  v
-Next.js App Router (UI + API handlers)
-  |                \
-  |                 \ StartExecution
-  |                  v
-  |               Step Functions
-  |                  |
-  |                  v
-  |             Convert Worker (Lambda container)
-  |
-  +--> DynamoDB (project/file metadata)
-  +--> S3 Raw Uploads (source objects)
-  +--> S3 Outputs (converted + filled artifacts)
+app/
+  app/                     Cloud Portfolio routes and APIs
+  book/                    Book Accelerator routes, UI, hooks, and client helpers
+  auth/                    Shared auth routes
+  _lib/                    Shared site and auth helpers
+infra/                     CDK app, Lambda worker, and deployment assets
+book-packages/             Source book package JSON files
+docs/                      Maintained documentation
 ```
 
-## 2) Frontend Architecture
+## Frontend structure
 
-### 2.1 App shell and site pages
-- Public marketing/site content is rendered from `app/`, `components/`, `sections/`, and `content/`.
-- Project tooling lives under `app/app/projects/*` and is isolated from the public pages.
+### Site and shell
+- `app/` root pages and layouts provide the public site shell and shared auth entry points
+- `app/app/*` contains the Cloud Portfolio authenticated application
+- `app/book/*` contains the Book Accelerator application
 
-### 2.2 Project workspace
-Primary orchestrator:
-- `app/app/projects/[projectId]/ProjectDetailClient.tsx`
+### Cloud Portfolio frontend
+- Project workspace logic lives under `app/app/projects/[projectId]/`
+- PDF fill logic lives under `app/app/projects/[projectId]/fill/[fileId]/`
+- Large feature clients own page composition while smaller components and hooks stay close to the feature
 
-State model (high level):
-- Staged local files (pre-upload): `useStagedFiles`
-- Server file list (raw/output artifacts): `useServerFiles`
-- Signed URL cache/refresh: `useSignedUrls`
-- Per-item conversion settings and global defaults
-- Selection state per list (ready/converted)
+### Book Accelerator frontend
+- Page clients live in feature folders such as `home`, `library`, `progress`, `profile`, `settings`, and `badges`
+- Shared UI primitives live under `app/book/components/ui`
+- Shared Book specific helpers live in `app/book/_lib`
+- Domain hooks live in `app/book/hooks` and `app/book/library/hooks`
+- Presentational components stay inside their feature folder unless reused across Book surfaces
 
-UI modules:
-- Ready queue: source files pending conversion.
-- Converted files: output artifact listing + reconvert controls.
-- Conversion settings panel: full target list with per-source capability disable rules.
-- Fill PDF page: dedicated client route at `/app/projects/[projectId]/fill/[fileId]`.
+## Backend structure
 
-### 2.3 PDF fill architecture
-Core client:
-- `app/app/projects/[projectId]/fill/[fileId]/FillPdfClient.tsx`
+### Cloud Portfolio backend
+Next.js route handlers under `app/app/api/*` coordinate:
+- Cognito authenticated access
+- project and file metadata in DynamoDB
+- presigned S3 upload and download flows
+- conversion job submission to Step Functions
+- filled PDF artifact persistence
 
-Support modules:
-- `field-label-resolver.ts`
-- `field-type-rules.ts`
-- `field-validation.ts`
+### Book Accelerator backend
+Next.js route handlers under `app/app/api/book/*` provide:
+- published book catalog and chapter content access
+- per user profile, settings, progress, chapter state, reading session, quiz, saved list, badge, and entitlement endpoints
+- admin only book ingestion, versioning, and publish paths
+- Stripe checkout, portal, and webhook handlers
 
-Pipeline:
-1. Load source bytes via signed URL.
-2. Render pages/widgets with PDF.js (client-only import path).
-3. Maintain editable field + overlay state in React.
-4. Build output bytes with pdf-lib.
-5. Validate bytes (`%PDF-`, minimum length), then download and persist.
+Book specific server code is organized under `app/app/api/book/_lib` by concern:
+- `repo.ts` for DynamoDB persistence
+- `content-service.ts` and `storage.ts` for content retrieval and storage
+- `quiz-service.ts` for quiz scoring and persistence
+- `validate-book-package.ts` and `ingestion.ts` for package validation and ingestion
+- `env.ts` for Book specific configuration resolution
 
-## 3) Backend API Architecture (Next.js Route Handlers)
+## Data flow
 
-### 3.1 Auth/session boundary
-- Cognito JWT cookie validation in `app/app/api/_lib/auth.ts`.
-- Route handlers call `requireUser()` and scope all access by `USER#{sub}` partition key.
+### Cloud Portfolio
+1. Client requests an upload intent
+2. File is uploaded directly to S3
+3. API records metadata in DynamoDB
+4. User requests conversion
+5. API validates the conversion through the shared capability matrix
+6. Step Functions invokes the worker
+7. Worker writes output artifacts and updates metadata
 
-### 3.2 File APIs
-- Upload create/complete endpoints create raw file rows and presigned writes.
-- File list endpoint can reconcile Dynamo rows against S3 object existence.
-- Download endpoint returns short-lived signed inline/download URLs.
-- Delete endpoint deletes one exact Dynamo row and one exact S3 key (safety rail logging included).
+### Book Accelerator
+1. Client loads the published catalog from backend routes and local presentation metadata
+2. User specific state loads from Book user state APIs
+3. Chapter reading state and actual reading time are persisted incrementally
+4. Quiz submissions post to server routes and update mastery data
+5. Dashboard, progress, badges, and profile analytics derive from persisted state
+6. Entitlement checks gate protected or future Pro content server side
 
-### 3.3 Conversion submission API
-- `app/app/api/projects/[projectId]/convert/route.ts`
-- Validates conversion jobs against centralized capability matrix (`conversion-support.ts`).
-- Writes output rows in `processing` state.
-- Starts Step Functions executions for worker processing.
+## Content architecture for Book Accelerator
 
-### 3.4 Filled PDF artifact APIs
-- Create endpoint reserves `artifactType=filled_pdf` output row + presigned upload URL.
-- Upload endpoint accepts PDF bytes.
-- Complete endpoint validates and marks row done.
+Source content starts as strict JSON packages in `book-packages/`.
 
-## 4) Conversion Pipeline (Worker)
+At ingestion time:
+1. Package JSON is validated against the contract
+2. Metadata and versions are written into the Book DynamoDB records
+3. Content payloads are stored in content storage for runtime retrieval
+4. A published version is exposed through the public Book APIs
 
-Worker entrypoint:
-- `infra/lib/lambdas/convert-worker/index.ts`
+This separation lets the UI stay lightweight while keeping authored content versioned and admin controlled.
 
-Helpers/scripts:
-- Python scripts for DOCX/PAGES/image-specialized operations.
-- `lib/formats.ts` for format/content-type/extension mapping.
+## State management approach
 
-High-level conversion flow:
-1. Read source metadata from DynamoDB.
-2. Download source object from raw bucket.
-3. Detect source kind (content-aware, not filename-only).
-4. Route to conversion path:
-   - image -> image/pdf
-   - document -> canonical PDF -> target outputs
-   - special input handling (SVG sanitization, AVIF/HEIC/ICO paths, PAGES fallback logic)
-5. Upload output to output bucket.
-6. Update output row (status, contentType, size, packaging/page metadata).
+### Cloud Portfolio
+- Feature local hooks own network and derived view state
+- Shared capability rules live in `app/app/_lib/conversion-support.ts`
+- API routes remain authoritative for permissions and supported actions
 
-### 4.1 SVG handling
-- Sanitization removes dangerous constructs while accepting common real-world SVG input.
-- Rendering uses deterministic defaults for dimensions and transparency behavior.
+### Book Accelerator
+- Server persisted state is fetched through Book APIs
+- Client hooks keep a local cache for responsiveness and offline tolerant behavior
+- Actual reading time is tracked in chapter sessions and posted to the backend
+- Analytics and badge evaluation read from backend hydrated state rather than raw content estimates
 
-### 4.2 PAGES handling
-- Canonical PDF extraction pipeline attempts embedded preview PDF first.
-- Falls back to preview-image assembly when PDF preview is missing.
-- Canonical artifact feeds downstream format conversion.
+## Storage and infrastructure
 
-## 5) Capability Matrix and Validation
-Single source of truth:
-- `app/app/_lib/conversion-support.ts`
+### Shared AWS services
+- DynamoDB for metadata and user state
+- S3 for uploads, outputs, and Book content artifacts
+- Cognito for authentication
+- SSM for server configuration lookup
 
-Contains:
-- Supported input labels
-- Supported output labels
-- Conversion matrix by source label/content type
-- Recommendation priority and popular target mapping
-- Helper functions used by both UI and API
+### Cloud Portfolio infrastructure
+- Step Functions orchestrates conversion work
+- Lambda container worker performs conversion operations
+- CDK definitions live under `infra/`
 
-Rule: UI can disable options, but backend remains authoritative and rejects unsupported requests.
+### Book Accelerator infrastructure
+- Uses the shared table and buckets through Book specific namespaces and keys
+- Stripe integration is isolated to Book billing routes and entitlement records
 
-## 6) Data and Storage Model
+## Safe extension points
 
-### 6.1 DynamoDB entity model
-Table: `SecureDocApp`
+### Add a new Book page
+- Create the route under `app/book/<feature>`
+- Keep domain logic in a hook or Book `_lib` helper if reused
+- Use server routes for persisted state rather than adding new raw local storage islands
 
-Primary patterns:
-- `PK = USER#{sub}`
-- `SK = PROJECT#{projectId}`
-- `SK = FILE#{projectId}#{fileId}`
+### Add a new Book backend capability
+- Add a route under `app/app/api/book`
+- Keep request validation and persistence in `app/app/api/book/_lib`
+- Reuse existing key helpers and response utilities
 
-File row fields (selected):
-- `kind`: `raw` | `output`
-- `artifactType`: `conversion` | `filled_pdf` (output rows)
-- `status`: `queued` | `processing` | `done` | `failed`
-- `bucket`, `key`, `contentType`, `sizeBytes`
-- `sourceFileId`, `outputFormat`, `packaging`, `pageCount`, `outputCount`
+### Add a new book
+- Author the package JSON in `book-packages/`
+- validate it through the existing validator
+- ingest and publish through the admin flow
+- wire presentation metadata only where the runtime still needs it
 
-### 6.2 S3 key model
-- Raw uploads bucket: private source objects.
-- Output bucket: converted artifacts and filled PDFs, user/project namespaced.
-
-### 6.3 Artifact lifecycle
-```text
-Raw file: queued -> done (upload complete)
-Output conversion: processing -> done|failed
-Filled PDF: processing -> done|failed
-Deleted artifact: explicit user delete only (no implicit cascade)
-```
-
-## 7) Orchestration and Infrastructure
-
-CDK stack:
-- `infra/lib/storage-stack.ts`
-
-Provisions:
-- KMS key (encryption)
-- DynamoDB table
-- Raw/output S3 buckets with CORS and SSL enforcement
-- Lambda DockerImageFunction for conversion worker
-- Step Functions state machine invoking worker
-
-Entrypoints:
-- `infra/bin/app.ts` (primary, referenced by `infra/cdk.json`)
-- `infra/bin/infra.ts` (alternate entrypoint present in repo)
-
-## 8) Operational Boundaries and Contracts
-- API routes are Node runtime (`runtime = "nodejs"`) where required.
-- Signed URLs are short TTL and generated server-side.
-- Conversion and fill persistence must write exact object keys; deletion is key-scoped.
-- Generated directories (`.next`, `infra/dist`, `infra/cdk.out`) are build artifacts and not source-of-truth.
+## Current constraints
+- Book presentation metadata still has some local catalog and chapter adapter usage while the backend content pipeline matures
+- Some Book flows intentionally keep local caches to preserve responsiveness and cross surface UI updates
+- Cloud Portfolio and Book Accelerator share a repo and deployment, so changes to shared auth or storage helpers should be reviewed against both domains

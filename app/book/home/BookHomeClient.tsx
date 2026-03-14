@@ -9,23 +9,24 @@ import { getBookChaptersBundle } from "@/app/book/data/mockChapters";
 import {
   QUICK_REVIEW_PROMPTS,
   type RecentBookProgress,
-  type BadgeItem,
   buildDailyInsight,
 } from "@/app/book/data/mockProgress";
-import { evaluateBadges } from "@/app/book/data/mockBadges";
+import type { BadgeState } from "@/app/book/data/mockBadges";
 import { useOnboardingState } from "@/app/book/hooks/useOnboardingState";
+import { useBadgeSystem } from "@/app/book/hooks/useBadgeSystem";
 import { useBookState } from "@/app/book/hooks/useBookState";
-import {
-  type BookProgressSnapshot,
-  useBookAnalytics,
-} from "@/app/book/hooks/useBookAnalytics";
+import { type BookProgressSnapshot } from "@/app/book/hooks/useBookAnalytics";
 import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
+import { useSavedBooks } from "@/app/book/hooks/useSavedBooks";
+import {
+  BadgeDetailPanel,
+  DashboardAchievementWidget,
+} from "@/app/book/badges/components/BadgeSystemCards";
 import { TopNav } from "@/app/book/home/components/TopNav";
 import { CurrentlyReadingCard } from "@/app/book/home/components/CurrentlyReadingCard";
 import { TodaySessionCard } from "@/app/book/home/components/TodaySessionCard";
 import { GoalMeter } from "@/app/book/home/components/GoalMeter";
 import { BookMiniCard } from "@/app/book/home/components/BookMiniCard";
-import { BadgeStrip } from "@/app/book/home/components/BadgeStrip";
 import { InfoModal } from "@/app/book/home/components/InfoModal";
 
 function chapterFromResume(snapshot: BookProgressSnapshot): number {
@@ -55,7 +56,7 @@ function mapSnapshotToRecentProgress(
 export function BookHomeClient() {
   const router = useRouter();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const [selectedBadge, setSelectedBadge] = useState<BadgeItem | null>(null);
+  const [selectedBadge, setSelectedBadge] = useState<BadgeState | null>(null);
   const [showQuickReviewModal, setShowQuickReviewModal] = useState(false);
 
   const { state: onboarding, hydrated: onboardingHydrated } = useOnboardingState();
@@ -63,10 +64,12 @@ export function BookHomeClient() {
     selectedBookIds: onboarding.selectedBookIds,
     dailyGoalMinutes: onboarding.dailyGoalMinutes,
   });
-  const { analytics } = useBookAnalytics(
-    onboarding.selectedBookIds,
-    onboarding.dailyGoalMinutes
-  );
+  const { saved, hydrated: savedHydrated } = useSavedBooks(onboarding.setupComplete);
+  const badgeSystem = useBadgeSystem({
+    selectedBookIds: onboarding.selectedBookIds,
+    dailyGoalMinutes: onboarding.dailyGoalMinutes,
+  });
+  const { analytics } = badgeSystem;
 
   useKeyboardShortcut(
     "/",
@@ -140,23 +143,28 @@ export function BookHomeClient() {
     });
   }, [recentBooks, searchQuery]);
 
-  const badges = useMemo(() => {
-    if (!analytics) return [] as BadgeItem[];
-    return evaluateBadges({
-      totalCompletedChapters: analytics.totalCompletedChapters,
-      completedBooks: analytics.booksCompleted,
-      streakDays: analytics.streakDays,
-      avgQuizScore: analytics.avgQuizScore,
-      maxQuizScore: analytics.maxQuizScore,
-      longestStreak: analytics.longestStreak,
-    }).map((badge) => ({
-      id: badge.id,
-      name: badge.name,
-      description: badge.description,
-      icon: badge.icon,
-      earned: badge.earned,
-    }));
-  }, [analytics]);
+  const savedBooksPreview = useMemo(() => {
+    return saved
+      .map((item) => {
+        const book = getBookById(item.bookId);
+        if (!book) return null;
+        const progress =
+          recentBooks.find((entry) => entry.book.id === item.bookId)?.progress ??
+          {
+            bookId: item.bookId,
+            status: "not_started" as const,
+            progressPercent: 0,
+            chapter: 1,
+            resumeChapterId: "",
+            totalChapters: getBookChaptersBundle(item.bookId).chapters.length || 1,
+            lastOpenedAt: "Saved for later",
+          };
+        return { book, progress, savedAt: item.savedAt };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+      .slice(0, 3);
+  }, [recentBooks, saved]);
+
   const dailyInsight = useMemo(
     () => buildDailyInsight(currentBook?.title || "your current book"),
     [currentBook?.title]
@@ -174,7 +182,7 @@ export function BookHomeClient() {
     return `/book/library/${encodeURIComponent(currentBook.id)}/chapter/${encodeURIComponent(chapterId)}?session=1`;
   }, [currentBook, currentProgress]);
 
-  if (!onboardingHydrated || !dashboard.hydrated || !onboarding.setupComplete) {
+  if (!onboardingHydrated || !dashboard.hydrated || !badgeSystem.hydrated || !savedHydrated || !onboarding.setupComplete) {
     return (
       <main className="relative min-h-screen text-slate-100">
         <div className="pointer-events-none absolute inset-0 -z-20 bg-[#050813]" />
@@ -301,6 +309,48 @@ export function BookHomeClient() {
 
         <div className="mt-7">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-2xl font-semibold text-slate-100">Read Next</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                {saved.length > 0
+                  ? `${saved.length} saved book${saved.length === 1 ? "" : "s"} ready when you are.`
+                  : "Save books from the library and they will appear here."}
+              </p>
+            </div>
+            <Link href="/book/saved" className="text-sm text-sky-200 hover:text-sky-100">
+              View all →
+            </Link>
+          </div>
+
+          {savedBooksPreview.length > 0 ? (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {savedBooksPreview.map(({ book, progress }) => (
+                <BookMiniCard
+                  key={book.id}
+                  book={book}
+                  progress={progress}
+                  onOpen={() => router.push(`/book/library/${encodeURIComponent(book.id)}`)}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-3xl border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))] p-5 text-slate-300">
+              <p className="text-base text-slate-200">No saved books yet.</p>
+              <p className="mt-2 text-sm text-slate-400">
+                Use the bookmark control in the library to build a reading queue you can return to quickly.
+              </p>
+              <Link
+                href="/book/library"
+                className="mt-4 inline-flex rounded-xl border border-sky-300/35 bg-sky-500/14 px-3 py-2 text-sm text-sky-100 transition hover:bg-sky-500/22"
+              >
+                Browse library
+              </Link>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-7">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-2xl font-semibold text-slate-100">Recent Books</h2>
             <Link href="/book/library" className="text-sm text-sky-200 hover:text-sky-100">
               View Library →
@@ -324,12 +374,16 @@ export function BookHomeClient() {
 
         <div className="mt-7">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-2xl font-semibold text-slate-100">Your Badges</h2>
-            <Link href="/book/badges" className="text-sm text-sky-200 hover:text-sky-100">
-              View All →
-            </Link>
+            <h2 className="text-2xl font-semibold text-slate-100">Achievements</h2>
           </div>
-          <BadgeStrip badges={badges} onSelectBadge={setSelectedBadge} />
+          <DashboardAchievementWidget
+            recentBadge={badgeSystem.recentlyEarned[0] ?? null}
+            nextMilestone={badgeSystem.nextMilestones[0] ?? null}
+            earnedCount={badgeSystem.earnedCount}
+            visibleCount={badgeSystem.visibleCount}
+            onOpenBadge={setSelectedBadge}
+            onViewAll={() => router.push("/book/badges")}
+          />
         </div>
       </section>
 
@@ -365,11 +419,12 @@ export function BookHomeClient() {
         title={selectedBadge?.name || "Badge"}
         onClose={() => setSelectedBadge(null)}
       >
-        <p className="text-3xl">{selectedBadge?.icon}</p>
-        <p className="mt-2">{selectedBadge?.description}</p>
-        <p className="mt-2 text-sm text-slate-400">
-          {selectedBadge?.earned ? "Status: Earned" : "Status: Locked"}
-        </p>
+        {selectedBadge ? (
+          <BadgeDetailPanel
+            badge={selectedBadge}
+            nextTier={badgeSystem.badges.find((badge) => badge.id === selectedBadge.nextTierId) ?? null}
+          />
+        ) : null}
       </InfoModal>
 
       <InfoModal

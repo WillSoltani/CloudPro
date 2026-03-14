@@ -7,7 +7,6 @@ import { Section } from "@/components/Section";
 import { certifications } from "@/content/certifications";
 
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 
 export function CertificationsSection() {
   return (

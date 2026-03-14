@@ -76,7 +76,7 @@ export function GoalMeter({
       </div>
 
       <p className="mt-4 rounded-xl border border-white/10 bg-white/4 px-3 py-2 text-xs leading-5 text-slate-400">
-        Reading minutes are tracked from completed chapter sessions, not from time spent online.
+        Goal progress uses tracked active reading time while the chapter is visible and you are actively engaged.
       </p>
     </article>
   );

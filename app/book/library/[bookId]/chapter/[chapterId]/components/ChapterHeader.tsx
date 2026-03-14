@@ -19,6 +19,7 @@ type ChapterHeaderProps = {
   onOpenNotes: () => void;
   fontScale: FontScale;
   onChangeFontScale: (value: FontScale) => void;
+  trackedMinutesToday?: number;
 };
 
 export function ChapterHeader({
@@ -35,6 +36,7 @@ export function ChapterHeader({
   onOpenNotes,
   fontScale,
   onChangeFontScale,
+  trackedMinutesToday = 0,
 }: ChapterHeaderProps) {
   const progressPercent = Math.round((chapterOrder / totalChapters) * 100);
 
@@ -102,7 +104,10 @@ export function ChapterHeader({
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl">
           {chapterLabel}: {chapterTitle}
         </h1>
-        <p className="mt-1.5 text-sm text-slate-500">{minutes} min read</p>
+        <p className="mt-1.5 text-sm text-slate-500">
+          Est. {minutes} min read
+          {trackedMinutesToday > 0 ? ` · ${trackedMinutesToday} min tracked today` : ""}
+        </p>
       </div>
     </header>
   );

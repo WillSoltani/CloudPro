@@ -44,6 +44,13 @@ function getErrorMessage(e: unknown): string {
   }
 }
 
+function toFileRow<T extends Record<string, unknown>>(item: T): FileRow {
+  const next = { ...item };
+  delete next.PK;
+  delete next.SK;
+  return next as unknown as FileRow;
+}
+
 function isAuthError(msg: string) {
   return msg === "UNAUTHENTICATED" || msg === "INVALID_TOKEN";
 }
@@ -211,7 +218,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
       .filter((x): x is DbFileItem => x !== null);
 
     if (!validate) {
-      const files: FileRow[] = items.map(({ PK: _PK, SK: _SK, ...rest }) => rest);
+      const files: FileRow[] = items.map(toFileRow);
       return NextResponse.json({ files });
     }
 
@@ -242,10 +249,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ projectI
 
     const cleaned: FileRow[] = checks
       .filter((c) => c.exists)
-      .map(({ it }) => {
-        const { PK: _PK, SK: _SK, ...rest } = it;
-        return rest;
-      });
+      .map(({ it }) => toFileRow(it));
 
     return NextResponse.json({ files: cleaned, reconciled: { removed: missing.length } });
   } catch (e: unknown) {

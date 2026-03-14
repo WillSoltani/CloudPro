@@ -70,7 +70,7 @@ export default function ProjectsClient({ initialProjects, initialStats }: Props)
         }));
       })
       .catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Open create modal if navigated from top bar: /app/projects?create=1
   useCreateModalFromQuery({ sp, router, open: setCreateOpen });

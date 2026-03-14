@@ -45,7 +45,12 @@ async function isValidToken(token: string, config: ProxyAuthConfig): Promise<boo
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (!pathname.startsWith("/app")) {
+  const protectedSurface =
+    pathname.startsWith("/app") ||
+    pathname.startsWith("/book") ||
+    pathname.startsWith("/dashboard");
+
+  if (!protectedSurface) {
     return NextResponse.next();
   }
 
@@ -100,5 +105,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/app/:path*"],
+  matcher: ["/app/:path*", "/book/:path*", "/dashboard/:path*"],
 };

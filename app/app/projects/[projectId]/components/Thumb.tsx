@@ -25,6 +25,7 @@ export function Thumb(props: { src?: string; alt: string; fallbackLabel?: string
         </span>
       </div>
 
+      {/* eslint-disable-next-line @next/next/no-img-element -- thumbs render signed or object URLs that are not optimized by next/image. */}
       <img
         key={src}
         src={src}
