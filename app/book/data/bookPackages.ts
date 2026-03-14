@@ -15,6 +15,11 @@ import powerOfHabitPackageJson from "@/book-packages/the-power-of-habit.modern.j
 import tinyHabitsPackageJson from "@/book-packages/tiny-habits.modern.json";
 import essentialismPackageJson from "@/book-packages/essentialism.modern.json";
 import deepWorkPackageJson from "@/book-packages/deep-work.modern.json";
+import drivePackageJson from "@/book-packages/drive.modern.json";
+import mindsetPackageJson from "@/book-packages/mindset.modern.json";
+import gritPackageJson from "@/book-packages/grit.modern.json";
+import courageToBeDislikedPackageJson from "@/book-packages/the-courage-to-be-disliked.modern.json";
+import attachedPackageJson from "@/book-packages/attached.modern.json";
 import makeTimePackageJson from "@/book-packages/make-time.modern.json";
 import psychologyOfMoneyPackageJson from "@/book-packages/the-psychology-of-money.modern.json";
 import thinkingFastAndSlowPackageJson from "@/book-packages/thinking-fast-and-slow.modern.json";
@@ -26,6 +31,24 @@ import goodToGreatPackageJson from "@/book-packages/good-to-great.modern.json";
 import lawsOfPowerPackageJson from "@/book-packages/the-48-laws-of-power.modern.json";
 import atomicHabitsPackageJson from "@/book-packages/atomic-habits.modern.json";
 import oneThingPackageJson from "@/book-packages/the-one-thing.modern.json";
+import indistractablePackageJson from "@/book-packages/indistractable.modern.json";
+import cantHurtMePackageJson from "@/book-packages/cant-hurt-me.modern.json";
+import soGoodTheyCantIgnoreYouPackageJson from "@/book-packages/so-good-they-cant-ignore-you.modern.json";
+import talkLikeTedPackageJson from "@/book-packages/talk-like-ted.modern.json";
+import likeSwitchPackageJson from "@/book-packages/the-like-switch.modern.json";
+import pitchAnythingPackageJson from "@/book-packages/pitch-anything.modern.json";
+import howToTalkToAnyonePackageJson from "@/book-packages/how-to-talk-to-anyone.modern.json";
+import righteousMindPackageJson from "@/book-packages/the-righteous-mind.modern.json";
+import zeroToOnePackageJson from "@/book-packages/zero-to-one.modern.json";
+import leanStartupPackageJson from "@/book-packages/the-lean-startup.modern.json";
+import blueOceanStrategyPackageJson from "@/book-packages/blue-ocean-strategy.modern.json";
+import goodStrategyBadStrategyPackageJson from "@/book-packages/good-strategy-bad-strategy.modern.json";
+import antifragilePackageJson from "@/book-packages/antifragile.modern.json";
+import masteryPackageJson from "@/book-packages/mastery.modern.json";
+import obstacleIsTheWayPackageJson from "@/book-packages/the-obstacle-is-the-way.modern.json";
+import disciplineIsDestinyPackageJson from "@/book-packages/discipline-is-destiny.modern.json";
+import meditationsPackageJson from "@/book-packages/meditations.modern.json";
+import mansSearchForMeaningPackageJson from "@/book-packages/mans-search-for-meaning.modern.json";
 
 export type VariantFamily = "EMH" | "PBC";
 export type VariantKey =
@@ -129,6 +152,12 @@ export const POWER_OF_HABIT_PACKAGE = powerOfHabitPackageJson as BookPackage;
 export const TINY_HABITS_PACKAGE = tinyHabitsPackageJson as BookPackage;
 export const ESSENTIALISM_PACKAGE = essentialismPackageJson as BookPackage;
 export const DEEP_WORK_PACKAGE = deepWorkPackageJson as BookPackage;
+export const DRIVE_PACKAGE = drivePackageJson as BookPackage;
+export const MINDSET_PACKAGE = mindsetPackageJson as BookPackage;
+export const GRIT_PACKAGE = gritPackageJson as BookPackage;
+export const COURAGE_TO_BE_DISLIKED_PACKAGE =
+  courageToBeDislikedPackageJson as BookPackage;
+export const ATTACHED_PACKAGE = attachedPackageJson as BookPackage;
 export const MAKE_TIME_PACKAGE = makeTimePackageJson as BookPackage;
 export const PSYCHOLOGY_OF_MONEY_PACKAGE =
   psychologyOfMoneyPackageJson as BookPackage;
@@ -146,6 +175,32 @@ export const GOOD_TO_GREAT_PACKAGE = goodToGreatPackageJson as BookPackage;
 export const LAWS_OF_POWER_PACKAGE = lawsOfPowerPackageJson as BookPackage;
 export const ATOMIC_HABITS_PACKAGE = atomicHabitsPackageJson as BookPackage;
 export const ONE_THING_PACKAGE = oneThingPackageJson as BookPackage;
+export const INDISTRACTABLE_PACKAGE = indistractablePackageJson as BookPackage;
+export const CANT_HURT_ME_PACKAGE = cantHurtMePackageJson as BookPackage;
+export const SO_GOOD_THEY_CANT_IGNORE_YOU_PACKAGE =
+  soGoodTheyCantIgnoreYouPackageJson as BookPackage;
+export const TALK_LIKE_TED_PACKAGE = talkLikeTedPackageJson as BookPackage;
+export const LIKE_SWITCH_PACKAGE = likeSwitchPackageJson as BookPackage;
+export const PITCH_ANYTHING_PACKAGE = pitchAnythingPackageJson as BookPackage;
+export const HOW_TO_TALK_TO_ANYONE_PACKAGE =
+  howToTalkToAnyonePackageJson as BookPackage;
+export const RIGHTEOUS_MIND_PACKAGE =
+  righteousMindPackageJson as BookPackage;
+export const ZERO_TO_ONE_PACKAGE = zeroToOnePackageJson as BookPackage;
+export const LEAN_STARTUP_PACKAGE = leanStartupPackageJson as BookPackage;
+export const BLUE_OCEAN_STRATEGY_PACKAGE =
+  blueOceanStrategyPackageJson as BookPackage;
+export const GOOD_STRATEGY_BAD_STRATEGY_PACKAGE =
+  goodStrategyBadStrategyPackageJson as BookPackage;
+export const ANTIFRAGILE_PACKAGE = antifragilePackageJson as BookPackage;
+export const MASTERY_PACKAGE = masteryPackageJson as BookPackage;
+export const OBSTACLE_IS_THE_WAY_PACKAGE =
+  obstacleIsTheWayPackageJson as BookPackage;
+export const DISCIPLINE_IS_DESTINY_PACKAGE =
+  disciplineIsDestinyPackageJson as BookPackage;
+export const MEDITATIONS_PACKAGE = meditationsPackageJson as BookPackage;
+export const MANS_SEARCH_FOR_MEANING_PACKAGE =
+  mansSearchForMeaningPackageJson as BookPackage;
 
 export const BOOK_PACKAGES: BookPackage[] = [
   FRIENDS_AND_INFLUENCE_PACKAGE,
@@ -165,6 +220,11 @@ export const BOOK_PACKAGES: BookPackage[] = [
   TINY_HABITS_PACKAGE,
   ESSENTIALISM_PACKAGE,
   DEEP_WORK_PACKAGE,
+  DRIVE_PACKAGE,
+  MINDSET_PACKAGE,
+  GRIT_PACKAGE,
+  COURAGE_TO_BE_DISLIKED_PACKAGE,
+  ATTACHED_PACKAGE,
   MAKE_TIME_PACKAGE,
   PSYCHOLOGY_OF_MONEY_PACKAGE,
   THINKING_FAST_AND_SLOW_PACKAGE,
@@ -176,6 +236,24 @@ export const BOOK_PACKAGES: BookPackage[] = [
   LAWS_OF_POWER_PACKAGE,
   ATOMIC_HABITS_PACKAGE,
   ONE_THING_PACKAGE,
+  INDISTRACTABLE_PACKAGE,
+  CANT_HURT_ME_PACKAGE,
+  SO_GOOD_THEY_CANT_IGNORE_YOU_PACKAGE,
+  TALK_LIKE_TED_PACKAGE,
+  LIKE_SWITCH_PACKAGE,
+  PITCH_ANYTHING_PACKAGE,
+  HOW_TO_TALK_TO_ANYONE_PACKAGE,
+  RIGHTEOUS_MIND_PACKAGE,
+  ZERO_TO_ONE_PACKAGE,
+  LEAN_STARTUP_PACKAGE,
+  BLUE_OCEAN_STRATEGY_PACKAGE,
+  GOOD_STRATEGY_BAD_STRATEGY_PACKAGE,
+  ANTIFRAGILE_PACKAGE,
+  MASTERY_PACKAGE,
+  OBSTACLE_IS_THE_WAY_PACKAGE,
+  DISCIPLINE_IS_DESTINY_PACKAGE,
+  MEDITATIONS_PACKAGE,
+  MANS_SEARCH_FOR_MEANING_PACKAGE,
 ];
 
 export const BOOK_PACKAGE_PRESENTATION: Record<string, BookPackagePresentation> = {
@@ -315,6 +393,46 @@ export const BOOK_PACKAGE_PRESENTATION: Record<string, BookPackagePresentation> 
       "A modern reading of concentration, cognitive depth, digital discipline, shallow work reduction, and focused value creation for students and early career builders.",
     pages: 304,
   },
+  drive: {
+    icon: "⚙️",
+    coverImage: "/book-covers/drive.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of motivation, autonomy, mastery, purpose, and how incentives shape performance for students and early career builders.",
+    pages: 256,
+  },
+  mindset: {
+    icon: "🌱",
+    coverImage: "/book-covers/mindset.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of fixed and growth mindsets, learning, effort, feedback, resilience, and the beliefs that shape development across school, work, and relationships.",
+    pages: 320,
+  },
+  grit: {
+    icon: "🏔️",
+    coverImage: "/book-covers/grit.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of perseverance, passion, deliberate practice, purpose, hope, and the long term habits that make difficult goals achievable.",
+    pages: 352,
+  },
+  "the-courage-to-be-disliked": {
+    icon: "🕊️",
+    coverImage: "/book-covers/the-courage-to-be-disliked.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of Adlerian psychology, freedom, boundaries, contribution, courage, and the social choices that shape a meaningful life.",
+    pages: 288,
+  },
+  attached: {
+    icon: "🧷",
+    coverImage: "/book-covers/attached.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of attachment styles, dating patterns, secure communication, conflict, and the relational habits that make love steadier and healthier.",
+    pages: 304,
+  },
   "make-time": {
     icon: "⏳",
     coverImage: "/book-covers/make-time.svg",
@@ -402,6 +520,150 @@ export const BOOK_PACKAGE_PRESENTATION: Record<string, BookPackagePresentation> 
     synopsis:
       "A modern reading of focus, leverage, time blocking, tradeoffs, and extraordinary results through strategic simplicity for students and early career builders.",
     pages: 240,
+  },
+  indistractable: {
+    icon: "🧭",
+    coverImage: "/book-covers/indistractable.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of attention control, distraction design, timeboxing, precommitment, and value aligned focus for students and early career builders.",
+    pages: 304,
+  },
+  "cant-hurt-me": {
+    icon: "💪",
+    coverImage: "/book-covers/cant-hurt-me.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of self discipline, accountability, resilience, pain tolerance, and deliberate mental toughness for students and early career builders.",
+    pages: 364,
+  },
+  "so-good-they-cant-ignore-you": {
+    icon: "🛠️",
+    coverImage: "/book-covers/so-good-they-cant-ignore-you.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of career capital, craftsmanship, autonomy, mission, and skill first career strategy for students and early career builders.",
+    pages: 288,
+  },
+  "talk-like-ted": {
+    icon: "🎤",
+    coverImage: "/book-covers/talk-like-ted.svg",
+    difficulty: "Easy",
+    synopsis:
+      "A modern reading of storytelling, memorable speaking, audience attention, and authentic presentation design for students and early career builders.",
+    pages: 288,
+  },
+  "the-like-switch": {
+    icon: "🤝",
+    coverImage: "/book-covers/the-like-switch.svg",
+    difficulty: "Easy",
+    synopsis:
+      "A modern reading of rapport, likability, social signals, trust building, and conversational skill for students and early career builders.",
+    pages: 288,
+  },
+  "pitch-anything": {
+    icon: "📣",
+    coverImage: "/book-covers/pitch-anything.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of frame control, status, persuasion structure, and high stakes pitching for students and early career builders.",
+    pages: 240,
+  },
+  "how-to-talk-to-anyone": {
+    icon: "🗨️",
+    coverImage: "/book-covers/how-to-talk-to-anyone.svg",
+    difficulty: "Easy",
+    synopsis:
+      "A modern reading of first impressions, rapport, conversational ease, networking, and relationship building for students and early career builders.",
+    pages: 368,
+  },
+  "the-righteous-mind": {
+    icon: "⚖️",
+    coverImage: "/book-covers/the-righteous-mind.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of moral psychology, intuition, reasoning, polarization, group identity, and ethical disagreement for students and early career builders.",
+    pages: 528,
+  },
+  "zero-to-one": {
+    icon: "🚀",
+    coverImage: "/book-covers/zero-to-one.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of startup strategy, innovation, monopoly, distribution, contrarian thinking, and durable value creation for students and early career builders.",
+    pages: 224,
+  },
+  "the-lean-startup": {
+    icon: "🧪",
+    coverImage: "/book-covers/the-lean-startup.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of startup experiments, validated learning, pivots, metrics, feedback loops, and innovation management for students and early career builders.",
+    pages: 336,
+  },
+  "blue-ocean-strategy": {
+    icon: "🌊",
+    coverImage: "/book-covers/blue-ocean-strategy.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of market creation, strategy canvas thinking, differentiation, noncustomers, sequencing, and execution alignment for students and early career builders.",
+    pages: 320,
+  },
+  "good-strategy-bad-strategy": {
+    icon: "♞",
+    coverImage: "/book-covers/good-strategy-bad-strategy.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of diagnosis, leverage, coherent action, strategic focus, and the difference between real strategy and empty ambition for students and early career builders.",
+    pages: 336,
+  },
+  antifragile: {
+    icon: "🦂",
+    coverImage: "/book-covers/antifragile.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of fragility, optionality, nonlinear risk, skin in the game, and how systems can gain from stress and variability.",
+    pages: 544,
+  },
+  mastery: {
+    icon: "🎻",
+    coverImage: "/book-covers/mastery.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of apprenticeship, deliberate practice, mentorship, social intelligence, creativity, and the long path to deep skill.",
+    pages: 352,
+  },
+  "the-obstacle-is-the-way": {
+    icon: "🪨",
+    coverImage: "/book-covers/the-obstacle-is-the-way.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of stoic resilience, disciplined perception, purposeful action, and steady will under pressure for students and early career builders.",
+    pages: 224,
+  },
+  "discipline-is-destiny": {
+    icon: "🛡️",
+    coverImage: "/book-covers/discipline-is-destiny.svg",
+    difficulty: "Medium",
+    synopsis:
+      "A modern reading of self control, temperance, routines, boundaries, endurance, and character shaped through disciplined daily practice.",
+    pages: 352,
+  },
+  meditations: {
+    icon: "🏛️",
+    coverImage: "/book-covers/meditations.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of stoic self command, mortality, duty, perspective, and ethical conduct under pressure.",
+    pages: 304,
+  },
+  "mans-search-for-meaning": {
+    icon: "🕯️",
+    coverImage: "/book-covers/mans-search-for-meaning.svg",
+    difficulty: "Hard",
+    synopsis:
+      "A modern reading of suffering, responsibility, purpose, logotherapy, and the search for meaning under constraint.",
+    pages: 200,
   },
 };
 
