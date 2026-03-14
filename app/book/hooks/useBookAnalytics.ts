@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { fetchBookJson } from "@/app/book/_lib/book-api";
-import type { StoredReaderStateSnapshot } from "@/app/book/_lib/reader-storage";
+import {
+  getBookProgressStorageKey,
+  getChapterReaderStorageKey,
+  parseStoredBookProgress,
+  parseStoredReaderState,
+  type StoredReaderStateSnapshot,
+} from "@/app/book/_lib/reader-storage";
 import { getBookChaptersBundle } from "@/app/book/data/mockChapters";
 import {
   buildLibraryCatalog,
@@ -10,6 +16,8 @@ import {
 } from "@/app/book/data/mockUserLibraryState";
 import { BOOK_STORAGE_EVENT } from "@/app/book/hooks/bookStorageEvents";
 import {
+  parseReadingActivity,
+  READING_ACTIVITY_PREFIX,
   toDayKey,
 } from "@/app/book/library/hooks/readingActivityStorage";
 
@@ -47,6 +55,81 @@ type DashboardPayload = {
     totalActiveMs: number;
   }>;
 };
+
+function isDashboardPayload(value: unknown): value is DashboardPayload {
+  if (!value || typeof value !== "object") return false;
+  const payload = value as Record<string, unknown>;
+  return (
+    Array.isArray(payload.catalog) &&
+    Array.isArray(payload.progress) &&
+    Array.isArray(payload.bookStates) &&
+    Array.isArray(payload.chapterStates) &&
+    Array.isArray(payload.readingDays)
+  );
+}
+
+function buildLocalDashboardPayload(): DashboardPayload {
+  const entries = buildLibraryCatalog();
+  const chapterStates: DashboardPayload["chapterStates"] = [];
+  const bookStates: DashboardPayload["bookStates"] = [];
+  const readingDaysByKey = new Map<string, number>();
+
+  for (const entry of entries) {
+    const bundle = getBookChaptersBundle(entry.id);
+    const storedProgress = parseStoredBookProgress(
+      window.localStorage.getItem(getBookProgressStorageKey(entry.id))
+    );
+
+    if (storedProgress) {
+      bookStates.push({
+        bookId: entry.id,
+        currentChapterId: storedProgress.currentChapterId,
+        completedChapterIds: storedProgress.completedChapterIds,
+        unlockedChapterIds: storedProgress.unlockedChapterIds,
+        chapterScores: storedProgress.chapterScores,
+        chapterCompletedAt: storedProgress.chapterCompletedAt,
+        lastReadChapterId: storedProgress.lastReadChapterId,
+        lastOpenedAt: storedProgress.lastOpenedAt,
+      });
+    }
+
+    for (const chapter of bundle.chapters) {
+      const readerState = parseStoredReaderState(
+        window.localStorage.getItem(getChapterReaderStorageKey(entry.id, chapter.id))
+      );
+      if (readerState) {
+        chapterStates.push({
+          bookId: entry.id,
+          chapterNumber: chapter.order,
+          chapterId: chapter.id,
+          state: readerState as unknown as Record<string, unknown>,
+        });
+      }
+
+      const activity = parseReadingActivity(
+        window.localStorage.getItem(`${READING_ACTIVITY_PREFIX}:${entry.id}:${chapter.id}`)
+      );
+      if (!activity) continue;
+      for (const [dayKey, totalActiveMs] of Object.entries(activity.dailyActiveMs)) {
+        readingDaysByKey.set(
+          dayKey,
+          Number(readingDaysByKey.get(dayKey) ?? 0) + Number(totalActiveMs)
+        );
+      }
+    }
+  }
+
+  return {
+    catalog: entries.map((entry) => ({ bookId: entry.id })),
+    progress: [],
+    bookStates,
+    chapterStates,
+    readingDays: Array.from(readingDaysByKey.entries()).map(([dayKey, totalActiveMs]) => ({
+      dayKey,
+      totalActiveMs,
+    })),
+  };
+}
 
 type CompletionActivity = {
   bookId: string;
@@ -282,203 +365,211 @@ export function useBookAnalytics(selectedBookIds: string[], dailyGoalMinutes: nu
   useEffect(() => {
     let mounted = true;
 
-    const load = async () => {
-      try {
-        const payload = await fetchBookJson<DashboardPayload>("/app/api/book/me/dashboard");
-        if (!mounted) return;
+    const applyPayload = (payload: DashboardPayload) => {
+      const localEntries = buildLibraryCatalog();
+      const catalogIds =
+        payload.catalog.length > 0
+          ? new Set(payload.catalog.map((item) => item.bookId))
+          : new Set(localEntries.map((item) => item.id));
+      const entries = localEntries.filter((entry) => catalogIds.has(entry.id));
+      const progressByBook = new Map(payload.progress.map((item) => [item.bookId, item]));
+      const stateByBook = new Map(payload.bookStates.map((item) => [item.bookId, item]));
+      const chapterStatesByBook = new Map<string, Array<DashboardPayload["chapterStates"][number]>>();
+      payload.chapterStates.forEach((item) => {
+        const current = chapterStatesByBook.get(item.bookId) ?? [];
+        current.push(item);
+        chapterStatesByBook.set(item.bookId, current);
+      });
 
-        const localEntries = buildLibraryCatalog();
-        const catalogIds =
-          payload.catalog.length > 0
-            ? new Set(payload.catalog.map((item) => item.bookId))
-            : new Set(localEntries.map((item) => item.id));
-        const entries = localEntries.filter((entry) => catalogIds.has(entry.id));
-        const progressByBook = new Map(payload.progress.map((item) => [item.bookId, item]));
-        const stateByBook = new Map(payload.bookStates.map((item) => [item.bookId, item]));
-        const chapterStatesByBook = new Map<string, Array<DashboardPayload["chapterStates"][number]>>();
-        payload.chapterStates.forEach((item) => {
-          const current = chapterStatesByBook.get(item.bookId) ?? [];
-          current.push(item);
-          chapterStatesByBook.set(item.bookId, current);
+      const allActivities: CompletionActivity[] = [];
+      const readingByDay = new Map<string, { activeMs: number; chapters: number }>();
+      payload.readingDays.forEach((item) => {
+        readingByDay.set(item.dayKey, {
+          activeMs: item.totalActiveMs,
+          chapters: readingByDay.get(item.dayKey)?.chapters ?? 0,
         });
+      });
 
-        const allActivities: CompletionActivity[] = [];
-        const readingByDay = new Map<string, { activeMs: number; chapters: number }>();
-        payload.readingDays.forEach((item) => {
-          readingByDay.set(item.dayKey, {
-            activeMs: item.totalActiveMs,
-            chapters: readingByDay.get(item.dayKey)?.chapters ?? 0,
-          });
-        });
+      const bookSnapshots = entries.map((entry): BookProgressSnapshot => {
+        const chaptersBundle = getBookChaptersBundle(entry.id);
+        const chapters = chaptersBundle.chapters;
+        const totalChapters = chapters.length || entry.chaptersTotal;
+        const state = stateByBook.get(entry.id);
+        const progress = progressByBook.get(entry.id);
 
-        const bookSnapshots = entries.map((entry): BookProgressSnapshot => {
-          const chaptersBundle = getBookChaptersBundle(entry.id);
-          const chapters = chaptersBundle.chapters;
-          const totalChapters = chapters.length || entry.chaptersTotal;
-          const state = stateByBook.get(entry.id);
-          const progress = progressByBook.get(entry.id);
+        if (!state && !progress) {
+          return {
+            book: entry,
+            status: "not_started",
+            completedChapters: 0,
+            totalChapters,
+            progressPercent: 0,
+            bestScore: 0,
+            avgScore: 0,
+            lastOpenedLabel: "Not started",
+            lastActivityAt: entry.lastActivityAt,
+            resumeChapterId: chapters[0]?.id ?? "",
+          };
+        }
 
-          if (!state && !progress) {
-            return {
-              book: entry,
-              status: "not_started",
-              completedChapters: 0,
-              totalChapters,
-              progressPercent: 0,
-              bestScore: 0,
-              avgScore: 0,
-              lastOpenedLabel: "Not started",
-              lastActivityAt: entry.lastActivityAt,
-              resumeChapterId: chapters[0]?.id ?? "",
-            };
-          }
+        const chapterCompletedAt = state?.chapterCompletedAt ?? {};
+        const activities = buildActivities(entry.id, chapterCompletedAt);
+        allActivities.push(...activities);
 
-          const chapterCompletedAt = state?.chapterCompletedAt ?? {};
-          const activities = buildActivities(entry.id, chapterCompletedAt);
-          allActivities.push(...activities);
+        const completedChapters = new Set(
+          state?.completedChapterIds ??
+            (progress?.completedChapters ?? [])
+              .map((chapterNumber) => chapters.find((chapter) => chapter.order === chapterNumber)?.id ?? "")
+              .filter(Boolean)
+        ).size;
+        const status = statusFromCounts(completedChapters, totalChapters);
+        const progressPercent = totalChapters
+          ? Math.min(100, Math.round((completedChapters / totalChapters) * 100))
+          : 0;
 
-          const completedChapters = new Set(
-            state?.completedChapterIds ??
-              (progress?.completedChapters ?? [])
-                .map((chapterNumber) => chapters.find((chapter) => chapter.order === chapterNumber)?.id ?? "")
-                .filter(Boolean)
-          ).size;
-          const status = statusFromCounts(completedChapters, totalChapters);
-          const progressPercent = totalChapters
-            ? Math.min(100, Math.round((completedChapters / totalChapters) * 100))
-            : 0;
-
-          const scoreValues = Object.values(
-            state?.chapterScores ??
-              Object.fromEntries(
-                Object.entries(progress?.bestScoreByChapter ?? {}).map(([chapterNumber, score]) => {
+        const scoreValues = Object.values(
+          state?.chapterScores ??
+            Object.fromEntries(
+              Object.entries(progress?.bestScoreByChapter ?? {})
+                .map(([chapterNumber, score]) => {
                   const chapterId = chapters.find(
                     (chapter) => chapter.order === Number(chapterNumber)
                   )?.id;
                   return chapterId ? [chapterId, score] : null;
-                }).filter((item): item is [string, number] => Boolean(item))
-              )
-          ).map((value) => Number(value));
+                })
+                .filter((item): item is [string, number] => Boolean(item))
+            )
+        ).map((value) => Number(value));
 
-          const bestScore = scoreValues.length ? Math.max(...scoreValues) : 0;
-          const avgScore = scoreValues.length
-            ? Math.round(scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length)
-            : 0;
-
-          const resumeChapterId =
-            state?.currentChapterId ||
-            chapters.find(
-              (chapter) => chapter.order === (progress?.currentChapterNumber ?? 1)
-            )?.id ||
-            chapters[0]?.id ||
-            "";
-
-          const lastActivityAt =
-            state?.lastOpenedAt ||
-            progress?.lastActiveAt ||
-            progress?.lastOpenedAt ||
-            entry.lastActivityAt;
-
-          return {
-            book: entry,
-            status,
-            completedChapters,
-            totalChapters,
-            progressPercent,
-            bestScore,
-            avgScore,
-            lastOpenedLabel:
-              state?.lastReadChapterId && state.lastOpenedAt !== new Date(0).toISOString()
-                ? chapterLabelById(entry.id, state.lastReadChapterId)
-                : "Not started",
-            lastActivityAt,
-            resumeChapterId,
-          };
-        });
-
-        const engagedBookSnapshots = bookSnapshots.filter((snapshot) => {
-          const state = stateByBook.get(snapshot.book.id);
-          const chapterStates = chapterStatesByBook.get(snapshot.book.id) ?? [];
-          const hasCompletedChapter = snapshot.completedChapters > 0;
-          const hasQuizScore = Object.values(state?.chapterScores ?? {}).some(
-            (score) => Number(score) > 0
-          );
-          const hasReaderActivity = chapterStates.some((item) =>
-            hasMeaningfulReaderActivity(item.state as StoredReaderStateSnapshot | null)
-          );
-          return hasCompletedChapter || hasQuizScore || hasReaderActivity;
-        });
-
-        for (const activity of allActivities) {
-          const current = readingByDay.get(activity.dayKey) ?? { activeMs: 0, chapters: 0 };
-          readingByDay.set(activity.dayKey, {
-            activeMs: current.activeMs,
-            chapters: current.chapters + 1,
-          });
-        }
-
-        const activityDays = Array.from(readingByDay.entries())
-          .filter(([, stats]) => stats.activeMs > 0)
-          .map(([dayKey]) => dayKey)
-          .sort();
-        const todayKey = toDayKey(new Date());
-        const todayStats = readingByDay.get(todayKey) ?? { activeMs: 0, chapters: 0 };
-
-        const scoreValues = bookSnapshots
-          .map((item) => item.avgScore)
-          .filter((score) => score > 0);
-        const avgQuizScore = scoreValues.length
-          ? Math.round(scoreValues.reduce((sum, score) => sum + score, 0) / scoreValues.length)
+        const bestScore = scoreValues.length ? Math.max(...scoreValues) : 0;
+        const avgScore = scoreValues.length
+          ? Math.round(scoreValues.reduce((sum, value) => sum + value, 0) / scoreValues.length)
           : 0;
-        const maxQuizScore = Math.max(0, ...bookSnapshots.map((item) => item.bestScore));
-        const booksCompleted = bookSnapshots.filter((item) => item.status === "completed").length;
-        const totalCompletedChapters = bookSnapshots.reduce(
-          (sum, item) => sum + item.completedChapters,
-          0
-        );
-        const currentStreak = calculateCurrentStreak(new Set(activityDays));
-        const longestStreak = calculateLongestStreak(activityDays);
-        const heatmapCells = buildHeatmap(readingByDay);
-        const completedBookSnapshots = engagedBookSnapshots.filter((item) => item.status === "completed");
-        const inProgressBookSnapshots = engagedBookSnapshots.filter((item) => item.status === "in_progress");
-        const upcomingReviews: UpcomingReviewItem[] = inProgressBookSnapshots.slice(0, 3).map((item, index) => {
-          const dueDate = new Date();
-          dueDate.setDate(dueDate.getDate() + index + 1);
-          return {
-            id: `${item.book.id}-review-${index}`,
-            prompt: `Review ${item.book.title}: chapter ${Math.max(item.completedChapters, 1)} takeaways`,
-            dueLabel: dueDate.toLocaleDateString(undefined, {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            }),
-            bookId: item.book.id,
-          };
-        });
 
-        setAnalytics({
-          streakDays: currentStreak,
-          dailyGoalMinutes,
-          minutesReadToday: Math.floor(todayStats.activeMs / 60000),
-          booksCompleted,
-          avgQuizScore,
-          maxQuizScore,
-          totalCompletedChapters,
-          longestStreak,
-          lastActiveLabel: formatRelativeDayLabel(activityDays.at(-1) ?? null),
-          bookSnapshots,
-          engagedBookSnapshots,
-          completedBookSnapshots,
-          inProgressBookSnapshots,
-          heatmapCells,
-          upcomingReviews,
-          hasAnyProgress: totalCompletedChapters > 0,
-          hasAnyEngagement: engagedBookSnapshots.length > 0,
+        const resumeChapterId =
+          state?.currentChapterId ||
+          chapters.find(
+            (chapter) => chapter.order === (progress?.currentChapterNumber ?? 1)
+          )?.id ||
+          chapters[0]?.id ||
+          "";
+
+        const lastActivityAt =
+          state?.lastOpenedAt ||
+          progress?.lastActiveAt ||
+          progress?.lastOpenedAt ||
+          entry.lastActivityAt;
+
+        return {
+          book: entry,
+          status,
+          completedChapters,
+          totalChapters,
+          progressPercent,
+          bestScore,
+          avgScore,
+          lastOpenedLabel:
+            state?.lastReadChapterId && state.lastOpenedAt !== new Date(0).toISOString()
+              ? chapterLabelById(entry.id, state.lastReadChapterId)
+              : "Not started",
+          lastActivityAt,
+          resumeChapterId,
+        };
+      });
+
+      const engagedBookSnapshots = bookSnapshots.filter((snapshot) => {
+        const state = stateByBook.get(snapshot.book.id);
+        const chapterStates = chapterStatesByBook.get(snapshot.book.id) ?? [];
+        const hasCompletedChapter = snapshot.completedChapters > 0;
+        const hasQuizScore = Object.values(state?.chapterScores ?? {}).some(
+          (score) => Number(score) > 0
+        );
+        const hasReaderActivity = chapterStates.some((item) =>
+          hasMeaningfulReaderActivity(item.state as StoredReaderStateSnapshot | null)
+        );
+        return hasCompletedChapter || hasQuizScore || hasReaderActivity;
+      });
+
+      for (const activity of allActivities) {
+        const current = readingByDay.get(activity.dayKey) ?? { activeMs: 0, chapters: 0 };
+        readingByDay.set(activity.dayKey, {
+          activeMs: current.activeMs,
+          chapters: current.chapters + 1,
         });
-        setHydrated(true);
+      }
+
+      const activityDays = Array.from(readingByDay.entries())
+        .filter(([, stats]) => stats.activeMs > 0)
+        .map(([dayKey]) => dayKey)
+        .sort();
+      const todayKey = toDayKey(new Date());
+      const todayStats = readingByDay.get(todayKey) ?? { activeMs: 0, chapters: 0 };
+
+      const scoreValues = bookSnapshots
+        .map((item) => item.avgScore)
+        .filter((score) => score > 0);
+      const avgQuizScore = scoreValues.length
+        ? Math.round(scoreValues.reduce((sum, score) => sum + score, 0) / scoreValues.length)
+        : 0;
+      const maxQuizScore = Math.max(0, ...bookSnapshots.map((item) => item.bestScore));
+      const booksCompleted = bookSnapshots.filter((item) => item.status === "completed").length;
+      const totalCompletedChapters = bookSnapshots.reduce(
+        (sum, item) => sum + item.completedChapters,
+        0
+      );
+      const currentStreak = calculateCurrentStreak(new Set(activityDays));
+      const longestStreak = calculateLongestStreak(activityDays);
+      const heatmapCells = buildHeatmap(readingByDay);
+      const completedBookSnapshots = engagedBookSnapshots.filter((item) => item.status === "completed");
+      const inProgressBookSnapshots = engagedBookSnapshots.filter((item) => item.status === "in_progress");
+      const upcomingReviews: UpcomingReviewItem[] = inProgressBookSnapshots.slice(0, 3).map((item, index) => {
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + index + 1);
+        return {
+          id: `${item.book.id}-review-${index}`,
+          prompt: `Review ${item.book.title}: chapter ${Math.max(item.completedChapters, 1)} takeaways`,
+          dueLabel: dueDate.toLocaleDateString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          }),
+          bookId: item.book.id,
+        };
+      });
+
+      setAnalytics({
+        streakDays: currentStreak,
+        dailyGoalMinutes,
+        minutesReadToday: Math.floor(todayStats.activeMs / 60000),
+        booksCompleted,
+        avgQuizScore,
+        maxQuizScore,
+        totalCompletedChapters,
+        longestStreak,
+        lastActiveLabel: formatRelativeDayLabel(activityDays.at(-1) ?? null),
+        bookSnapshots,
+        engagedBookSnapshots,
+        completedBookSnapshots,
+        inProgressBookSnapshots,
+        heatmapCells,
+        upcomingReviews,
+        hasAnyProgress: totalCompletedChapters > 0,
+        hasAnyEngagement: engagedBookSnapshots.length > 0,
+      });
+      setHydrated(true);
+    };
+
+    const load = async () => {
+      try {
+        const payload = await fetchBookJson<DashboardPayload>("/app/api/book/me/dashboard");
+        if (!mounted) return;
+        if (!isDashboardPayload(payload)) {
+          throw new Error("Invalid analytics payload");
+        }
+        applyPayload(payload);
       } catch {
         if (!mounted) return;
-        setHydrated(true);
+        applyPayload(buildLocalDashboardPayload());
       }
     };
 
