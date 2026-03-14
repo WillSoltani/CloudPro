@@ -15,9 +15,7 @@ function normalizeCookieDomain(value: string | undefined): string | undefined {
 }
 
 export function getAuthCookieDomain(): string | undefined {
-  return normalizeCookieDomain(
-    process.env.AUTH_COOKIE_DOMAIN || process.env.CHAPTERFLOW_COOKIE_DOMAIN
-  );
+  return normalizeCookieDomain(process.env.AUTH_COOKIE_DOMAIN);
 }
 
 export function getAuthCookieBase(): AuthCookieBase {

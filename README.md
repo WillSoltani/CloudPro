@@ -55,7 +55,6 @@ docs/                      Maintained repository and product documentation
 - `/app/projects/[projectId]/fill/[fileId]` PDF fill flow
 
 ### ChapterFlow
-- `https://siliconx.ca` public product home
 - `/book` onboarding entry
 - `/book/workspace` dashboard
 - `/book/home` legacy redirect to `/book/workspace`
@@ -87,7 +86,6 @@ npm --prefix infra install
 
 ```bash
 npm run dev
-npm run dev:chapterflow
 ```
 
 ### Build
@@ -116,14 +114,6 @@ This repo reads configuration from direct environment variables and, on the serv
 - `COGNITO_USER_POOL_ID`
 - `COGNITO_CLIENT_ID`
 - `APP_BASE_URL`
-- `CHAPTERFLOW_DEPLOYMENT_MODE`
-- `NEXT_PUBLIC_CHAPTERFLOW_SITE_URL`
-- `NEXT_PUBLIC_CHAPTERFLOW_APP_URL`
-- `NEXT_PUBLIC_CHAPTERFLOW_AUTH_URL`
-- `CHAPTERFLOW_SITE_BASE_URL`
-- `CHAPTERFLOW_APP_BASE_URL`
-- `CHAPTERFLOW_AUTH_BASE_URL`
-- `AUTH_COOKIE_DOMAIN`
 - `ADMIN_SUBS`
 - `ADMIN_EMAILS`
 - `DEV_AUTH_BYPASS` for local only bypass flows
@@ -148,14 +138,6 @@ This repo reads configuration from direct environment variables and, on the serv
 
 Use direct environment variables for local work when practical. In deployed environments, prefer SSM backed secrets and configuration.
 
-### Deployment modes
-- `embedded`
-  - Use for the portfolio deployment on `soltani.org`
-  - The site keeps its existing root experience and can still host the reading product on `/book`
-- `standalone`
-  - Use for the dedicated ChapterFlow deployment on SiliconX
-  - `siliconx.ca` serves the product home, `chapterflow.siliconx.ca` serves the app, and `auth.siliconx.ca` serves the auth shell
-
 ## Book content model
 
 ChapterFlow content is stored in strict package JSON files under `book-packages/`.
@@ -174,8 +156,6 @@ If you are adding or updating books, start with [docs/BOOK_ACCELERATOR.md](docs/
 - [CI and deployment notes](docs/CI_CD.md)
 - [ChapterFlow app admin guide](docs/BOOKAPP_ADMIN_GUIDE.md)
 - [Production deployment checklist](PRODUCTION_DEPLOYMENT_CHECKLIST.md)
-- [ChapterFlow domain migration guide](CHAPTERFLOW_DOMAIN_MIGRATION.md)
-- [ChapterFlow split and domain setup](CHAPTERFLOW_SPLIT_AND_DOMAIN_SETUP.md)
 
 ## Notes
 - Book JSON package contents are source content and should not be refactored casually

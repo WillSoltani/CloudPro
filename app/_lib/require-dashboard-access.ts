@@ -4,12 +4,6 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/app/app/api/_lib/auth";
 import { isDevAuthBypassEnabled } from "@/app/app/_lib/dev-auth-bypass";
-import {
-  buildChapterFlowAuthHref,
-  isChapterFlowAppHost,
-  isChapterFlowAuthHost,
-  isChapterFlowSiteHost,
-} from "@/app/_lib/chapterflow-brand";
 
 let warnedLocalBypass = false;
 
@@ -42,16 +36,6 @@ export async function requireDashboardAccess() {
         (process.env.NODE_ENV === "production" ? "https" : "http");
       const currentOrigin = host ? `${proto}://${host}` : "";
       const returnTo = currentOrigin ? `${currentOrigin}` : "";
-
-      if (
-        isChapterFlowSiteHost(host) ||
-        isChapterFlowAppHost(host) ||
-        isChapterFlowAuthHost(host)
-      ) {
-        redirect(
-          `${buildChapterFlowAuthHref("/auth/login")}?returnTo=${encodeURIComponent(`${returnTo}/book`)}`
-        );
-      }
 
       redirect(`/auth/login?returnTo=${encodeURIComponent(`${returnTo}/app`)}`);
     }

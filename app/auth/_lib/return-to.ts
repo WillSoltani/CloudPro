@@ -1,12 +1,5 @@
 import "server-only";
 
-import {
-  getChapterFlowAppUrl,
-  getChapterFlowAuthUrl,
-  getChapterFlowSiteUrl,
-  usesDedicatedChapterFlowHosts,
-} from "@/app/_lib/chapterflow-brand";
-
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
 }
@@ -21,12 +14,6 @@ function allowedOrigins(): Set<string> {
   const configured = [
     process.env.APP_BASE_URL,
     process.env.NEXT_PUBLIC_SITE_URL,
-    process.env.NEXT_PUBLIC_CHAPTERFLOW_SITE_URL,
-    process.env.CHAPTERFLOW_SITE_BASE_URL,
-    process.env.NEXT_PUBLIC_CHAPTERFLOW_APP_URL,
-    process.env.CHAPTERFLOW_APP_BASE_URL,
-    process.env.NEXT_PUBLIC_CHAPTERFLOW_AUTH_URL,
-    process.env.CHAPTERFLOW_AUTH_BASE_URL,
   ];
 
   for (const value of configured) {
@@ -38,11 +25,6 @@ function allowedOrigins(): Set<string> {
     }
   }
 
-  if (usesDedicatedChapterFlowHosts()) {
-    origins.add(normalizeOrigin(getChapterFlowSiteUrl()));
-    origins.add(normalizeOrigin(getChapterFlowAppUrl()));
-    origins.add(normalizeOrigin(getChapterFlowAuthUrl()));
-  }
   return origins;
 }
 

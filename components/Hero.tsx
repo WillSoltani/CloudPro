@@ -126,23 +126,14 @@ export function Hero() {
         {/* Primary CTA */}
         <motion.div
           variants={item}
-          className="mt-4 grid w-full max-w-sm grid-cols-1 gap-3 sm:mt-6 sm:w-auto sm:max-w-none sm:grid-cols-2"
+          className="mt-4 sm:mt-6"
         >
           <motion.div whileHover={{ y: -1 }} whileTap={{ scale: 0.99 }}>
             <Button
               asChild
-              className="w-full border border-white/10 bg-white/10 text-slate-100 hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-sky-300/40 sm:w-auto"
+              className="w-full border border-white/10 bg-white/10 text-slate-100 hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-sky-300/40"
             >
               <a href="#projects">View Projects &amp; Case Studies</a>
-            </Button>
-          </motion.div>
-          <motion.div whileHover={{ y: -1 }} whileTap={{ scale: 0.99 }}>
-            <Button
-              asChild
-              variant="outline"
-              className="w-full border-cyan-300/25 bg-cyan-400/8 text-cyan-100 hover:bg-cyan-400/14 hover:text-cyan-50 sm:w-auto"
-            >
-              <a href="/book">Explore ChapterFlow</a>
             </Button>
           </motion.div>
         </motion.div>

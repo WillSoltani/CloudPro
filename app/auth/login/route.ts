@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mustServerEnv } from "@/app/app/api/_lib/server-env";
-import {
-  buildChapterFlowAppHref,
-  isChapterFlowAppHost,
-  isChapterFlowAuthHost,
-  isChapterFlowSiteHost,
-} from "@/app/_lib/chapterflow-brand";
 import { resolveCognitoDomain } from "../_lib/cognito-domain";
 import { getAuthCookieBase } from "../_lib/auth-cookie";
 import { sanitizeReturnTo } from "../_lib/return-to";
@@ -38,17 +32,7 @@ export async function GET(req: NextRequest) {
   }
 
   const state = crypto.randomUUID();
-  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
-  const defaultReturnTo =
-    isChapterFlowSiteHost(host) ||
-    isChapterFlowAppHost(host) ||
-    isChapterFlowAuthHost(host)
-      ? buildChapterFlowAppHref("/book")
-      : "/app";
-  const returnTo = sanitizeReturnTo(
-    req.nextUrl.searchParams.get("returnTo"),
-    defaultReturnTo
-  );
+  const returnTo = sanitizeReturnTo(req.nextUrl.searchParams.get("returnTo"), "/app");
 
   // PKCE: verifier stored in an httpOnly cookie so JS can't steal them
   const codeVerifier = randomBase64Url(32);
