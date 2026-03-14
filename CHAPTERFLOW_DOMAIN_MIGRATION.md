@@ -15,6 +15,7 @@ The codebase now supports a clean shared backend model:
 - auth entry points run on `auth.siliconx.ca`
 - Cognito Hosted UI runs on `login.siliconx.ca`
 - the same repo and backend services can continue to be used
+- `https://siliconx.ca/auth/callback` is supported as a ChapterFlow callback host
 
 ## 1. DNS and certificates
 
@@ -60,8 +61,10 @@ Update Cognito Hosted UI configuration to use:
 
 - hosted auth domain at `login.siliconx.ca`
 - callback URL:
+  - `https://siliconx.ca/auth/callback`
   - `https://auth.siliconx.ca/auth/callback`
 - sign out URL:
+  - `https://siliconx.ca/`
   - `https://auth.siliconx.ca/`
 
 Local development callback URLs should also include:
@@ -74,6 +77,13 @@ Set the corresponding runtime variables:
 ```text
 COGNITO_DOMAIN=https://login.siliconx.ca
 COGNITO_CUSTOM_DOMAIN=https://login.siliconx.ca
+COGNITO_REDIRECT_URI=https://siliconx.ca/auth/callback
+COGNITO_LOGOUT_REDIRECT_URI=https://siliconx.ca/
+```
+
+If you prefer the dedicated auth host to receive the callback and logout flow, these also work:
+
+```text
 COGNITO_REDIRECT_URI=https://auth.siliconx.ca/auth/callback
 COGNITO_LOGOUT_REDIRECT_URI=https://auth.siliconx.ca/
 ```

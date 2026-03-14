@@ -149,7 +149,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
           ) : null}
 
           <Link
-            href="/chapterflow"
+            href="/book"
             className="hidden md:inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-400/8 px-3.5 py-2 text-sm text-cyan-100 transition hover:bg-cyan-400/14 hover:text-cyan-50"
           >
             ChapterFlow
@@ -238,7 +238,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                   className="px-2 pt-1"
                 >
                   <Link
-                    href="/chapterflow"
+                    href="/book"
                     onClick={() => setOpen(false)}
                     className="flex items-center justify-between rounded-xl border border-cyan-300/20 bg-cyan-400/8 px-4 py-3 text-sm text-cyan-100 transition hover:bg-cyan-400/14"
                   >

@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 4, "column": 0}, "map": {"version":3,"sources":["file:///Users/willsoltani/dev/cloud-portfolio/app/book/layout.tsx"],"sourcesContent":["import type { Metadata } from \"next\";\nimport {\n  CHAPTERFLOW_NAME,\n  CHAPTERFLOW_TAGLINE,\n  getChapterFlowAppUrl,\n} from \"@/app/_lib/chapterflow-brand\";\n\nexport const metadata: Metadata = {\n  title: {\n    default: CHAPTERFLOW_NAME,\n    template: `%s | ${CHAPTERFLOW_NAME}`,\n  },\n  description: CHAPTERFLOW_TAGLINE,\n  metadataBase: new URL(getChapterFlowAppUrl()),\n  openGraph: {\n    title: CHAPTERFLOW_NAME,\n    description: CHAPTERFLOW_TAGLINE,\n    url: getChapterFlowAppUrl(),\n    siteName: CHAPTERFLOW_NAME,\n    type: \"website\",\n  },\n};\n\nexport default function BookLayout({\n  children,\n}: {\n  children: React.ReactNode;\n}) {\n  return children;\n}\n"],"names":[],"mappings":";;;;;;AACA;;AAMO,MAAM,WAAqB;IAChC,OAAO;QACL,SAAS,uJAAgB;QACzB,UAAU,CAAC,KAAK,EAAE,uJAAgB,EAAE;IACtC;IACA,aAAa,0JAAmB;IAChC,cAAc,IAAI,IAAI,IAAA,2JAAoB;IAC1C,WAAW;QACT,OAAO,uJAAgB;QACvB,aAAa,0JAAmB;QAChC,KAAK,IAAA,2JAAoB;QACzB,UAAU,uJAAgB;QAC1B,MAAM;IACR;AACF;AAEe,SAAS,WAAW,EACjC,QAAQ,EAGT;IACC,OAAO;AACT"}}]
-}

@@ -40,6 +40,7 @@ Behavior:
 - `chapterflow.siliconx.ca` serves the app
 - `auth.siliconx.ca` serves the auth shell
 - login returns users into `chapterflow.siliconx.ca/book`
+- `https://siliconx.ca/auth/callback` is also supported if you want the Cognito callback on the product home host
 
 ## 1. Environment variables by deployment
 
@@ -93,6 +94,13 @@ Set the ChapterFlow Cognito values:
 COGNITO_DOMAIN=https://login.siliconx.ca
 COGNITO_CUSTOM_DOMAIN=https://login.siliconx.ca
 COGNITO_CLIENT_ID=your_chapterflow_client_id
+COGNITO_REDIRECT_URI=https://siliconx.ca/auth/callback
+COGNITO_LOGOUT_REDIRECT_URI=https://siliconx.ca/
+```
+
+If you prefer to terminate callback and logout on the dedicated auth shell instead, these also work:
+
+```text
 COGNITO_REDIRECT_URI=https://auth.siliconx.ca/auth/callback
 COGNITO_LOGOUT_REDIRECT_URI=https://auth.siliconx.ca/
 ```
@@ -140,8 +148,10 @@ Use two separate Cognito setups if you want fully separate auth systems.
 
 ### ChapterFlow Cognito
 - hosted UI domain: `login.siliconx.ca`
-- callback URL: `https://auth.siliconx.ca/auth/callback`
-- logout URL: `https://auth.siliconx.ca/`
+- recommended callback URL: `https://siliconx.ca/auth/callback`
+- recommended logout URL: `https://siliconx.ca/`
+- optional callback URL: `https://auth.siliconx.ca/auth/callback`
+- optional logout URL: `https://auth.siliconx.ca/`
 
 Do not use `auth.siliconx.ca` as the Cognito Hosted UI domain in this setup because the app itself serves that host.
 
@@ -200,6 +210,7 @@ This script already sets:
 
 ### ChapterFlow deployment
 - `https://siliconx.ca/` loads
+- `https://siliconx.ca/auth/callback` is configured in Cognito if you want the apex product host to receive the callback
 - `https://chapterflow.siliconx.ca/book` loads
 - `https://auth.siliconx.ca/` loads
 - login and logout work with the ChapterFlow Cognito config

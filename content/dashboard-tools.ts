@@ -43,7 +43,7 @@ export const dashboardTools: DashboardTool[] = [
       "Daily streak tracker",
       "Badge achievements",
     ],
-    href: "/chapterflow",
+    href: "/book",
     ctaLabel: "Open ChapterFlow",
     openLabel: "Open app",
     accent: "amber",

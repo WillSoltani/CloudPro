@@ -142,7 +142,7 @@ export function Hero() {
               variant="outline"
               className="w-full border-cyan-300/25 bg-cyan-400/8 text-cyan-100 hover:bg-cyan-400/14 hover:text-cyan-50 sm:w-auto"
             >
-              <a href="/chapterflow">Explore ChapterFlow</a>
+              <a href="/book">Explore ChapterFlow</a>
             </Button>
           </motion.div>
         </motion.div>
