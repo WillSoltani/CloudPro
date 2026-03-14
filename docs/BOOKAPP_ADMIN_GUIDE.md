@@ -1,10 +1,10 @@
 Author: Will Soltani
 
-# Book Accelerator Admin Guide
+# ChapterFlow Admin Guide
 
 This note covers two things:
 1) how to upload/publish a JSON book package so it is available through Book API endpoints, and
-2) how to upload book cover images so they appear across the Book app UI.
+2) how to upload book cover images so they appear across the ChapterFlow app UI.
 
 ## 1) Upload A JSON Book Package
 
@@ -102,7 +102,7 @@ Example:
 
 ---
 
-## 3) Production Release Checklist (Book app)
+## 3) Production Release Checklist (ChapterFlow app)
 
 - `npm run build` passes.
 - Book API admin endpoints respond (auth + group check).

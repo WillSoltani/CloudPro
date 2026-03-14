@@ -3,9 +3,9 @@
 Cloud Portfolio is a Next.js monorepo with two product surfaces that share infrastructure and deployment patterns:
 
 - `Cloud Portfolio` document workflows for uploads, conversions, and PDF filling
-- `Book Accelerator` for guided reading, quizzes, progress tracking, badges, profile, settings, and subscription aware access
+- `ChapterFlow` for guided reading, quizzes, progress tracking, badges, profile, settings, and subscription aware access
 
-The repository is production oriented. The frontend uses App Router feature domains, the backend uses Next.js route handlers plus AWS services, and Book Accelerator content is ingested from validated book package JSON.
+The repository is production oriented. The frontend uses App Router feature domains, the backend uses Next.js route handlers plus AWS services, and ChapterFlow content is ingested from validated book package JSON.
 
 ## Core product areas
 
@@ -15,7 +15,7 @@ The repository is production oriented. The frontend uses App Router feature doma
 - Browser based PDF filling and export
 - S3 backed artifacts with DynamoDB metadata
 
-### Book Accelerator
+### ChapterFlow
 - Library, book detail, and chapter reading flows
 - Summary, examples, and quiz modes
 - Actual reading time tracking
@@ -30,7 +30,7 @@ The repository is production oriented. The frontend uses App Router feature doma
 - TypeScript
 - Tailwind CSS 4
 - AWS DynamoDB, S3, Step Functions, Lambda, Cognito, SSM
-- Stripe for Book Accelerator billing flows
+- Stripe for ChapterFlow billing flows
 - CDK for infrastructure
 
 ## Repository layout
@@ -38,11 +38,11 @@ The repository is production oriented. The frontend uses App Router feature doma
 ```text
 app/
   app/                     Cloud Portfolio dashboard routes and APIs
-  book/                    Book Accelerator UI, hooks, data adapters, and components
+  book/                    ChapterFlow UI, hooks, data adapters, and components
   auth/                    Shared authentication routes
 infra/                     AWS CDK app and conversion worker
 book-packages/             Strict book package JSON content
-public/book-covers/        Generated or curated Book Accelerator cover assets
+public/book-covers/        Generated or curated ChapterFlow cover assets
 docs/                      Maintained repository and product documentation
 ```
 
@@ -54,7 +54,7 @@ docs/                      Maintained repository and product documentation
 - `/app/projects` project workspace
 - `/app/projects/[projectId]/fill/[fileId]` PDF fill flow
 
-### Book Accelerator
+### ChapterFlow
 - `/book` onboarding entry
 - `/book/workspace` dashboard
 - `/book/home` legacy redirect to `/book/workspace`
@@ -86,6 +86,7 @@ npm --prefix infra install
 
 ```bash
 npm run dev
+npm run dev:chapterflow
 ```
 
 ### Build
@@ -114,6 +115,11 @@ This repo reads configuration from direct environment variables and, on the serv
 - `COGNITO_USER_POOL_ID`
 - `COGNITO_CLIENT_ID`
 - `APP_BASE_URL`
+- `NEXT_PUBLIC_CHAPTERFLOW_APP_URL`
+- `NEXT_PUBLIC_CHAPTERFLOW_AUTH_URL`
+- `CHAPTERFLOW_APP_BASE_URL`
+- `CHAPTERFLOW_AUTH_BASE_URL`
+- `AUTH_COOKIE_DOMAIN`
 - `ADMIN_SUBS`
 - `ADMIN_EMAILS`
 - `DEV_AUTH_BYPASS` for local only bypass flows
@@ -125,7 +131,7 @@ This repo reads configuration from direct environment variables and, on the serv
 - `RAW_BUCKET`
 - `OUTPUT_BUCKET`
 
-### Book Accelerator specific
+### ChapterFlow specific
 - `BOOK_TABLE_NAME`
 - `BOOK_INGEST_BUCKET`
 - `BOOK_CONTENT_BUCKET`
@@ -140,7 +146,7 @@ Use direct environment variables for local work when practical. In deployed envi
 
 ## Book content model
 
-Book Accelerator content is stored in strict package JSON files under `book-packages/`.
+ChapterFlow content is stored in strict package JSON files under `book-packages/`.
 
 Each package is validated before ingestion and then published into backend storage for runtime reads. The package contract is chapter based and supports reading variants, examples, and quizzes.
 
@@ -149,15 +155,17 @@ If you are adding or updating books, start with [docs/BOOK_ACCELERATOR.md](docs/
 ## Architecture docs
 - [Documentation index](docs/README.md)
 - [Repository architecture](docs/ARCHITECTURE.md)
-- [Book Accelerator architecture and content flow](docs/BOOK_ACCELERATOR.md)
+- [ChapterFlow architecture and content flow](docs/BOOK_ACCELERATOR.md)
 - [Development guide](docs/DEVELOPMENT.md)
 - [Contribution guide](docs/CONTRIBUTING.md)
 - [Operations guide](docs/OPERATIONS.md)
 - [CI and deployment notes](docs/CI_CD.md)
-- [Book app admin guide](docs/BOOKAPP_ADMIN_GUIDE.md)
+- [ChapterFlow app admin guide](docs/BOOKAPP_ADMIN_GUIDE.md)
 - [Production deployment checklist](PRODUCTION_DEPLOYMENT_CHECKLIST.md)
+- [ChapterFlow domain migration guide](CHAPTERFLOW_DOMAIN_MIGRATION.md)
+- [ChapterFlow split and domain setup](CHAPTERFLOW_SPLIT_AND_DOMAIN_SETUP.md)
 
 ## Notes
 - Book JSON package contents are source content and should not be refactored casually
 - Estimated reading time is content metadata only. Goal tracking uses actual tracked reading time
-- Book Accelerator user state is a mix of server persisted state and local client caches optimized for responsiveness
+- ChapterFlow user state is a mix of server persisted state and local client caches optimized for responsiveness

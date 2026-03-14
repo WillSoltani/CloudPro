@@ -1,6 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { mustServerEnv } from "@/app/app/api/_lib/server-env";
+import { buildChapterFlowAppHref, isChapterFlowAppHost, isChapterFlowAuthHost } from "@/app/_lib/chapterflow-brand";
 import { resolveCognitoDomain } from "../_lib/cognito-domain";
+import { getAuthCookieBase } from "../_lib/auth-cookie";
+import { sanitizeReturnTo } from "../_lib/return-to";
 
 function base64UrlEncode(bytes: Uint8Array) {
   let str = "";
@@ -20,7 +23,7 @@ async function sha256Base64Url(input: string) {
   return base64UrlEncode(new Uint8Array(digest));
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const domain = await resolveCognitoDomain();
   const clientId = await mustServerEnv("COGNITO_CLIENT_ID");
   const redirectUri = await mustServerEnv("COGNITO_REDIRECT_URI");
@@ -30,7 +33,15 @@ export async function GET() {
   }
 
   const state = crypto.randomUUID();
-  const isProd = process.env.NODE_ENV === "production";
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  const defaultReturnTo =
+    isChapterFlowAppHost(host) || isChapterFlowAuthHost(host)
+      ? buildChapterFlowAppHref("/book")
+      : "/app";
+  const returnTo = sanitizeReturnTo(
+    req.nextUrl.searchParams.get("returnTo"),
+    defaultReturnTo
+  );
 
   // PKCE: verifier stored in an httpOnly cookie so JS can't steal them
   const codeVerifier = randomBase64Url(32);
@@ -47,20 +58,20 @@ export async function GET() {
     `&code_challenge_method=S256`;
 
   const res = NextResponse.redirect(url);
+  const cookieBase = getAuthCookieBase();
 
   res.cookies.set("oauth_state", state, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: isProd,
-    path: "/",
+    ...cookieBase,
     maxAge: 10 * 60,
   });
 
   res.cookies.set("pkce_verifier", codeVerifier, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: isProd,
-    path: "/",
+    ...cookieBase,
+    maxAge: 10 * 60,
+  });
+
+  res.cookies.set("post_auth_redirect", returnTo, {
+    ...cookieBase,
     maxAge: 10 * 60,
   });
 

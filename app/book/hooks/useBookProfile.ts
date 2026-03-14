@@ -49,7 +49,7 @@ function createDefaultState(seed: BookProfileSeed): BookProfileState {
     displayName: seed.displayName || "Reader",
     username: defaultUsername(seed.displayName || "reader"),
     tagline: "Building a calmer, sharper reading practice.",
-    bio: "Using Book Accelerator to turn reading into retained insight, stronger decisions, and better follow through.",
+    bio: "Using ChapterFlow to turn reading into retained insight, sharper decisions, and better follow through.",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Halifax",
     country: "",
     pronouns: seed.pronouns,

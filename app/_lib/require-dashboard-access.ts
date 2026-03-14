@@ -1,8 +1,10 @@
 import "server-only";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/app/app/api/_lib/auth";
 import { isDevAuthBypassEnabled } from "@/app/app/_lib/dev-auth-bypass";
+import { buildChapterFlowAuthHref, isChapterFlowAppHost, isChapterFlowAuthHost } from "@/app/_lib/chapterflow-brand";
 
 let warnedLocalBypass = false;
 
@@ -28,7 +30,21 @@ export async function requireDashboardAccess() {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     if (message === "UNAUTHENTICATED" || message === "INVALID_TOKEN") {
-      redirect("/?auth=required");
+      const h = await headers();
+      const host = h.get("x-forwarded-host") || h.get("host");
+      const proto =
+        h.get("x-forwarded-proto") ||
+        (process.env.NODE_ENV === "production" ? "https" : "http");
+      const currentOrigin = host ? `${proto}://${host}` : "";
+      const returnTo = currentOrigin ? `${currentOrigin}` : "";
+
+      if (isChapterFlowAppHost(host) || isChapterFlowAuthHost(host)) {
+        redirect(
+          `${buildChapterFlowAuthHref("/auth/login")}?returnTo=${encodeURIComponent(`${returnTo}/book`)}`
+        );
+      }
+
+      redirect(`/auth/login?returnTo=${encodeURIComponent(`${returnTo}/app`)}`);
     }
     throw error;
   }

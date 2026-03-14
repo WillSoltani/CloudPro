@@ -34,6 +34,21 @@ type StoredPaginationState = {
 const STORAGE_KEY = "book-accelerator:library-pagination:v1";
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 30, 50];
 
+function parseQueryState(search: string, pageSizeOptions: number[]): StoredPaginationState | null {
+  const params = new URLSearchParams(search);
+  const pageSize = Number(params.get("pageSize"));
+  const currentPage = Number(params.get("page"));
+  const hasPageSize = pageSizeOptions.includes(pageSize);
+  const hasPage = Number.isFinite(currentPage) && currentPage > 0;
+
+  if (!hasPageSize && !hasPage) return null;
+
+  return {
+    pageSize: hasPageSize ? pageSize : pageSizeOptions[0],
+    currentPage: hasPage ? Math.floor(currentPage) : 1,
+  };
+}
+
 function parseStoredState(raw: string | null, pageSizeOptions: number[]): StoredPaginationState | null {
   if (!raw) return null;
   try {
@@ -84,8 +99,10 @@ export function useLibraryPagination<T>({
   });
 
   useEffect(() => {
+    const query = parseQueryState(window.location.search, normalizedOptions);
     const stored = parseStoredState(window.localStorage.getItem(STORAGE_KEY), normalizedOptions);
     const nextState =
+      query ??
       stored ??
       {
         currentPage: 1,
@@ -107,6 +124,25 @@ export function useLibraryPagination<T>({
     if (!hydrated) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(pagination));
   }, [hydrated, pagination]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const params = new URLSearchParams(window.location.search);
+    if (pagination.currentPage > 1) {
+      params.set("page", String(pagination.currentPage));
+    } else {
+      params.delete("page");
+    }
+    if (pagination.pageSize !== defaultPageSize) {
+      params.set("pageSize", String(pagination.pageSize));
+    } else {
+      params.delete("pageSize");
+    }
+
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+    window.history.replaceState(window.history.state, "", nextUrl);
+  }, [defaultPageSize, hydrated, pagination.currentPage, pagination.pageSize]);
 
   const totalCount = entries.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pagination.pageSize));

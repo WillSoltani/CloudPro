@@ -5,7 +5,6 @@ import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { usePathname } from "next/navigation";
 import {
   Bookmark,
-  BookOpenText,
   ChevronDown,
   Home,
   LayoutGrid,
@@ -17,6 +16,7 @@ import {
 import { SearchBox } from "@/app/book/home/components/SearchBox";
 import { GlobalSearchPanel } from "@/app/book/home/components/GlobalSearchPanel";
 import { useKeyboardShortcut } from "@/app/book/hooks/useKeyboardShortcut";
+import { ChapterFlowMark } from "@/app/book/components/ChapterFlowMark";
 
 export type BookNavTab = "home" | "library" | "saved" | "progress" | "badges" | "settings" | "profile";
 
@@ -119,12 +119,7 @@ export function TopNav({
 
             {/* Logo */}
             <Link href="/book/workspace" className="shrink-0 flex items-center gap-2.5">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-sky-300/30 bg-linear-to-br from-sky-500/30 to-cyan-500/20 shadow-[0_0_14px_rgba(56,189,248,0.22)]">
-                <BookOpenText className="h-4 w-4 text-sky-200" />
-              </span>
-              <span className="hidden text-sm font-semibold tracking-wide text-slate-200 sm:inline">
-                Book Accelerator
-              </span>
+              <ChapterFlowMark compact />
             </Link>
 
             {/* Desktop nav — hidden on mobile (use bottom tab bar instead) */}
@@ -229,7 +224,7 @@ export function TopNav({
                 <div className="absolute right-0 top-11 w-56 rounded-2xl border border-white/12 bg-[#0b1020]/98 p-2 shadow-[0_24px_50px_rgba(2,6,23,0.65)] backdrop-blur-md">
                   <div className="border-b border-white/8 px-3 py-2.5">
                     <p className="text-sm font-semibold text-slate-100">{name || "Reader"}</p>
-                    <p className="text-xs text-slate-400">Book Accelerator</p>
+                    <p className="text-xs text-slate-400">ChapterFlow</p>
                   </div>
                   <div className="mt-1 space-y-0.5">
                     <Link
@@ -252,14 +247,6 @@ export function TopNav({
                     >
                       <Settings className="h-3.5 w-3.5 text-slate-400" />
                       Settings
-                    </Link>
-                    <div className="my-1 border-t border-white/8" />
-                    <Link
-                      href="/dashboard"
-                      className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-slate-400 transition hover:bg-white/6 hover:text-slate-200"
-                    >
-                      <LayoutGrid className="h-3.5 w-3.5 text-slate-500" />
-                      Back to tools
                     </Link>
                   </div>
                 </div>

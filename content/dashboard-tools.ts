@@ -35,19 +35,18 @@ export const dashboardTools: DashboardTool[] = [
   {
     id: "book-accelerator",
     category: "READ & LEARN FASTER",
-    title: "Book Accelerator",
+    title: "ChapterFlow",
     description:
-      "Progress through books chapter by chapter. Unlock the next chapter by passing a short quiz.",
+      "Move through books with structured chapter sessions, practical examples, and quiz backed retention.",
     bullets: [
       "Chapter-gated quizzes",
       "Daily streak tracker",
       "Badge achievements",
     ],
-    href: "/book",
-    ctaLabel: "Launch Book Accelerator",
+    href: "/chapterflow",
+    ctaLabel: "Open ChapterFlow",
     openLabel: "Open app",
     accent: "amber",
     icon: "book",
   },
 ];
-

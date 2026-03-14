@@ -1,7 +1,7 @@
-# Book Accelerator
+# ChapterFlow
 
 ## Purpose
-Book Accelerator is the reading and learning product inside this repo. It combines curated book content with chapter level reading modes, examples, quizzes, tracked reading time, progress analytics, badges, saved reading paths, and subscription aware access.
+ChapterFlow is the reading and learning product inside this repo. It combines curated book content with chapter level reading modes, examples, quizzes, tracked reading time, progress analytics, badges, saved reading paths, and subscription aware access.
 
 ## Frontend structure
 
@@ -43,7 +43,7 @@ app/app/api/book/
 - Published content is served through Book API routes rather than loaded directly from package files at runtime
 
 ## User state model
-Book Accelerator separates catalog content from user activity.
+ChapterFlow separates catalog content from user activity.
 
 ### Persisted user state includes
 - profile

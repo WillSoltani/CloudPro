@@ -3,7 +3,7 @@
 This repository contains two application domains that share deployment and infrastructure:
 
 - `Cloud Portfolio` document workflows
-- `Book Accelerator` guided reading and learning workflows
+- `ChapterFlow` guided reading and learning workflows
 
 Use the documents below based on the task you are doing.
 
@@ -13,8 +13,8 @@ Use the documents below based on the task you are doing.
 - [Contribution guide](CONTRIBUTING.md)
 
 ## Product specific docs
-- [Book Accelerator architecture and content flow](BOOK_ACCELERATOR.md)
-- [Book app admin guide](BOOKAPP_ADMIN_GUIDE.md)
+- [ChapterFlow architecture and content flow](BOOK_ACCELERATOR.md)
+- [ChapterFlow app admin guide](BOOKAPP_ADMIN_GUIDE.md)
 
 ## Operations docs
 - [Operations guide](OPERATIONS.md)

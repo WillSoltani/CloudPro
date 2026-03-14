@@ -61,9 +61,9 @@ const motivationStyleOptions: Array<{
 
 const stepContent = [
   {
-    title: "Book Accelerator",
+    title: "ChapterFlow",
     subtitle:
-      "Read smarter. One chapter at a time — with summaries, examples, and quizzes that lock in the knowledge.",
+      "Read with more clarity, more momentum, and more retention through guided chapter sessions built for depth.",
   },
   {
     title: "Let's personalize this",

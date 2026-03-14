@@ -48,8 +48,10 @@ export async function getBookPaywallPriceDisplay(): Promise<string> {
 }
 
 export async function getAppBaseUrl(reqUrl: string): Promise<string> {
-  const explicit = await getServerEnv("APP_BASE_URL");
-  if (explicit) return explicit.replace(/\/+$/, "");
   const url = new URL(reqUrl);
+  const chapterFlowExplicit =
+    (await getServerEnv("CHAPTERFLOW_APP_BASE_URL")) ||
+    (await getServerEnv("NEXT_PUBLIC_CHAPTERFLOW_APP_URL"));
+  if (chapterFlowExplicit) return chapterFlowExplicit.replace(/\/+$/, "");
   return `${url.protocol}//${url.host}`;
 }

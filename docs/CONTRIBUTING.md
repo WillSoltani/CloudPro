@@ -3,7 +3,7 @@
 ## Scope
 This repository contains two active product domains. Changes should be made with explicit awareness of which domain is affected:
 - `Cloud Portfolio`
-- `Book Accelerator`
+- `ChapterFlow`
 
 ## Expectations
 - Keep pull requests focused
@@ -14,7 +14,7 @@ This repository contains two active product domains. Changes should be made with
 ## Before opening changes
 - Read [DEVELOPMENT.md](DEVELOPMENT.md)
 - Review [ARCHITECTURE.md](ARCHITECTURE.md) for the relevant domain
-- If working on Book Accelerator content or backend flows, review [BOOK_ACCELERATOR.md](BOOK_ACCELERATOR.md)
+- If working on ChapterFlow content or backend flows, review [BOOK_ACCELERATOR.md](BOOK_ACCELERATOR.md)
 
 ## Quality bar
 - Routes and persistence changes must be validated against real feature flows

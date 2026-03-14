@@ -2,7 +2,9 @@
 
 export function LogoutButton() {
   const logout = () => {
-    window.location.assign("/auth/logout");
+    window.location.assign(
+      `/auth/logout?returnTo=${encodeURIComponent(window.location.origin)}`
+    );
   };
 
   return (

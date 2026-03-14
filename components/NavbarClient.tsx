@@ -148,6 +148,13 @@ export function NavbarClient({ initialLoggedIn }: Props) {
             </Link>
           ) : null}
 
+          <Link
+            href="/chapterflow"
+            className="hidden md:inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-400/8 px-3.5 py-2 text-sm text-cyan-100 transition hover:bg-cyan-400/14 hover:text-cyan-50"
+          >
+            ChapterFlow
+          </Link>
+
           <div className="hidden md:block">
             {showLoggedIn ? <LogoutButton /> : <LoginButton />}
           </div>
@@ -222,6 +229,23 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                     </motion.a>
                   );
                 })}
+
+                <motion.div
+                  custom={links.length + 1}
+                  variants={itemVariants}
+                  initial="hidden"
+                  animate="show"
+                  className="px-2 pt-1"
+                >
+                  <Link
+                    href="/chapterflow"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center justify-between rounded-xl border border-cyan-300/20 bg-cyan-400/8 px-4 py-3 text-sm text-cyan-100 transition hover:bg-cyan-400/14"
+                  >
+                    <span>Explore ChapterFlow</span>
+                    <span className="h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.35)]" />
+                  </Link>
+                </motion.div>
 
                 <div className="mt-2 border-t border-white/10 px-2 pb-1 pt-2">
                   {showLoggedIn ? <LogoutButton /> : <LoginButton />}

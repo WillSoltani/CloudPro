@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import { StepperDots } from "@/app/book/components/StepperDots";
+import { ChapterFlowMark } from "@/app/book/components/ChapterFlowMark";
 
 type OnboardingShellProps = {
   step: number;
@@ -25,15 +26,16 @@ export function OnboardingShell({
   return (
     <main className="relative min-h-screen overflow-x-hidden text-slate-100">
       <div className="pointer-events-none absolute inset-0 -z-20 bg-[#050813]" />
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(920px_circle_at_10%_-6%,rgba(56,189,248,0.11),transparent_58%),radial-gradient(880px_circle_at_100%_0%,rgba(251,191,36,0.08),transparent_52%)]" />
+      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(920px_circle_at_10%_-6%,rgba(34,211,238,0.16),transparent_58%),radial-gradient(880px_circle_at_100%_0%,rgba(244,114,182,0.08),transparent_52%)]" />
 
-      <header className="mx-auto w-full max-w-6xl px-4 pb-3 pt-6 sm:px-6 sm:pt-8">
+      <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 pb-3 pt-6 sm:px-6 sm:pt-8">
+        <ChapterFlowMark compact />
         <Link
-          href="/dashboard"
+          href="/"
           className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-300 transition hover:bg-white/10 hover:text-slate-100"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to tools
+          Back to home
         </Link>
       </header>
 
@@ -56,4 +58,3 @@ export function OnboardingShell({
     </main>
   );
 }
-

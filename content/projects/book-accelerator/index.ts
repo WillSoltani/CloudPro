@@ -2,7 +2,7 @@ import type { Project } from "@/types/project";
 
 export const bookAccelerator: Project = {
   slug: "book-accelerator",
-  title: "Book Accelerator",
+  title: "ChapterFlow",
   description:
     "A guided reading app that combines chapter summaries, practical examples, and quiz-gated progression to improve retention.",
   tags: ["EdTech", "Product Design", "Web App", "Learning UX"],
@@ -14,7 +14,7 @@ export const bookAccelerator: Project = {
 
   caseStudy: {
     overview:
-      "Book Accelerator is designed to make reading active instead of passive. Each chapter is broken into summaries, examples, and quizzes that unlock the next chapter only after passing.",
+      "ChapterFlow is designed to make reading active instead of passive. Each chapter is broken into summaries, examples, and quizzes that unlock the next chapter only after passing.",
     architecture: [
       "Onboarding flow captures goals and reading preferences",
       "Library, chapter detail, and chapter reader routes share a unified state model",

@@ -7,7 +7,7 @@ The repo is a single Next.js application with two primary domains.
 ### `Cloud Portfolio`
 A document workflow product for uploads, conversions, and PDF filling.
 
-### `Book Accelerator`
+### `ChapterFlow`
 A learning product for structured reading, quiz based review, reading analytics, badges, settings, profile, and subscription aware book access.
 
 The two domains live in the same deployment but are organized separately in the `app/` tree.
@@ -17,7 +17,7 @@ The two domains live in the same deployment but are organized separately in the 
 ```text
 app/
   app/                     Cloud Portfolio routes and APIs
-  book/                    Book Accelerator routes, UI, hooks, and client helpers
+  book/                    ChapterFlow routes, UI, hooks, and client helpers
   auth/                    Shared auth routes
   _lib/                    Shared site and auth helpers
 infra/                     CDK app, Lambda worker, and deployment assets
@@ -30,14 +30,14 @@ docs/                      Maintained documentation
 ### Site and shell
 - `app/` root pages and layouts provide the public site shell and shared auth entry points
 - `app/app/*` contains the Cloud Portfolio authenticated application
-- `app/book/*` contains the Book Accelerator application
+- `app/book/*` contains the ChapterFlow application
 
 ### Cloud Portfolio frontend
 - Project workspace logic lives under `app/app/projects/[projectId]/`
 - PDF fill logic lives under `app/app/projects/[projectId]/fill/[fileId]/`
 - Large feature clients own page composition while smaller components and hooks stay close to the feature
 
-### Book Accelerator frontend
+### ChapterFlow frontend
 - Page clients live in feature folders such as `home`, `library`, `progress`, `profile`, `settings`, and `badges`
 - Shared UI primitives live under `app/book/components/ui`
 - Shared Book specific helpers live in `app/book/_lib`
@@ -54,7 +54,7 @@ Next.js route handlers under `app/app/api/*` coordinate:
 - conversion job submission to Step Functions
 - filled PDF artifact persistence
 
-### Book Accelerator backend
+### ChapterFlow backend
 Next.js route handlers under `app/app/api/book/*` provide:
 - published book catalog and chapter content access
 - per user profile, settings, progress, chapter state, reading session, quiz, saved list, badge, and entitlement endpoints
@@ -79,7 +79,7 @@ Book specific server code is organized under `app/app/api/book/_lib` by concern:
 6. Step Functions invokes the worker
 7. Worker writes output artifacts and updates metadata
 
-### Book Accelerator
+### ChapterFlow
 1. Client loads the published catalog from backend routes and local presentation metadata
 2. User specific state loads from Book user state APIs
 3. Chapter reading state and actual reading time are persisted incrementally
@@ -87,7 +87,7 @@ Book specific server code is organized under `app/app/api/book/_lib` by concern:
 5. Dashboard, progress, badges, and profile analytics derive from persisted state
 6. Entitlement checks gate protected or future Pro content server side
 
-## Content architecture for Book Accelerator
+## Content architecture for ChapterFlow
 
 Source content starts as strict JSON packages in `book-packages/`.
 
@@ -106,7 +106,7 @@ This separation lets the UI stay lightweight while keeping authored content vers
 - Shared capability rules live in `app/app/_lib/conversion-support.ts`
 - API routes remain authoritative for permissions and supported actions
 
-### Book Accelerator
+### ChapterFlow
 - Server persisted state is fetched through Book APIs
 - Client hooks keep a local cache for responsiveness and offline tolerant behavior
 - Actual reading time is tracked in chapter sessions and posted to the backend
@@ -125,7 +125,7 @@ This separation lets the UI stay lightweight while keeping authored content vers
 - Lambda container worker performs conversion operations
 - CDK definitions live under `infra/`
 
-### Book Accelerator infrastructure
+### ChapterFlow infrastructure
 - Uses the shared table and buckets through Book specific namespaces and keys
 - Stripe integration is isolated to Book billing routes and entitlement records
 
@@ -150,4 +150,4 @@ This separation lets the UI stay lightweight while keeping authored content vers
 ## Current constraints
 - Book presentation metadata still has some local catalog and chapter adapter usage while the backend content pipeline matures
 - Some Book flows intentionally keep local caches to preserve responsiveness and cross surface UI updates
-- Cloud Portfolio and Book Accelerator share a repo and deployment, so changes to shared auth or storage helpers should be reviewed against both domains
+- Cloud Portfolio and ChapterFlow share a repo and deployment, so changes to shared auth or storage helpers should be reviewed against both domains

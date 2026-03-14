@@ -753,7 +753,7 @@ export function BookSettingsClient({ isAdmin, userEmail, appVersion }: BookSetti
 
   const handleDownloadProgressReport = () => {
     const report = [
-      "Book Accelerator progress report",
+      "ChapterFlow progress report",
       `Generated: ${new Date().toLocaleString()}`,
       `Reader: ${onboarding.name || "Reader"}`,
       `Daily goal: ${formatMinutes(onboarding.dailyGoalMinutes)}`,
@@ -857,7 +857,7 @@ export function BookSettingsClient({ isAdmin, userEmail, appVersion }: BookSetti
             <div className="rounded-[34px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-5 shadow-[0_24px_44px_rgba(2,6,23,0.34)] sm:p-6 lg:p-7">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div className="max-w-3xl">
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Book Accelerator</p>
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">ChapterFlow</p>
                   <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-50 sm:text-5xl">Settings</h1>
                   <p className="mt-4 text-base leading-7 text-slate-300">
                     Configure reading depth, learning flow, reminders, privacy, and plan controls from one calm, structured control center.
@@ -2223,7 +2223,7 @@ export function BookSettingsClient({ isAdmin, userEmail, appVersion }: BookSetti
                       <PreviewCard
                         eyebrow="FAQ"
                         title="Common questions"
-                        footer={`Book Accelerator UI version ${appVersion}`}
+                        footer={`ChapterFlow UI version ${appVersion}`}
                       >
                         <div className="space-y-3">
                           {FAQ_ENTRIES.map((entry) => (

@@ -27,7 +27,7 @@
 - Types: `PascalCase`
 - Route folders should reflect the user visible resource hierarchy
 
-## Adding a new Book Accelerator feature
+## Adding a new ChapterFlow feature
 1. Identify the feature domain first
 2. Add or extend backend routes if persistence is required
 3. Add or extend a feature hook for client state and API calls
@@ -43,7 +43,7 @@
 5. Run the admin ingestion and publish flow if you are testing the backend content path
 6. Verify the library, detail page, reader, progress, and quizzes render correctly
 
-## Extending Book Accelerator domains
+## Extending ChapterFlow domains
 
 ### Profile
 - Keep derived analytics in hooks and local selectors, not scattered inline across the page
