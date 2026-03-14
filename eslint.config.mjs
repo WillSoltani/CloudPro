@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".next-chapterflow/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

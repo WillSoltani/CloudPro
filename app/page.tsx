@@ -7,10 +7,13 @@ import {
   CHAPTERFLOW_TAGLINE,
   getChapterFlowAppUrl,
   getChapterFlowAuthUrl,
+  getChapterFlowSiteUrl,
   isChapterFlowAppHost,
   isChapterFlowAuthHost,
+  isChapterFlowSiteHost,
 } from "@/app/_lib/chapterflow-brand";
 import { ChapterFlowHostHome } from "@/app/book/components/ChapterFlowHostHome";
+import { ChapterFlowSiteHome } from "@/app/book/components/ChapterFlowSiteHome";
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
@@ -21,6 +24,14 @@ export async function generateMetadata(): Promise<Metadata> {
       title: `Sign in | ${CHAPTERFLOW_NAME}`,
       description: `Authentication and account access for ${CHAPTERFLOW_NAME}.`,
       metadataBase: new URL(getChapterFlowAuthUrl()),
+    };
+  }
+
+  if (isChapterFlowSiteHost(host)) {
+    return {
+      title: CHAPTERFLOW_NAME,
+      description: CHAPTERFLOW_TAGLINE,
+      metadataBase: new URL(getChapterFlowSiteUrl()),
     };
   }
 
@@ -41,6 +52,10 @@ export default async function Home() {
 
   if (isChapterFlowAuthHost(host)) {
     return <ChapterFlowHostHome mode="auth" />;
+  }
+
+  if (isChapterFlowSiteHost(host)) {
+    return <ChapterFlowSiteHome />;
   }
 
   if (isChapterFlowAppHost(host)) {

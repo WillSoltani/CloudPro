@@ -92,39 +92,25 @@ export function Hero() {
           className="mt-7 grid w-full max-w-sm grid-cols-1 gap-3 sm:mt-8 sm:w-auto sm:max-w-none sm:grid-cols-2"
         >
           <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
-          <Button
-            asChild
-            variant="outline"
-            className="
-              border-white/15
-              bg-white/5
-              text-slate-200
-              hover:bg-white/15
-              hover:text-white
-                hover:shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_10px_40px_rgba(0,0,0,0.45)]
-            "
-          >
-            <a href="https://github.com/WillSoltani" target="_blank" rel="noreferrer">
-              <span className="inline-flex items-center gap-2">
-                <Github className="h-4 w-4" />
-                GitHub
-              </span>
-            </a>
-          </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/15 hover:text-white hover:shadow-lg"
+            >
+              <a href="https://github.com/WillSoltani" target="_blank" rel="noreferrer">
+                <span className="inline-flex items-center gap-2">
+                  <Github className="h-4 w-4" />
+                  GitHub
+                </span>
+              </a>
+            </Button>
           </motion.div>
 
           <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.98 }}>
             <Button
               asChild
               variant="outline"
-              className="
-                border-white/15
-                bg-white/5
-                text-slate-200
-                hover:bg-white/15
-                hover:text-white
-                  hover:shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_10px_40px_rgba(0,0,0,0.45)]
-              "
+              className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/15 hover:text-white hover:shadow-lg"
             >
               <a href="https://www.linkedin.com/in/will-soltani" target="_blank" rel="noreferrer">
                 <span className="inline-flex items-center gap-2">

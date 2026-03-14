@@ -55,6 +55,7 @@ docs/                      Maintained repository and product documentation
 - `/app/projects/[projectId]/fill/[fileId]` PDF fill flow
 
 ### ChapterFlow
+- `https://siliconx.ca` public product home
 - `/book` onboarding entry
 - `/book/workspace` dashboard
 - `/book/home` legacy redirect to `/book/workspace`
@@ -115,8 +116,11 @@ This repo reads configuration from direct environment variables and, on the serv
 - `COGNITO_USER_POOL_ID`
 - `COGNITO_CLIENT_ID`
 - `APP_BASE_URL`
+- `CHAPTERFLOW_DEPLOYMENT_MODE`
+- `NEXT_PUBLIC_CHAPTERFLOW_SITE_URL`
 - `NEXT_PUBLIC_CHAPTERFLOW_APP_URL`
 - `NEXT_PUBLIC_CHAPTERFLOW_AUTH_URL`
+- `CHAPTERFLOW_SITE_BASE_URL`
 - `CHAPTERFLOW_APP_BASE_URL`
 - `CHAPTERFLOW_AUTH_BASE_URL`
 - `AUTH_COOKIE_DOMAIN`
@@ -143,6 +147,14 @@ This repo reads configuration from direct environment variables and, on the serv
 - `BOOK_STRIPE_WEBHOOK_SECRET`
 
 Use direct environment variables for local work when practical. In deployed environments, prefer SSM backed secrets and configuration.
+
+### Deployment modes
+- `embedded`
+  - Use for the portfolio deployment on `soltani.org`
+  - The site keeps its existing root experience and can still host the reading product on `/book`
+- `standalone`
+  - Use for the dedicated ChapterFlow deployment on SiliconX
+  - `siliconx.ca` serves the product home, `chapterflow.siliconx.ca` serves the app, and `auth.siliconx.ca` serves the auth shell
 
 ## Book content model
 

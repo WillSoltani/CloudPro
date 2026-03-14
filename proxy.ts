@@ -6,6 +6,7 @@ import {
   buildChapterFlowAuthHref,
   isChapterFlowAppHost,
   isChapterFlowAuthHost,
+  isChapterFlowSiteHost,
   isLocalHost,
 } from "@/app/_lib/chapterflow-brand";
 
@@ -53,7 +54,9 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
   const isChapterFlowSurface =
-    isChapterFlowAppHost(host) || isChapterFlowAuthHost(host);
+    isChapterFlowSiteHost(host) ||
+    isChapterFlowAppHost(host) ||
+    isChapterFlowAuthHost(host);
 
   if (!isLocalHost(host)) {
     if (
@@ -81,6 +84,13 @@ export async function proxy(req: NextRequest) {
 
     if (
       isChapterFlowAuthHost(host) &&
+      (pathname.startsWith("/app") || pathname.startsWith("/dashboard"))
+    ) {
+      return NextResponse.redirect(new URL(buildChapterFlowAuthHref("/")));
+    }
+
+    if (
+      isChapterFlowSiteHost(host) &&
       (pathname.startsWith("/app") || pathname.startsWith("/dashboard"))
     ) {
       return NextResponse.redirect(new URL(buildChapterFlowAuthHref("/")));

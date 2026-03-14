@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mustServerEnv } from "@/app/app/api/_lib/server-env";
 import { resolvePublicOrigin } from "@/app/app/_lib/server-origin";
-import { buildChapterFlowAppHref, isChapterFlowAppHost, isChapterFlowAuthHost } from "@/app/_lib/chapterflow-brand";
+import {
+  buildChapterFlowAppHref,
+  isChapterFlowAppHost,
+  isChapterFlowAuthHost,
+  isChapterFlowSiteHost,
+} from "@/app/_lib/chapterflow-brand";
 import { resolveCognitoDomain } from "../_lib/cognito-domain";
 import { getAuthCookieBase } from "../_lib/auth-cookie";
 import { sanitizeReturnTo } from "../_lib/return-to";
@@ -35,7 +40,9 @@ export async function GET(req: NextRequest) {
     const rawReturnTo = req.cookies.get("post_auth_redirect")?.value;
     const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
     const defaultReturnTo =
-      isChapterFlowAppHost(host) || isChapterFlowAuthHost(host)
+      isChapterFlowSiteHost(host) ||
+      isChapterFlowAppHost(host) ||
+      isChapterFlowAuthHost(host)
         ? buildChapterFlowAppHref("/book")
         : "/app";
     const returnTo = sanitizeReturnTo(rawReturnTo, defaultReturnTo);

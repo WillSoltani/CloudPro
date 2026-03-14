@@ -4,6 +4,7 @@ import {
   CHAPTERFLOW_NAME,
   CHAPTERFLOW_TAGLINE,
   buildChapterFlowAppHref,
+  buildChapterFlowSiteHref,
 } from "@/app/_lib/chapterflow-brand";
 import { ChapterFlowMark } from "@/app/book/components/ChapterFlowMark";
 
@@ -77,10 +78,10 @@ export function ChapterFlowHostHome({ mode }: ChapterFlowHostHomeProps) {
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
-                href={mode === "auth" ? buildChapterFlowAppHref("/") : "/auth/login"}
+                href={mode === "auth" ? buildChapterFlowSiteHref("/") : "/auth/login"}
                 className="inline-flex items-center justify-center rounded-2xl border border-white/12 bg-white/[0.04] px-5 py-3.5 text-base font-medium text-slate-200 transition hover:bg-white/[0.08]"
               >
-                {mode === "auth" ? `View ${CHAPTERFLOW_NAME}` : "Sign in"}
+                {mode === "auth" ? "View product home" : "Sign in"}
               </Link>
             </div>
           </div>

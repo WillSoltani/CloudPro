@@ -1,0 +1,236 @@
+module.exports = [
+"[project]/app/_lib/site-url.ts [app-rsc] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "getSiteUrl",
+    ()=>getSiteUrl
+]);
+function normalizeUrl(value) {
+    return value.trim().replace(/\/+$/, "");
+}
+function getSiteUrl() {
+    const configured = ("TURBOPACK compile-time value", "http://localhost:3001")?.trim() || process.env.APP_BASE_URL?.trim();
+    if (configured) return normalizeUrl(configured);
+    if ("TURBOPACK compile-time falsy", 0) //TURBOPACK unreachable
+    ;
+    return "http://localhost:3000";
+}
+}),
+"[project]/app/_lib/chapterflow-brand.ts [app-rsc] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "CHAPTERFLOW_NAME",
+    ()=>CHAPTERFLOW_NAME,
+    "CHAPTERFLOW_TAGLINE",
+    ()=>CHAPTERFLOW_TAGLINE,
+    "buildChapterFlowAppHref",
+    ()=>buildChapterFlowAppHref,
+    "buildChapterFlowAuthHref",
+    ()=>buildChapterFlowAuthHref,
+    "buildChapterFlowSiteHref",
+    ()=>buildChapterFlowSiteHref,
+    "getChapterFlowAppUrl",
+    ()=>getChapterFlowAppUrl,
+    "getChapterFlowAuthUrl",
+    ()=>getChapterFlowAuthUrl,
+    "getChapterFlowSiteUrl",
+    ()=>getChapterFlowSiteUrl,
+    "isChapterFlowAppHost",
+    ()=>isChapterFlowAppHost,
+    "isChapterFlowAuthHost",
+    ()=>isChapterFlowAuthHost,
+    "isChapterFlowSiteHost",
+    ()=>isChapterFlowSiteHost,
+    "isLocalHost",
+    ()=>isLocalHost
+]);
+const DEFAULT_CHAPTERFLOW_SITE_URL = "https://siliconx.ca";
+const DEFAULT_CHAPTERFLOW_APP_URL = "https://chapterflow.siliconx.ca";
+const DEFAULT_CHAPTERFLOW_AUTH_URL = "https://auth.siliconx.ca";
+const DEFAULT_CHAPTERFLOW_DEV_URL = "http://localhost:3001";
+const LOCAL_CHAPTERFLOW_HOSTS = new Set([
+    "localhost:3001",
+    "127.0.0.1:3001",
+    "[::1]:3001",
+    "::1:3001"
+]);
+const CHAPTERFLOW_NAME = "ChapterFlow";
+const CHAPTERFLOW_TAGLINE = "Guided reading for people who want depth, momentum, and real retention.";
+function normalizeUrl(value) {
+    return value.trim().replace(/\/+$/, "");
+}
+function safeUrl(value) {
+    if (!value) return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+        return normalizeUrl(trimmed);
+    } catch  {
+        return null;
+    }
+}
+function getChapterFlowAppUrl() {
+    const configured = safeUrl(("TURBOPACK compile-time value", "http://localhost:3001"));
+    if (configured) return configured;
+    return ("TURBOPACK compile-time falsy", 0) ? "TURBOPACK unreachable" : DEFAULT_CHAPTERFLOW_DEV_URL;
+}
+function getChapterFlowSiteUrl() {
+    const configured = safeUrl(("TURBOPACK compile-time value", "http://localhost:3001") || process.env.CHAPTERFLOW_SITE_BASE_URL);
+    if (configured) return configured;
+    return ("TURBOPACK compile-time falsy", 0) ? "TURBOPACK unreachable" : DEFAULT_CHAPTERFLOW_DEV_URL;
+}
+function getChapterFlowAuthUrl() {
+    const configured = safeUrl(("TURBOPACK compile-time value", "http://localhost:3001"));
+    if (configured) return configured;
+    return ("TURBOPACK compile-time falsy", 0) ? "TURBOPACK unreachable" : DEFAULT_CHAPTERFLOW_DEV_URL;
+}
+function hostFromUrl(value) {
+    return new URL(value).host.toLowerCase();
+}
+function normalizeHost(value) {
+    return String(value ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase();
+}
+function isLocalHost(host) {
+    const normalized = normalizeHost(host);
+    return normalized.startsWith("localhost") || normalized.startsWith("127.0.0.1") || normalized.startsWith("[::1]") || normalized.startsWith("::1");
+}
+function isChapterFlowAppHost(host) {
+    const normalized = normalizeHost(host);
+    if (!normalized) return false;
+    if (LOCAL_CHAPTERFLOW_HOSTS.has(normalized)) return true;
+    return normalized === hostFromUrl(getChapterFlowAppUrl());
+}
+function isChapterFlowSiteHost(host) {
+    const normalized = normalizeHost(host);
+    if (!normalized) return false;
+    if (LOCAL_CHAPTERFLOW_HOSTS.has(normalized)) return true;
+    return normalized === hostFromUrl(getChapterFlowSiteUrl());
+}
+function isChapterFlowAuthHost(host) {
+    const normalized = normalizeHost(host);
+    if (!normalized) return false;
+    if (LOCAL_CHAPTERFLOW_HOSTS.has(normalized)) return false;
+    return normalized === hostFromUrl(getChapterFlowAuthUrl());
+}
+function buildChapterFlowSiteHref(path = "/") {
+    return `${getChapterFlowSiteUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+}
+function buildChapterFlowAppHref(path = "/") {
+    return `${getChapterFlowAppUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+}
+function buildChapterFlowAuthHref(path = "/") {
+    return `${getChapterFlowAuthUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+}
+}),
+"[project]/components/InteractiveBackground.tsx [app-rsc] (client reference proxy) <module evaluation>", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "InteractiveBackground",
+    ()=>InteractiveBackground
+]);
+// This file is generated by next-core EcmascriptClientReferenceModule.
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$server$2d$dom$2d$turbopack$2d$server$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/dist/server/route-modules/app-page/vendored/rsc/react-server-dom-turbopack-server.js [app-rsc] (ecmascript)");
+;
+const InteractiveBackground = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$server$2d$dom$2d$turbopack$2d$server$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["registerClientReference"])(function() {
+    throw new Error("Attempted to call InteractiveBackground() from the server but InteractiveBackground is on the client. It's not possible to invoke a client function from the server, it can only be rendered as a Component or passed to props of a Client Component.");
+}, "[project]/components/InteractiveBackground.tsx <module evaluation>", "InteractiveBackground");
+}),
+"[project]/components/InteractiveBackground.tsx [app-rsc] (client reference proxy)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "InteractiveBackground",
+    ()=>InteractiveBackground
+]);
+// This file is generated by next-core EcmascriptClientReferenceModule.
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$server$2d$dom$2d$turbopack$2d$server$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/dist/server/route-modules/app-page/vendored/rsc/react-server-dom-turbopack-server.js [app-rsc] (ecmascript)");
+;
+const InteractiveBackground = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$server$2d$dom$2d$turbopack$2d$server$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["registerClientReference"])(function() {
+    throw new Error("Attempted to call InteractiveBackground() from the server but InteractiveBackground is on the client. It's not possible to invoke a client function from the server, it can only be rendered as a Component or passed to props of a Client Component.");
+}, "[project]/components/InteractiveBackground.tsx", "InteractiveBackground");
+}),
+"[project]/components/InteractiveBackground.tsx [app-rsc] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+var __TURBOPACK__imported__module__$5b$project$5d2f$components$2f$InteractiveBackground$2e$tsx__$5b$app$2d$rsc$5d$__$28$client__reference__proxy$29$__$3c$module__evaluation$3e$__ = __turbopack_context__.i("[project]/components/InteractiveBackground.tsx [app-rsc] (client reference proxy) <module evaluation>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$components$2f$InteractiveBackground$2e$tsx__$5b$app$2d$rsc$5d$__$28$client__reference__proxy$29$__ = __turbopack_context__.i("[project]/components/InteractiveBackground.tsx [app-rsc] (client reference proxy)");
+;
+__turbopack_context__.n(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$InteractiveBackground$2e$tsx__$5b$app$2d$rsc$5d$__$28$client__reference__proxy$29$__);
+}),
+"[project]/app/layout.tsx [app-rsc] (ecmascript)", ((__turbopack_context__) => {
+"use strict";
+
+__turbopack_context__.s([
+    "default",
+    ()=>RootLayout,
+    "metadata",
+    ()=>metadata
+]);
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/dist/server/route-modules/app-page/vendored/rsc/react-jsx-dev-runtime.js [app-rsc] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$headers$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/next/headers.js [app-rsc] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$geist$2f$dist$2f$sans$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__$3c$locals$3e$__ = __turbopack_context__.i("[project]/node_modules/geist/dist/sans.js [app-rsc] (ecmascript) <locals>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$geist$2f$dist$2f$geistsans_d5a4f12f$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__$3c$export__default__as__GeistSans$3e$__ = __turbopack_context__.i("[project]/node_modules/geist/dist/geistsans_d5a4f12f.js [app-rsc] (ecmascript) <export default as GeistSans>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$geist$2f$dist$2f$mono$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__$3c$locals$3e$__ = __turbopack_context__.i("[project]/node_modules/geist/dist/mono.js [app-rsc] (ecmascript) <locals>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$geist$2f$dist$2f$geistmono_157ca88a$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__$3c$export__default__as__GeistMono$3e$__ = __turbopack_context__.i("[project]/node_modules/geist/dist/geistmono_157ca88a.js [app-rsc] (ecmascript) <export default as GeistMono>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$_lib$2f$site$2d$url$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/app/_lib/site-url.ts [app-rsc] (ecmascript)");
+var __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$_lib$2f$chapterflow$2d$brand$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/app/_lib/chapterflow-brand.ts [app-rsc] (ecmascript)");
+// ✅ Client component is fine to render inside a Server Component layout
+var __TURBOPACK__imported__module__$5b$project$5d2f$components$2f$InteractiveBackground$2e$tsx__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/components/InteractiveBackground.tsx [app-rsc] (ecmascript)");
+;
+;
+;
+;
+;
+;
+;
+;
+const metadata = {
+    title: "Will Soltani | Cloud Portfolio",
+    description: "AWS-focused cloud portfolio featuring production-style projects, architecture, security, and observability.",
+    metadataBase: new URL((0, __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$_lib$2f$site$2d$url$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["getSiteUrl"])()),
+    openGraph: {
+        title: "Will Soltani | Cloud Portfolio",
+        description: "AWS-focused cloud portfolio with production-grade projects and case studies.",
+        url: (0, __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$_lib$2f$site$2d$url$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["getSiteUrl"])(),
+        siteName: "Will Soltani",
+        type: "website"
+    }
+};
+async function RootLayout({ children }) {
+    const h = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$headers$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["headers"])();
+    const host = h.get("x-forwarded-host") || h.get("host");
+    const isChapterFlowSurface = (0, __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$_lib$2f$chapterflow$2d$brand$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["isChapterFlowSiteHost"])(host) || (0, __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$_lib$2f$chapterflow$2d$brand$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["isChapterFlowAppHost"])(host) || (0, __TURBOPACK__imported__module__$5b$project$5d2f$app$2f$_lib$2f$chapterflow$2d$brand$2e$ts__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["isChapterFlowAuthHost"])(host);
+    return /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["jsxDEV"])("html", {
+        lang: "en",
+        className: `${__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$geist$2f$dist$2f$geistsans_d5a4f12f$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__$3c$export__default__as__GeistSans$3e$__["GeistSans"].className} ${__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$geist$2f$dist$2f$geistmono_157ca88a$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__$3c$export__default__as__GeistMono$3e$__["GeistMono"].variable}`,
+        children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["jsxDEV"])("body", {
+            className: [
+                "min-h-screen w-full overflow-x-hidden text-slate-100 antialiased",
+                isChapterFlowSurface ? "bg-[#040812]" : "bg-[#070b16]"
+            ].join(" "),
+            children: [
+                !isChapterFlowSurface ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$server$2f$route$2d$modules$2f$app$2d$page$2f$vendored$2f$rsc$2f$react$2d$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$components$2f$InteractiveBackground$2e$tsx__$5b$app$2d$rsc$5d$__$28$ecmascript$29$__["InteractiveBackground"], {}, void 0, false, {
+                    fileName: "[project]/app/layout.tsx",
+                    lineNumber: 51,
+                    columnNumber: 34
+                }, this) : null,
+                children
+            ]
+        }, void 0, true, {
+            fileName: "[project]/app/layout.tsx",
+            lineNumber: 45,
+            columnNumber: 7
+        }, this)
+    }, void 0, false, {
+        fileName: "[project]/app/layout.tsx",
+        lineNumber: 44,
+        columnNumber: 5
+    }, this);
+}
+}),
+];
+
+//# sourceMappingURL=_8785f6d0._.js.map

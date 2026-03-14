@@ -1,0 +1,10 @@
+{
+  "/app/api/book/me/badges/route": "app/app/api/book/me/badges/route.js",
+  "/app/api/book/me/dashboard/route": "app/app/api/book/me/dashboard/route.js",
+  "/app/api/book/me/saved/route": "app/app/api/book/me/saved/route.js",
+  "/auth/login/route": "app/auth/login/route.js",
+  "/book/library/page": "app/book/library/page.js",
+  "/book/page": "app/book/page.js",
+  "/book/workspace/page": "app/book/workspace/page.js",
+  "/page": "app/page.js"
+}

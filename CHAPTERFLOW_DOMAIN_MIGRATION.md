@@ -2,22 +2,28 @@
 
 This file covers the manual work required to launch ChapterFlow as its own branded product under:
 
+- `siliconx.ca`
 - `chapterflow.siliconx.ca`
 - `auth.siliconx.ca`
+- `login.siliconx.ca`
 
 The codebase now supports a clean shared backend model:
 
 - Cloud Portfolio remains on `soltani.org`
+- ChapterFlow marketing runs on `siliconx.ca`
 - ChapterFlow runs on `chapterflow.siliconx.ca`
 - auth entry points run on `auth.siliconx.ca`
+- Cognito Hosted UI runs on `login.siliconx.ca`
 - the same repo and backend services can continue to be used
 
 ## 1. DNS and certificates
 
 Create or confirm DNS records in Route 53 for:
 
+- `siliconx.ca`
 - `chapterflow.siliconx.ca`
 - `auth.siliconx.ca`
+- `login.siliconx.ca`
 
 Point both to the same deployed Next.js app surface if you are keeping a shared deployment.
 
@@ -33,12 +39,15 @@ If the same app serves both hosts, both domains must terminate on the same deplo
 Set these for the deployed web app:
 
 ```text
+NEXT_PUBLIC_CHAPTERFLOW_SITE_URL=https://siliconx.ca
 NEXT_PUBLIC_CHAPTERFLOW_APP_URL=https://chapterflow.siliconx.ca
 NEXT_PUBLIC_CHAPTERFLOW_AUTH_URL=https://auth.siliconx.ca
+CHAPTERFLOW_SITE_BASE_URL=https://siliconx.ca
 CHAPTERFLOW_APP_BASE_URL=https://chapterflow.siliconx.ca
 CHAPTERFLOW_AUTH_BASE_URL=https://auth.siliconx.ca
 AUTH_COOKIE_DOMAIN=.siliconx.ca
 CHAPTERFLOW_COOKIE_DOMAIN=.siliconx.ca
+COGNITO_CUSTOM_DOMAIN=https://login.siliconx.ca
 ```
 
 Keep the existing Cognito and AWS variables in place.
@@ -49,7 +58,7 @@ If Cloud Portfolio still runs on a separate main domain, `APP_BASE_URL` should r
 
 Update Cognito Hosted UI configuration to use:
 
-- hosted auth domain at `auth.siliconx.ca`
+- hosted auth domain at `login.siliconx.ca`
 - callback URL:
   - `https://auth.siliconx.ca/auth/callback`
 - sign out URL:
@@ -63,8 +72,8 @@ Local development callback URLs should also include:
 Set the corresponding runtime variables:
 
 ```text
-COGNITO_DOMAIN=https://auth.siliconx.ca
-COGNITO_CUSTOM_DOMAIN=https://auth.siliconx.ca
+COGNITO_DOMAIN=https://login.siliconx.ca
+COGNITO_CUSTOM_DOMAIN=https://login.siliconx.ca
 COGNITO_REDIRECT_URI=https://auth.siliconx.ca/auth/callback
 COGNITO_LOGOUT_REDIRECT_URI=https://auth.siliconx.ca/
 ```
@@ -100,7 +109,7 @@ You should still verify:
 - links on `soltani.org` now point users to ChapterFlow through `/chapterflow`
 - no public navigation still treats `soltani.org` as the primary home of the reading product
 
-If you want a stronger transition later, you can add a dedicated marketing page on `siliconx.ca` and point `/chapterflow` there instead of directly to the app.
+The old site handoff path can now point to the ChapterFlow product home on `siliconx.ca` instead of dropping users directly into the app host.
 
 ## 6. Local development
 

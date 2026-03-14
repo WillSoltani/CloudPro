@@ -4,8 +4,10 @@ import { getSiteUrl } from "@/app/_lib/site-url";
 import {
   getChapterFlowAppUrl,
   getChapterFlowAuthUrl,
+  getChapterFlowSiteUrl,
   isChapterFlowAppHost,
   isChapterFlowAuthHost,
+  isChapterFlowSiteHost,
 } from "@/app/_lib/chapterflow-brand";
 
 export default async function sitemap() {
@@ -14,6 +16,11 @@ export default async function sitemap() {
 
   if (isChapterFlowAuthHost(host)) {
     return [{ url: `${getChapterFlowAuthUrl()}/`, lastModified: new Date() }];
+  }
+
+  if (isChapterFlowSiteHost(host)) {
+    const base = getChapterFlowSiteUrl();
+    return [{ url: `${base}/`, lastModified: new Date() }];
   }
 
   if (isChapterFlowAppHost(host)) {
