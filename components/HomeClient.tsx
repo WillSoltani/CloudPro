@@ -1,6 +1,6 @@
 "use client";
 
-import { Hero } from "@/components/Hero";
+import { BeaconHero } from "@/components/film/BeaconHero";
 import { ProofStrip } from "@/components/ProofStrip";
 import { DeliveryStrip } from "@/components/DeliveryStrip";
 import { ScrollToTop } from "@/components/ScrollToTop";
@@ -17,8 +17,11 @@ import { ContactSection } from "@/sections/ContactSection";
 export function HomeClient() {
   return (
     <>
-      <Hero />
-      <ProofStrip />
+      <BeaconHero />
+      {/* The film ends flush; ProofStrip used to sit on the Hero's own padding. */}
+      <div className="pt-16 sm:pt-24">
+        <ProofStrip />
+      </div>
       <DeliveryStrip items={delivery} />
       <AboutSection />
       <CertificationsSection />

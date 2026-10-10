@@ -49,3 +49,12 @@ infra/node_modules/
 
 # Subpackage node_modules (lambda workers, etc.)
 infra/lib/lambdas/*/node_modules/
+
+# Cinematic film sources: raw generations, keyframes, QA screenshots
+/films-src/
+.claude/settings.local.json
+
+# Built film frames live on S3 + CloudFront; only each film's manifest is committed
+/public/films/*/*
+!/public/films/*/manifest.json
+infra/dist/

@@ -11,7 +11,7 @@ import {
 } from "@/app/_lib/chapterflow-brand";
 
 // ✅ Client component is fine to render inside a Server Component layout
-import { InteractiveBackground } from "@/components/InteractiveBackground";
+import { PortfolioBackground } from "@/components/PortfolioBackground";
 
 export const metadata: Metadata = {
   title: "Will Soltani | Cloud Portfolio",
@@ -48,7 +48,7 @@ export default async function RootLayout({
           isChapterFlowSurface ? "bg-[#040812]" : "bg-[#070b16]",
         ].join(" ")}
       >
-        {!isChapterFlowSurface ? <InteractiveBackground /> : null}
+        {!isChapterFlowSurface ? <PortfolioBackground /> : null}
 
         {children}
       </body>

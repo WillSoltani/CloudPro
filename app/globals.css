@@ -6,15 +6,27 @@ section[id] {
   scroll-margin-top: 96px;
 }
 
-html { 
+html {
   scroll-behavior: smooth;
   scroll-padding-top: 88px;
  }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
 
 body {
   text-rendering: geometricPrecision;
   overflow-x: hidden;
   -webkit-tap-highlight-color: rgba(56, 189, 248, 0.18);
+}
+
+/* Portfolio surface (PageShell): the tap flash is the lamp amber, so no second accent appears over the
+   film's CTA or the navbar. Inherited, so it covers every link inside. ChapterFlow keeps the body default. */
+[data-surface="portfolio"] {
+  -webkit-tap-highlight-color: rgba(240, 166, 60, 0.18);
 }
 
 /* Safe-area bottom padding for notched/Dynamic Island devices */
@@ -27,12 +39,17 @@ body {
 }
 
 @custom-variant dark (&:is(.dark *));
+/* Desktop film layout: wide enough for a caption column and landscape, so a cover-cropped frame keeps its quiet left quarter. */
+@custom-variant wide (@media (min-width: 64rem) and (orientation: landscape));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --color-lamp: #f0a63c;
+  --color-night: #070b16;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);

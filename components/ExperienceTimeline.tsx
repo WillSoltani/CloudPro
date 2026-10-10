@@ -40,17 +40,21 @@ export function ExperienceTimeline({ items }: Props) {
             {/* Dot + pulse */}
             <div className="absolute left-[8px] sm:left-[12px] top-5 sm:top-6">
               <span className="relative flex h-3.5 w-3.5 sm:h-4 sm:w-4">
-                {!reduceMotion ? (
-                  <motion.span
-                    className="absolute inline-flex h-full w-full rounded-full bg-sky-400/30"
-                    animate={{ scale: [1, 1.6, 1], opacity: [0.55, 0.12, 0.55] }}
-                    transition={{
-                      duration: 2.2,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                  />
-                ) : null}
+                {/* Always rendered so server and client markup match (useReducedMotion is null on the server);
+                    reduced-motion users get a static halo instead of the pulse. */}
+                <motion.span
+                  className="absolute inline-flex h-full w-full rounded-full bg-sky-400/30"
+                  animate={
+                    reduceMotion
+                      ? { scale: 1, opacity: 0.35 }
+                      : { scale: [1, 1.6, 1], opacity: [0.55, 0.12, 0.55] }
+                  }
+                  transition={
+                    reduceMotion
+                      ? { duration: 0 }
+                      : { duration: 2.2, repeat: Infinity, ease: "easeInOut" }
+                  }
+                />
                 <span className="relative inline-flex h-3.5 w-3.5 rounded-full bg-sky-300 shadow-[0_0_18px_rgba(56,189,248,0.35)] sm:h-4 sm:w-4" />
               </span>
             </div>

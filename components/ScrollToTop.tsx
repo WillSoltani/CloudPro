@@ -1,21 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowUp } from "lucide-react";
+import { useFilmInView } from "@/components/film/useFilmInView";
 
 export function ScrollToTop() {
-  const [show, setShow] = useState(false);
+  const [past, setPast] = useState(false);
+  const film = useFilmInView();
+  const reduced = useReducedMotion();
 
   useEffect(() => {
-    const onScroll = () => setShow(window.scrollY > 500);
+    const onScroll = () => setPast(window.scrollY > 500);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Stay out of the film: only once the page body is on screen.
+  const show = past && !film.inView;
+
   const goTop = () => {
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
   };
 
   return (
@@ -31,7 +37,7 @@ export function ScrollToTop() {
           whileHover={{ y: -2, scale: 1.03 }}
           whileTap={{ scale: 0.96 }}
           transition={{ type: "spring", stiffness: 450, damping: 28 }}
-          className="fixed bottom-6 right-6 z-50 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/10 p-3 text-slate-100 shadow-[0_10px_40px_rgba(0,0,0,0.45)] backdrop-blur hover:bg-white/15"
+          className="fixed bottom-6 right-6 z-50 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/10 p-3 text-slate-100 shadow-[0_10px_40px_rgba(0,0,0,0.45)] backdrop-blur hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night"
         >
           <ArrowUp className="h-5 w-5" />
         </motion.button>
