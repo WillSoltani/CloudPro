@@ -11,13 +11,14 @@ Two GitHub Actions workflows were added:
 - `.github/workflows/ci.yml`
   - Runs on pull requests and pushes to `main` and `codex/**`.
   - Job 1: app checks (`npm ci`, `npm run build`, `npm run test:pdf-fill`).
+    It also guards `public/films`: the job fails if anything other than `public/films/<name>/manifest.json` is tracked (film frames live on the CDN, never in git) or if a tracked manifest's `base` is not `https://`.
   - Job 2: infra checks (`npm ci` in `infra`, `npm run build`, `cdk synth`).
 
 - `.github/workflows/deploy-infra-dev.yml`
   - Deploys infra to AWS on pushes to `main` when `infra/**` changes.
   - Can also run manually from GitHub Actions (`workflow_dispatch`).
   - Uses GitHub OIDC + an IAM role (`AWS_ROLE_TO_ASSUME_DEV`).
-  - Deploy command: `cdk deploy CloudPortfolioStorage --require-approval never`.
+  - Deploys both stacks listed in the workflow's `CDK_STACKS` env (`CloudPortfolioStorage CloudPortfolioFilms`): `cdk deploy $CDK_STACKS --require-approval never`.
 
 ## 2) CI/CD flow in plain language
 
@@ -134,6 +135,11 @@ In GitHub branch protection for `main`:
 ### CDK deploy fails with bootstrap error
 
 - Run CDK bootstrap command from section 3C.
+
+### CI fails on the `public/films` guard
+
+- Frames were committed, or a manifest still points at the local `/films` base.
+- `git rm -r --cached public/films/<name>` (keep `manifest.json`), run `scripts/films/sync-film.sh <name> --write-manifest`, commit only the manifest.
 
 ### CI fails on build/tests
 
