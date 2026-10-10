@@ -1,0 +1,63 @@
+# Cinematic homepage — creative brief
+
+Goal: turn the soltani.org homepage into a scroll-scrubbed cinematic film in the spirit of pear.no, while it stays a fast, skimmable portfolio. Technique, workflow, and budgets: `.claude/skills/cinematic-scroll/SKILL.md`.
+
+## Who it's for
+- **Will Soltani** — cloud engineer in Toronto, ON (moved from Halifax, NS in 2026); AWS-certified (Solutions Architect Associate, Developer Associate, Cloud Practitioner); co-founder at Silicon X; builds ChapterFlow; UBC Computer Science.
+- **Audience** — hiring managers and engineers evaluating him for remote cloud roles in Canada. They skim. The film earns attention; the facts must still be findable in seconds.
+
+## Keep
+About, Certifications (with Credly links), Skills, Projects and case studies, Experience, Contact. Source of truth is `content/*.ts`. All of it stays real HTML; invent nothing.
+
+## Narrative shape
+3–4 scenes, each paired with a short HTML caption — for example **Design it → Build it → Keep it running → Ship it** (architecture, IaC and serverless, observability and security, outcomes). The film is the metaphor; the captions carry the meaning.
+
+## Concept — decided 2026-10-08: Beacon over the lake
+Blue hour on Lake Ontario seen from the Toronto Islands, fog on the water. The CN Tower's lights act as the lighthouse: the beam sweeps the fog, cranes and lattice rise along the waterfront, the city holds steady through the night, then the camera climbs above the skyline into the sky and the page begins. Four beats: Design it → Build it → Keep it running → Ship it.
+
+### Earlier seeds (superseded; Will moved to Toronto)
+1. **Lighthouse** — painterly Nova Scotia coast at dusk. A keeper lights the lamp; the beam sweeps through fog that resolves into ships (projects); the fog lifts into clouds and clear sky, where the content sections begin. Reliability and observability as a lighthouse.
+2. **Blueprint to sky** — a Renaissance drafting table. Ink lines of an arch lift off the vellum, become stone, and scaffolding rises through the clouds; the clouds dither into a lattice of light (the cloud).
+3. **Library to cloud** — a book's pages (a nod to ChapterFlow) fold into paper birds that rise into a cloudscape.
+
+## Look
+Either fit the current dark site (`#070b16` base) or make a deliberate departure such as pear.no's flat cobalt field — decide with Will. Serif display type with Geist Mono labels, thin grid lines and a tick rail as UI chrome, and one accent colour that `DitherVeil` reuses.
+
+## Constraints
+- Original imagery only; nothing taken from pear.no (images, layout, copy).
+- No AI-rendered text in frames. No real person's likeness except Will's, from photos he provides.
+- Credits: start with 3–4 scenes. One published walkthrough put a six-scene build at roughly 800 Higgsfield credits; check current prices in the tool before quoting an estimate.
+- The skill's performance and accessibility budgets are requirements. Reduced-motion users get stepped stills.
+- Portfolio surface only; ChapterFlow hosts must be unaffected.
+
+## Decisions — made 2026-10-08
+1. **Concept and palette** — Beacon over the lake (above). Keep the dark site base `#070b16`; dusk blues and inks in the film; one warm lamp-amber accent reused by `DitherVeil` and the tick rail. Serif display type, Geist Mono labels.
+2. **Scenes and credits** — 4 scenes, ceiling **650 credits** for the whole film (stills, clips, re-rolls). Premium video model (Seedance 2.5 at 72 credits or FLUX 3 Video at 54 credits per 6 s 1080p 16:9 clip, preflight prices on 2026-10-08). Stills 2–3 credits each. Balance at decision time: 1,210.
+3. **Mobile** — crop-safe framing with `fit="cover"`: every keyframe keeps its subject inside the centre ~55% width. No portrait chain.
+4. **Frame hosting** — S3 + CloudFront (small CDK addition in `infra/`). Develop and QA from `public/films` meanwhile. The "rebuild with `BASE_URL`" step was replaced by `sync-film.sh --write-manifest`; see Ship notes.
+5. **Hero** — the film replaces the current `Hero`; name, title and availability badge become HTML captions over scene 1, GitHub/LinkedIn links sit in the chrome. `ProofStrip`, `DeliveryStrip` and the sections follow as today.
+
+## Open decisions (original list, kept for reference)
+1. Concept (seed 1, 2, 3, or another) and palette.
+2. Scene count and credit ceiling.
+3. Mobile: 9:16 portrait chain (2× cost), letterboxed `fit="auto"`, or crop-safe framing.
+4. Frame hosting: `public/films` in git, or S3 + CloudFront.
+5. Whether the film replaces the current Hero or sits above it.
+
+## Ship notes
+- **Hosting** — S3 + CloudFront via the `CloudPortfolioFilms` stack (`infra/lib/films-stack.ts`): private bucket behind an origin access control, `Access-Control-Allow-Origin: *` applied at the edge, default `*.cloudfront.net` domain (alias later; the path layout does not change). Bucket name, distribution id and domain: to be filled after the first deploy (they land in `infra/cdk.out/films-outputs.json`).
+- **Paths** — `films/<name>/<width>/f_NNNN.webp`, `films/<name>/poster.webp`, `films/<name>/manifest.json`. Frames are served `max-age=31536000, immutable`, so a path is never rewritten: a re-cut gets a new name (`beacon-v2`) and the app's manifest is pointed at it. The manifest itself is `max-age=300`.
+- **Git** — `public/films/<name>/*` is gitignored except `manifest.json`; the committed manifest's `base`/`poster` are the CloudFront URLs. CI (`app-checks` in `.github/workflows/ci.yml`) fails if any other file under `public/films` is tracked or a tracked manifest's `base` is not `https://`.
+- **Deploy the stack** — from this machine, `cd infra`; the local default region is `ca-central-1`, so `us-east-1` is set explicitly. `cdk diff` is reviewed before `cdk deploy`.
+  ```bash
+  export AWS_REGION=us-east-1 AWS_DEFAULT_REGION=us-east-1 CDK_DEFAULT_REGION=us-east-1
+  aws cloudformation describe-stacks --stack-name CloudPortfolioStorage --region us-east-1   # same account as CI deploys
+  export CDK_DEFAULT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+  npm install && npm run build
+  npx cdk diff CloudPortfolioFilms
+  npx cdk deploy CloudPortfolioFilms --require-approval never --outputs-file cdk.out/films-outputs.json
+  ```
+  Expect 4–8 min (CloudFront). `deploy-infra-dev.yml` also deploys it on `infra/**` pushes (`CDK_STACKS`). Rollback is `cdk destroy`; the bucket is retained.
+- **Upload frames** — `scripts/films/sync-film.sh beacon --write-manifest` (bucket and domain come from the outputs file, or `FILMS_BUCKET`/`FILMS_DOMAIN`). It syncs only `*.webp` with immutable caching and never `--delete`, refuses a name that already has a manifest in the bucket (`--force` to override), verifies the CDN (200, `image/webp`, `immutable`, ACAO `*`, http→https, direct S3 URL 403, object count and bytes match local), then rewrites only `base`/`poster` in `public/films/beacon/manifest.json`. `git status --short public/films` must show only the manifest; re-run `scroll-qa` against the CDN before committing it.
+- **Credits** — gate 2 (K0): 8; gate 3 (K0–K4 chain): 48 total stills across 24 variants; clips in progress. Ledger: `films-src/beacon/ledger.md`.
+
