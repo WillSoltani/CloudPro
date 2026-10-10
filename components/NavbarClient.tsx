@@ -8,7 +8,7 @@ import Link from "next/link";
 import { LoginButton } from "@/components/auth/LoginButton";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { useAuthStatus } from "@/components/auth/useAuthStatus";
-import { useFilmInView } from "@/components/film/useFilmInView";
+import { HERO_FILM_SELECTOR, useFilmInView } from "@/components/film/useFilmInView";
 import { social, type SocialId } from "@/content/social";
 
 const links = [
@@ -54,8 +54,9 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   const [active, setActive] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [nearTop, setNearTop] = useState(true);
-  // The film's sticky stage has been released: the section's bottom edge is at or above the
-  // viewport's, so the scene-4 caption and CTA are riding up under the header.
+  // The hero film's sticky stage has been released: the section's bottom edge is at or above the
+  // viewport's, so the scene-4 caption and CTA are riding up under the header. (The chapter
+  // dividers lower on the page are ordinary content as far as the header is concerned.)
   const [released, setReleased] = useState(false);
   const [open, setOpen] = useState(false);
   // In view while the film extends below the header's bottom edge.
@@ -72,7 +73,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     const onScroll = () => {
       setScrolled(window.scrollY > 8);
       setNearTop(window.scrollY < 0.55 * window.innerHeight);
-      const f = document.querySelector("[data-film]");
+      const f = document.querySelector(HERO_FILM_SELECTOR);
       setReleased(!!f && f.getBoundingClientRect().bottom <= window.innerHeight);
     };
     onScroll();

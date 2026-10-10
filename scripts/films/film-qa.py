@@ -96,8 +96,15 @@ def still_metrics(path: str, key: str | None) -> dict:
     out["top_quarter_yavg"] = round(float(y[: h // 4].mean()), 2)
     out["bottom_third_yavg"] = round(float(y[int(h * 2 / 3) :].mean()), 2)
 
-    # Lamp: brightest amber pixels, in the band the storyboard expects for this key.
-    band = (int(h * 0.67), h) if key == "K4" else (0, int(h * 0.45))
+    # Lamp / bloom: brightest amber pixels, in the band the storyboard expects for this key.
+    # K0–K3: lamp near the top; K4: lamp at the bottom; L0–L2 (part two): bloom in the bottom third;
+    # L3: the converging light just below centre.
+    if key == "K4" or (key or "").startswith("L") and key != "L3":
+        band = (int(h * 0.60), h)
+    elif key == "L3":
+        band = (int(h * 0.40), int(h * 0.70))
+    else:
+        band = (0, int(h * 0.45))
     hsv_v = np.asarray(Image.fromarray(rgb.astype(np.uint8)).convert("HSV"), dtype=np.int16)[..., 2]
     lamp = amber & (hsv_v >= 200)
     lamp[: band[0]] = False
@@ -152,11 +159,20 @@ def still_metrics(path: str, key: str | None) -> dict:
             flags.append("K4 amber above lower third")
     elif key in ("K0", "K1", "K2", "K3") and abs(out["horizon_y_estimate"] - 0.60) > 0.04:
         flags.append("horizon off 60% (judge)")
+    if (key or "").startswith("L"):
+        if out["mean_y"] > 48:
+            flags.append("mean Y>48 (too bright for a cloud interior)")
+        if key == "L0" and not (21.6 <= out["top_half_yavg"] <= 31.6):
+            flags.append("L0 top-half Y outside 26.6±5")
+        if out["lamp_centroid"] is not None and key == "L3" and not (0.45 <= out["lamp_centroid"][1] <= 0.65):
+            flags.append("L3 light not near y 0.55")
     if key == "K3" and not (14 <= out["top_quarter_yavg"] <= 24):
         flags.append("K3 top-quarter Y outside 14-24 (soft)")
     out["flags"] = flags
     out["objective_reject"] = any(f in flags for f in ("amber>8%", "lamp off-centre", "K4 top-half yavg>22",
-                                                        "K4 top-half region>28", "K4 amber above lower third"))
+                                                        "K4 top-half region>28", "K4 amber above lower third",
+                                                        "mean Y>48 (too bright for a cloud interior)",
+                                                        "L0 top-half Y outside 26.6±5"))
     return out
 
 

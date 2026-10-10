@@ -1,0 +1,12 @@
+{
+  "name": "beacon-06",
+  "count": 145,
+  "fps": 24,
+  "widths": [768,1280,1920],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "/films/beacon-06",
+  "poster": "/films/beacon-06/poster.webp",
+  "kb": { "768": 744, "1280": 1388, "1920": 2320 }
+}

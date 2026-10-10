@@ -1,6 +1,7 @@
 import { Fraunces } from "next/font/google";
 import { preconnect, preload } from "react-dom";
 import manifest from "@/public/films/beacon/manifest.json";
+import { resolveFilm } from "@/components/film/filmBase";
 import { PageShell } from "@/components/PageShell";
 import { HomeClient } from "@/components/HomeClient";
 
@@ -14,17 +15,13 @@ const fraunces = Fraunces({
   variable: "--font-fraunces",
 });
 
-// Mirrors the rewrite in components/film/BeaconHero.tsx so the preload names the same URL.
-const FILM_BASE = process.env.NEXT_PUBLIC_FILM_BASE;
-const filmBase = FILM_BASE ? `${FILM_BASE.replace(/\/+$/, "")}/${manifest.name}` : manifest.base;
-const poster =
-  FILM_BASE && manifest.poster.startsWith(manifest.base)
-    ? `${filmBase}${manifest.poster.slice(manifest.base.length)}`
-    : manifest.poster;
+// The same rewrite BeaconHero applies, so the preload names the hero's poster URL. Only the hero
+// poster is preloaded: the chapter dividers fetch on approach through ScrollFilm's observer.
+const beacon = resolveFilm(manifest);
 
 export default function Home() {
-  if (/^https?:\/\//.test(filmBase)) preconnect(new URL(filmBase).origin);
-  preload(poster, { as: "image", fetchPriority: "high" });
+  if (/^https?:\/\//.test(beacon.base)) preconnect(new URL(beacon.base).origin);
+  preload(beacon.poster, { as: "image", fetchPriority: "high" });
   return (
     <PageShell className={fraunces.variable}>
       <HomeClient />

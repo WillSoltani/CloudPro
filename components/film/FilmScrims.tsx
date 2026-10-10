@@ -6,13 +6,22 @@ import { useFilmProgress } from "@/components/film/ScrollFilm";
 type Props = {
   /** Desktop-only left scrim; enable if the beat labels fall under 4.5:1 on K1/K2. */
   left?: boolean;
+  /**
+   * Progress window over which the left scrim leaves (opacity 1 → 0). The default is the hero's:
+   * its left column is empty from scene 4 (centred caption over dark sky), so the band leaves with
+   * scene 3. Pass `null` to keep the band for the whole film.
+   */
+  leftFade?: readonly [number, number] | null;
 };
 
 /** Legibility scrims under the captions: a bottom band on phones, an optional left band on desktop. */
-export function FilmScrims({ left = false }: Props) {
+export function FilmScrims({ left = false, leftFade = [0.74, 0.8] }: Props) {
   const progress = useFilmProgress();
-  // The left column is empty from scene 4 (centred caption over dark sky), so the band leaves with scene 3.
-  const leftOpacity = useTransform(progress, [0.74, 0.8], [1, 0]);
+  const leftOpacity = useTransform(
+    progress,
+    leftFade ? [leftFade[0], leftFade[1]] : [0, 1],
+    leftFade ? [1, 0] : [1, 1],
+  );
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0">
       <div className="absolute inset-x-0 bottom-0 h-[42svh] bg-[linear-gradient(to_top,#070b16_18%,rgba(7,11,22,0.75)_48%,transparent)] wide:hidden" />

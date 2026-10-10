@@ -1,14 +1,22 @@
 "use client";
 
+import { useRef } from "react";
 import { BadgeCheck } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, useScroll, useTransform } from "framer-motion";
 
 import { Section } from "@/components/Section";
+import { useReducedMotionSafe } from "@/components/film/ScrollFilm";
 import { certifications } from "@/content/certifications";
 
 import { Card } from "@/components/ui/card";
 
 export function CertificationsSection() {
+  // Subtle parallax: the card row drifts 20 px against the scroll across its pass through the viewport.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const reduced = useReducedMotionSafe();
+  const { scrollYProgress } = useScroll({ target: gridRef, offset: ["start end", "end start"] });
+  const y = useTransform(scrollYProgress, [0, 1], reduced ? [0, 0] : [20, -20]);
+
   return (
     <Section
       id="certifications"
@@ -19,7 +27,7 @@ export function CertificationsSection() {
         CERTIFICATIONS
       </p>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <motion.div ref={gridRef} style={{ y }} className="grid gap-4 md:grid-cols-3">
         {certifications.map((c, idx) => (
           <motion.div
             key={c.name}
@@ -87,7 +95,7 @@ export function CertificationsSection() {
             </Card>
           </motion.div>
         ))}
-      </div>
+      </motion.div>
     </Section>
   );
 }

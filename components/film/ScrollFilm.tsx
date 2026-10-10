@@ -75,6 +75,15 @@ function subscribeReducedMotion(onChange: () => void) {
 }
 const prefersReducedMotion = () => window.matchMedia(REDUCED_QUERY).matches;
 
+/**
+ * Same query as useReducedMotion(), but with a server snapshot so hydration matches the SSR markup;
+ * React re-renders with the viewer's preference right after. Use it wherever the preference changes
+ * server-rendered styles (caption drift, section parallax, the dither wipes).
+ */
+export function useReducedMotionSafe(): boolean {
+  return useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false);
+}
+
 const FilmProgressContext = createContext<MotionValue<number> | null>(null);
 
 /** Smoothed 0→1 scroll progress of the enclosing <ScrollFilm>. */
@@ -347,9 +356,7 @@ export function FilmCaption({
   children: ReactNode;
 }) {
   const progress = useFilmProgress();
-  // Same query as useReducedMotion(), but with a server snapshot so hydration matches the SSR
-  // markup; React re-renders with the viewer's preference right after.
-  const reduced = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false);
+  const reduced = useReducedMotionSafe();
   const fade = Math.min(0.05, (to - from) / 4);
   const opacity = useTransform(
     progress,

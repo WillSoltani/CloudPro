@@ -1,9 +1,11 @@
 "use client";
 
-import { motion, type Variants } from "framer-motion";
+import { useRef } from "react";
+import { motion, useScroll, useTransform, type Variants } from "framer-motion";
 
 import { Section } from "@/components/Section";
 import { SkillCategoryCard } from "@/components/SkillCategoryCard";
+import { useReducedMotionSafe } from "@/components/film/ScrollFilm";
 import { skillCategories } from "@/content/skills";
 
 const skillsWrap: Variants = {
@@ -14,6 +16,12 @@ const skillsWrap: Variants = {
 };
 
 export function SkillsSection() {
+  // Subtle parallax: the card grid drifts 20 px against the scroll across its pass through the viewport.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const reduced = useReducedMotionSafe();
+  const { scrollYProgress } = useScroll({ target: gridRef, offset: ["start end", "end start"] });
+  const y = useTransform(scrollYProgress, [0, 1], reduced ? [0, 0] : [20, -20]);
+
   return (
     <Section
       id="skills"
@@ -21,6 +29,8 @@ export function SkillsSection() {
       subtitle="A curated stack for building reliable, secure, and production-ready cloud systems."
     >
       <motion.div
+        ref={gridRef}
+        style={{ y }}
         variants={skillsWrap}
         initial="hidden"
         whileInView="show"
