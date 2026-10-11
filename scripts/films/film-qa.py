@@ -2,14 +2,24 @@
 """Objective QA for scroll-film keyframes and clips (PIL + numpy + ffmpeg).
 
   film-qa.py still  <image> [--key K0] [--json out.json]
+  film-qa.py still  <image> --profile reel [--key K0..K7] [--prev prev-key.json] [--strict-regions] [--json out.json]
+                    (reel profile is auto-selected for paths containing /films-src/reel/)
   film-qa.py clip   <clip.mp4> --prev K.png --next K.png --out <dir> --tag 01_t1 [--tophalf] [--json out.json]
+  film-qa.py join   --last <last.png|clip.mp4> --key <key.png> [--alpha 0.80] [--base 070b16] [--out join.png]
   film-qa.py sheet  --out sheet.png [--cols N] [--labels a,b,c] [--tile-width 960] <images...>
   film-qa.py phone  --out strip.png [--labels a,b] [--width 390 --height 844] <images...>
+                    (sheet / phone take any number of images, e.g. K0 … K7 with --cols 4)
   film-qa.py ledger --dir films-src/beacon/ledger --out films-src/beacon/ledger.md [--ceiling 598]
 
 Luma is full-range Rec.709 computed on RGB pixels in Python (Y = .2126R + .7152G + .0722B, 0..255),
 so absolute targets from the storyboard (base ≈ 11, K4 top-half ≤ 22) compare directly. ffmpeg's
 signalstats is used only for per-frame series inside one file, where the limited-range offset cancels.
+
+`still --profile reel` and `join` (part-three "reel" film) print {metrics, failures[], flags[], verdict}; a hard
+failure sets verdict "fail" / objective_reject true but the exit status stays 0, like the other subcommands.
+`join` is gated on the RAW pair exactly as `clip` gates its last frame: ffmpeg's ssim filter (ssim_raw = clip's
+ssim_last) and full-frame mean-Y delta (dy_raw = clip's dy_last). The scrim-composited pair (numpy Gaussian SSIM,
+ssim_composited_gauss) is informational and feeds the sheet for the human judge.
 """
 from __future__ import annotations
 
@@ -21,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 
 import numpy as np
@@ -74,6 +85,12 @@ def font(size: int) -> ImageFont.ImageFont:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def texture(region: np.ndarray) -> float:
+    """Texture proxy for a luma region: std of its 16-px box means (shared by `still` and the reel profile)."""
+    bm = box_means(region, 16)
+    return float(bm.std())
 
 
 # ---------------------------------------------------------------- still
@@ -134,10 +151,6 @@ def still_metrics(path: str, key: str | None) -> dict:
     out["horizon_strength"] = round(float(grad.max()), 2)
 
     # Quiet left quarter / low-detail bottom third: local std as a texture proxy.
-    def texture(region: np.ndarray) -> float:
-        bm = box_means(region, 16)
-        return float(bm.std())
-
     out["left_quarter_texture"] = round(texture(y[:, : w // 4]), 2)
     out["bottom_third_texture"] = round(texture(y[int(h * 2 / 3) :]), 2)
 
@@ -174,6 +187,130 @@ def still_metrics(path: str, key: str | None) -> dict:
                                                         "mean Y>48 (too bright for a cloud interior)",
                                                         "L0 top-half Y outside 26.6±5"))
     return out
+
+
+# ---------------------------------------------------------------- still: reel profile
+#
+# Part three ("reel") names its keys K0–K7, which collide with the beacon K-names, so its rules live behind
+# `still --profile reel` (auto-selected for paths under /films-src/reel/). Geometry is from the approved
+# storyboard: the light sits at (0.50, 0.44) in every key, and K4–K7 are holds.
+
+REEL_KEYS = tuple(f"K{i}" for i in range(8))
+REEL_LIGHT = (0.50, 0.44)
+REEL_LIGHT_BOX = (0.40, 0.60, 0.30, 0.60)  # x0, x1, y0, y1 (fractions): where the amber centroid is searched
+REEL_LIGHT_TOL = (0.02, 0.03)  # hard fail beyond this |dx|, |dy|
+REEL_AMBER_CEILING = {"K0": 1.0, "K1": 1.2, "K2": 1.5, "K3": 2.0, "K4": 2.5, "K5": 3.0, "K6": 4.0, "K7": 5.0}
+REEL_HOLD_Y = {"K4": 45.0, "K5": 45.0, "K6": 42.0, "K7": 40.0}  # holds: mean-Y ceiling (flag), hard fail above 50
+REEL_HOLD_Y_FAIL = 50.0
+# Region rules (left quarter x < 0.25, bottom third y > 2/3) are provisional until the K0 round calibrates them:
+# flags by default, hard fails under --strict-regions.
+REEL_LEFT_Y, REEL_LEFT_TEXTURE = 30.0, 14.0
+REEL_BOTTOM_Y, REEL_BOTTOM_TEXTURE = 34.0, 20.0
+
+
+def reel_key_from_name(path: str) -> str | None:
+    """K4 from K4.png / K4_a.png (variants keep the key prefix)."""
+    m = re.match(r"(K[0-7])(?![0-9])", os.path.basename(path), re.IGNORECASE)
+    return m.group(1).upper() if m else None
+
+
+def reel_prev_mean_y(path: str) -> float:
+    """Mean Y of the previous key, from its metrics json (reel `metrics.mean_y` or a flat beacon `mean_y`)."""
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+        return float(data.get("metrics", data)["mean_y"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        raise SystemExit(f"--prev {path}: cannot read mean_y ({e})")
+
+
+def reel_metrics(path: str, key: str, prev_y: float | None, strict_regions: bool) -> dict:
+    rgb = load_rgb(path)
+    h, w, _ = rgb.shape
+    y = luma(rgb)
+    amber = amber_mask(rgb)
+    m: dict = {}
+    failures: list[str] = []  # hard fails
+    flags: list[str] = []
+    notes: list[str] = []  # rules skipped, not verdict-relevant
+
+    m["mean_y"] = round(float(y.mean()), 2)
+    m["amber_pct"] = round(float(amber.mean() * 100), 3)
+    m["top_third_y"] = round(float(y[: int(h / 3)].mean()), 2)
+    m["centre_third_y"] = round(float(y[:, int(w * 0.33) : int(w * 0.67)].mean()), 2)
+
+    # Light position: unweighted centroid of the amber mask inside the search box.
+    bx0, bx1 = int(w * REEL_LIGHT_BOX[0]), int(w * REEL_LIGHT_BOX[1])
+    by0, by1 = int(h * REEL_LIGHT_BOX[2]), int(h * REEL_LIGHT_BOX[3])
+    ys, xs = np.nonzero(amber[by0:by1, bx0:bx1])
+    m["light_pixels"] = int(len(xs))
+    if len(xs):
+        cx, cy = (bx0 + float(xs.mean())) / w, (by0 + float(ys.mean())) / h
+        m["light_centroid"] = [round(cx, 4), round(cy, 4)]
+        m["light_dx"] = round(cx - REEL_LIGHT[0], 4)
+        m["light_dy"] = round(cy - REEL_LIGHT[1], 4)
+        if abs(m["light_dx"]) > REEL_LIGHT_TOL[0]:
+            failures.append(f"light x off by {m['light_dx']:+.4f} (>{REEL_LIGHT_TOL[0]})")
+        if abs(m["light_dy"]) > REEL_LIGHT_TOL[1]:
+            failures.append(f"light y off by {m['light_dy']:+.4f} (>{REEL_LIGHT_TOL[1]})")
+    else:
+        m["light_centroid"] = m["light_dx"] = m["light_dy"] = None
+        failures.append("no light: no amber pixels in x 0.40-0.60, y 0.30-0.60")
+
+    # Amber coverage: flag above the ceiling, hard fail above 1.5x.
+    ceil = REEL_AMBER_CEILING[key]
+    if m["amber_pct"] > ceil * 1.5:
+        failures.append(f"amber {m['amber_pct']}% > 1.5x ceiling {ceil}%")
+    elif m["amber_pct"] > ceil:
+        flags.append(f"amber {m['amber_pct']}% > ceiling {ceil}%")
+
+    # Mean Y: K0 band, K1-K3 vs previous key, holds K4-K7.
+    my = m["mean_y"]
+    if prev_y is not None:
+        m["prev_mean_y"] = round(prev_y, 2)
+    if key == "K0":
+        if not 45 <= my <= 55:
+            flags.append(f"K0 mean Y {my} outside 45-55")
+    elif key in ("K1", "K2", "K3"):
+        if prev_y is None:
+            notes.append("mean-Y vs previous key skipped (no --prev)")
+        elif my > prev_y + 2:
+            flags.append(f"mean Y {my} > previous key {prev_y:.2f} + 2")
+    else:
+        hold_ok = True
+        if my > REEL_HOLD_Y_FAIL:
+            failures.append(f"hold mean Y {my} > {REEL_HOLD_Y_FAIL:g}")
+            hold_ok = False
+        elif my > REEL_HOLD_Y[key]:
+            flags.append(f"hold mean Y {my} > {REEL_HOLD_Y[key]:g}")
+        if key == "K7":
+            if prev_y is None:
+                notes.append("K7 <= K6 - 1 skipped (no --prev)")
+            elif my > prev_y - 1 and my <= REEL_HOLD_Y_FAIL:
+                flags.append(f"K7 mean Y {my} > K6 {prev_y:.2f} - 1")
+        m["hold_ok"] = hold_ok
+
+    # Quiet left quarter / low-detail bottom third: all four ceilings are provisional (flags; hard fails only
+    # with --strict-regions). Texture is the same metric as `still`: std of 16-px luma box means, native resolution.
+    left, bottom = y[:, : w // 4], y[int(h * 2 / 3) :]
+    m["left_quarter_y"] = round(float(left.mean()), 2)
+    m["left_quarter_texture"] = round(texture(left), 2)
+    m["bottom_third_y"] = round(float(bottom.mean()), 2)
+    m["bottom_third_texture"] = round(texture(bottom), 2)
+    for name, val, limit in (("left quarter mean Y", m["left_quarter_y"], REEL_LEFT_Y),
+                             ("left_quarter_texture", m["left_quarter_texture"], REEL_LEFT_TEXTURE),
+                             ("bottom third mean Y", m["bottom_third_y"], REEL_BOTTOM_Y),
+                             ("bottom_third_texture", m["bottom_third_texture"], REEL_BOTTOM_TEXTURE)):
+        if val > limit:
+            if strict_regions:
+                failures.append(f"{name} {val} > {limit:g} (strict)")
+            else:
+                flags.append(f"{name} {val} > {limit:g} (provisional)")
+
+    return {"file": path, "dims": [w, h], "key": key, "profile": "reel", "metrics": m,
+            "failures": failures, "flags": flags, "notes": notes,
+            "verdict": "fail" if failures else "flag" if flags else "pass",
+            "objective_reject": bool(failures)}
 
 
 # ---------------------------------------------------------------- clip
@@ -370,6 +507,16 @@ def make_sheet(paths: list[str], out: str, cols: int, labels: list[str] | None, 
     sheet.save(out)
 
 
+def split_labels(arg: str | None, n: int) -> list[str] | None:
+    """--labels a,b,c -> list; warns on stderr when the count does not match the images (K0 … K7 = 8)."""
+    if not arg:
+        return None
+    labels = arg.split(",")
+    if len(labels) != n:
+        print(f"warning: {len(labels)} labels for {n} images", file=sys.stderr)
+    return labels
+
+
 def phone_crop(path: str, width: int, height: int) -> Image.Image:
     """What fit="cover" with focus x=0.5 shows on a width×height portrait screen."""
     im = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
@@ -391,6 +538,156 @@ def make_phone_strip(paths: list[str], out: str, labels: list[str] | None, width
             draw.text((x + 6, pad + 4), labels[i], fill=(240, 166, 60), font=f)
         strip.paste(c, (x, pad + label_h))
     strip.save(out)
+
+
+# ---------------------------------------------------------------- join (clip last frame -> next keyframe)
+
+JOIN_SIZE = (1280, 720)  # both sides are centre-cropped to 16:9, then resized to this
+JOIN_SSIM_MIN = 0.93  # raw pair (ffmpeg ssim, as clip's ssim_last) must reach this ...
+JOIN_DY_MAX = 4.0  # ... with |raw mean-Y delta| (as clip's dy_last) no larger than this
+VIDEO_EXT = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
+
+
+def parse_hex_rgb(s: str) -> tuple[int, int, int]:
+    s = s.lstrip("#")
+    if not re.fullmatch(r"[0-9a-fA-F]{6}", s):
+        raise ValueError(s)
+    return int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)
+
+
+def crop_169(im: Image.Image) -> Image.Image:
+    """Centre-crop to 16:9 (2752x1536 -> 2731x1536, 1920x1088 -> 1920x1080); a frame already within 0.2 % is kept."""
+    w, h = im.size
+    if abs(w / h - 16 / 9) / (16 / 9) <= 0.002:
+        return im
+    if w / h > 16 / 9:
+        cw = int(round(h * 16 / 9))
+        x0 = (w - cw) // 2
+        return im.crop((x0, 0, x0 + cw, h))
+    ch = int(round(w * 9 / 16))
+    y0 = (h - ch) // 2
+    return im.crop((0, y0, w, y0 + ch))
+
+
+def load_join_image(path: str) -> Image.Image:
+    im = crop_169(ImageOps.exif_transpose(Image.open(path)).convert("RGB"))
+    return im.resize(JOIN_SIZE, Image.LANCZOS)
+
+
+def gaussian_window(size: int = 11, sigma: float = 1.5) -> np.ndarray:
+    ax = np.arange(size, dtype=np.float64) - (size - 1) / 2
+    k = np.exp(-(ax ** 2) / (2 * sigma ** 2))
+    return k / k.sum()
+
+
+def gaussian_filter_valid(a: np.ndarray, k: np.ndarray) -> np.ndarray:
+    """Separable 'valid' Gaussian filtering (rows, then columns) as a sum of shifted slices."""
+    n = len(k)
+    hh, ww = a.shape[0] - n + 1, a.shape[1] - n + 1
+    t = sum(k[i] * a[i : i + hh] for i in range(n))
+    return sum(k[i] * t[:, i : i + ww] for i in range(n))
+
+
+def ssim_luma(a: np.ndarray, b: np.ndarray, data_range: float = 255.0) -> float:
+    """Mean SSIM of two 2-D luma arrays: Wang et al. 2004 (11x11 Gaussian window, sigma 1.5, K1 .01, K2 .03,
+    population covariance, valid region only). numpy only, no scikit-image."""
+    a, b = a.astype(np.float64), b.astype(np.float64)
+    k = gaussian_window()
+    c1, c2 = (0.01 * data_range) ** 2, (0.03 * data_range) ** 2
+    mu_a, mu_b = gaussian_filter_valid(a, k), gaussian_filter_valid(b, k)
+    var_a = gaussian_filter_valid(a * a, k) - mu_a ** 2
+    var_b = gaussian_filter_valid(b * b, k) - mu_b ** 2
+    cov = gaussian_filter_valid(a * b, k) - mu_a * mu_b
+    s = ((2 * mu_a * mu_b + c1) * (2 * cov + c2)) / ((mu_a ** 2 + mu_b ** 2 + c1) * (var_a + var_b + c2))
+    return float(s.mean())
+
+
+def make_join_sheet(rows: list[tuple[str, Image.Image, Image.Image, str, str]], out: str, tile_width: int) -> None:
+    """One row per (name, last, key, last_label, key_label); each image is followed by a centre crop
+    (x 0.35-0.65, full height) shown at 200 % of the tile scale."""
+    scale = tile_width / JOIN_SIZE[0]
+    tw, th = tile_width, int(round(JOIN_SIZE[1] * scale))
+    cx0, cx1 = int(round(JOIN_SIZE[0] * 0.35)), int(round(JOIN_SIZE[0] * 0.65))
+    cw, ch = int(round((cx1 - cx0) * scale * 2)), int(round(JOIN_SIZE[1] * scale * 2))
+    label_h, pad = 36, 8
+    row_h = label_h + max(th, ch)
+    sheet = Image.new("RGB", (2 * (tw + cw) + 5 * pad, len(rows) * (row_h + pad) + pad), (7, 11, 22))
+    draw = ImageDraw.Draw(sheet)
+    f = font(18)
+    for r, (name, last, key, last_label, key_label) in enumerate(rows):
+        y0 = pad + r * (row_h + pad)
+        x = pad
+        for tag, im, text in (("last", last, last_label), ("key", key, key_label)):
+            draw.text((x + 6, y0 + 7), text, fill=(240, 166, 60), font=f)
+            sheet.paste(im.resize((tw, th), Image.LANCZOS), (x, y0 + label_h))
+            x += tw + pad
+            draw.text((x + 6, y0 + 7), f"{name} {tag} x2 centre", fill=(240, 166, 60), font=f)
+            sheet.paste(im.crop((cx0, 0, cx1, JOIN_SIZE[1])).resize((cw, ch), Image.LANCZOS), (x, y0 + label_h))
+            x += cw + pad
+    sheet.save(out)
+
+
+def join_metrics(last: str, key: str, alpha: float, base_rgb: tuple[int, int, int], out: str | None,
+                 tile_width: int) -> dict:
+    res: dict = {"last": last, "key": key, "alpha": alpha, "base": "".join(f"{c:02x}" for c in base_rgb),
+                 "compare_size": list(JOIN_SIZE),
+                 "gate": f"ssim_raw >= {JOIN_SSIM_MIN} and |dy_raw| <= {JOIN_DY_MAX:g} "
+                         "(ffmpeg ssim and full-frame mean-Y delta, exactly as clip's ssim_last / dy_last)"}
+    with tempfile.TemporaryDirectory() as tmp:
+        last_png = last
+        if last.lower().endswith(VIDEO_EXT):
+            n = ffprobe(last)["frames"]
+            last_png = os.path.join(tmp, "last.png")
+            extract_frame(last, n - 1, last_png)
+            if not os.path.exists(last_png):
+                raise SystemExit(f"could not extract frame {n - 1} from {last}")
+            res["last_frame"] = {"from_video": True, "index": n - 1, "frames": n}
+        else:
+            res["last_frame"] = {"from_video": False}
+        res["dims_in"] = {"last": list(Image.open(last_png).size), "key": list(Image.open(key).size)}
+
+        # Gate: the raw pair, computed as clip computes ssim_last / dy_last (key scaled to the frame's size by
+        # ffmpeg, full-frame luma, no crop).
+        ssim_raw = round(ssim(last_png, key), 4)
+        yl_raw, yk_raw = luma(load_rgb(last_png)), luma(load_rgb(key))
+        m = {"ssim_raw": ssim_raw, "dy_raw": round(float(yl_raw.mean() - yk_raw.mean()), 3),
+             "y_last_raw": round(float(yl_raw.mean()), 2), "y_key_raw": round(float(yk_raw.mean()), 2)}
+
+        # Informational: the 16:9-cropped 1280x720 pair under the scrim (alpha * base + (1 - alpha) * image),
+        # judged with the numpy Gaussian SSIM. Never part of the verdict.
+        last_im, key_im = load_join_image(last_png), load_join_image(key)
+    base = np.asarray(base_rgb, dtype=np.float32)
+    comp_l = alpha * base + (1 - alpha) * np.asarray(last_im, dtype=np.float32)
+    comp_k = alpha * base + (1 - alpha) * np.asarray(key_im, dtype=np.float32)
+    yl_c, yk_c = luma(comp_l), luma(comp_k)
+    m.update({"ssim_composited_gauss": round(ssim_luma(yl_c, yk_c), 4),
+              "dy_composited": round(float(yl_c.mean() - yk_c.mean()), 3),
+              "y_last_composited": round(float(yl_c.mean()), 2), "y_key_composited": round(float(yk_c.mean()), 2)})
+    res["metrics"] = m
+
+    failures = []
+    if math.isnan(ssim_raw):
+        failures.append("ssim_raw unavailable (ffmpeg ssim failed)")
+    elif ssim_raw < JOIN_SSIM_MIN:
+        failures.append(f"ssim_raw {ssim_raw} < {JOIN_SSIM_MIN}")
+    if abs(m["dy_raw"]) > JOIN_DY_MAX:
+        failures.append(f"|dy_raw| {abs(m['dy_raw'])} > {JOIN_DY_MAX:g}")
+    res["failures"] = failures
+    res["flags"] = []
+    res["verdict"] = "fail" if failures else "pass"
+
+    if out:
+        def u8(a: np.ndarray) -> Image.Image:
+            return Image.fromarray(np.clip(np.rint(a), 0, 255).astype(np.uint8))
+
+        make_join_sheet(
+            [("raw", last_im, key_im, f"raw last  Y {m['y_last_raw']:.2f}",
+              f"raw key  Y {m['y_key_raw']:.2f}  SSIM(ffmpeg) {m['ssim_raw']:.4f}  dY {m['dy_raw']:+.2f}"),
+             ("composited", u8(comp_l), u8(comp_k), f"composited last  Y {m['y_last_composited']:.2f}",
+              f"composited key  Y {m['y_key_composited']:.2f}  SSIM(gauss) {m['ssim_composited_gauss']:.4f}"
+              f"  dY {m['dy_composited']:+.2f}")], out, tile_width)
+        res["out"] = out
+    return res
 
 
 # ---------------------------------------------------------------- ledger
@@ -443,6 +740,11 @@ def main(argv: list[str]) -> int:
     s.add_argument("image")
     s.add_argument("--key")
     s.add_argument("--json")
+    s.add_argument("--profile", choices=("beacon", "reel"),
+                   help="default: reel when the path contains /films-src/reel/, otherwise beacon")
+    s.add_argument("--prev", help="reel: metrics json of the previous key (K1-K3 and K7 mean-Y rules)")
+    s.add_argument("--strict-regions", action="store_true",
+                   help="reel: turn the provisional left-quarter / bottom-third ceilings (Y and texture) into hard fails")
 
     c = sub.add_parser("clip")
     c.add_argument("clip")
@@ -452,6 +754,15 @@ def main(argv: list[str]) -> int:
     c.add_argument("--tag", required=True)
     c.add_argument("--tophalf", action="store_true")
     c.add_argument("--json")
+
+    jn = sub.add_parser("join")
+    jn.add_argument("--last", required=True, help="last frame of the clip: a png or a video (last frame is extracted)")
+    jn.add_argument("--key", required=True, help="the keyframe png the clip should land on")
+    jn.add_argument("--alpha", type=float, default=0.80)
+    jn.add_argument("--base", default="070b16")
+    jn.add_argument("--out")
+    jn.add_argument("--tile-width", type=int, default=640)
+    jn.add_argument("--json")
 
     sh = sub.add_parser("sheet")
     sh.add_argument("images", nargs="+")
@@ -474,14 +785,32 @@ def main(argv: list[str]) -> int:
 
     a = ap.parse_args(argv)
     if a.cmd == "still":
-        res = still_metrics(a.image, a.key)
+        profile = a.profile or ("reel" if "/films-src/reel/" in os.path.abspath(a.image).replace(os.sep, "/")
+                                else "beacon")
+        if profile == "reel":
+            key = (a.key or reel_key_from_name(a.image) or "").upper()
+            if key not in REEL_KEYS:
+                ap.error(f"reel profile needs --key K0..K7 (got {a.key or os.path.basename(a.image)!r})")
+            res = reel_metrics(a.image, key, reel_prev_mean_y(a.prev) if a.prev else None, a.strict_regions)
+        else:
+            if a.prev or a.strict_regions:
+                ap.error("--prev / --strict-regions only apply to --profile reel")
+            res = still_metrics(a.image, a.key)
     elif a.cmd == "clip":
         res = clip_metrics(a.clip, a.prev, a.next, a.out, a.tag, a.tophalf)
+    elif a.cmd == "join":
+        if not 0.0 <= a.alpha <= 1.0:
+            ap.error("--alpha must be between 0 and 1")
+        try:
+            base_rgb = parse_hex_rgb(a.base)
+        except ValueError:
+            ap.error(f"--base must be 6 hex digits like 070b16 (got {a.base!r})")
+        res = join_metrics(a.last, a.key, a.alpha, base_rgb, a.out, a.tile_width)
     elif a.cmd == "sheet":
-        make_sheet(a.images, a.out, a.cols, a.labels.split(",") if a.labels else None, a.tile_width)
+        make_sheet(a.images, a.out, a.cols, split_labels(a.labels, len(a.images)), a.tile_width)
         res = {"out": a.out, "n": len(a.images)}
     elif a.cmd == "phone":
-        make_phone_strip(a.images, a.out, a.labels.split(",") if a.labels else None, a.width, a.height)
+        make_phone_strip(a.images, a.out, split_labels(a.labels, len(a.images)), a.width, a.height)
         res = {"out": a.out, "n": len(a.images)}
     else:
         res = render_ledger(a.dir, a.out, a.ceiling)
