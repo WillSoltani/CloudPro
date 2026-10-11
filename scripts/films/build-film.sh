@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Turn generated clips into a scroll-scrubbed frame sequence for <ScrollFilm>.
+# Turn generated clips into a scroll-scrubbed frame sequence for the homepage reel (<FilmBackdrop>).
 #
 #   scripts/films/build-film.sh <name> <clip1.mp4> [clip2.mp4 ...]
 #

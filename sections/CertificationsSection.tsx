@@ -5,7 +5,7 @@ import { BadgeCheck } from "lucide-react";
 import { motion, useScroll, useTransform } from "framer-motion";
 
 import { Section } from "@/components/Section";
-import { useReducedMotionSafe } from "@/components/film/ScrollFilm";
+import { useReducedMotionSafe } from "@/components/film/filmCore";
 import { certifications } from "@/content/certifications";
 
 import { Card } from "@/components/ui/card";
@@ -34,7 +34,7 @@ export function CertificationsSection() {
             whileHover={{ y: -3, scale: 1.01 }}
             transition={{ type: "spring", stiffness: 400, damping: 28 }}
           >
-            <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-6 backdrop-blur">
+            <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-6">
               <div
                 className={[
                   "pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100",

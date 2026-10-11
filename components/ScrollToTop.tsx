@@ -17,8 +17,8 @@ export function ScrollToTop() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Stay out of the film: only once the page body is on screen.
-  const show = past && !film.inView;
+  // Stay out of the film: hidden while the hero is on screen and while any chapter divider plays.
+  const show = past && !film.inView && !film.overFilm;
 
   const goTop = () => {
     window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });

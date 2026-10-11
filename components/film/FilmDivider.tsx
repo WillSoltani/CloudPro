@@ -1,13 +1,10 @@
 "use client";
 
 import { motion, useTransform } from "framer-motion";
-import {
-  FilmCaption,
-  ScrollFilm,
-  useFilmProgress,
-  type FilmManifest,
-} from "@/components/film/ScrollFilm";
-import { FilmFadeIn, FilmFadeOut } from "@/components/film/FilmFadeOut";
+import type { FilmManifest } from "@/components/film/filmCore";
+import { useFilmProgress } from "@/components/film/filmProgress";
+import { FilmCaption } from "@/components/film/FilmCaption";
+import { FilmSegment } from "@/components/film/FilmSegment";
 import { FilmScrims } from "@/components/film/FilmScrims";
 import {
   CAPTION_COLUMN,
@@ -18,7 +15,7 @@ import {
 } from "@/components/film/captionTokens";
 
 type Props = {
-  /** Manifest passed through resolveFilm() at module level, so ScrollFilm sees one stable object. */
+  /** A manifest from the reel (components/film/reel.ts): the same object the backdrop holds. */
   film: FilmManifest;
   id: string;
   /** `"05 / It runs"`: the number lights in lamp, the words follow in mono caps (uppercased by CSS). */
@@ -29,17 +26,17 @@ type Props = {
   support?: string | readonly string[];
   /** Keep the caption to the end (`to={1}`): the last divider hands its caption to the section under it. */
   holdCaption?: boolean;
-  /** Crop focal point, 0–1 per axis (storyboard §7: 07 centres its light with `[0.5, 0.5]`). */
-  focus?: [number, number];
   /** Names the region for assistive tech, e.g. "Chapter 05: It runs". */
   ariaLabel: string;
 };
 
-// One caption window per divider; the film fades in before it and out after it.
-const FADE_IN: [number, number] = [0, 0.08];
+// One caption window per divider. The film itself never fades: it continues out of the hold above
+// and into the hold below.
 const CAPTION_FROM = 0.1;
 const CAPTION_TO = 0.9;
-const FADE_OUT: [number, number] = [0.92, 1];
+const HELD_CAPTION_TO = 0.985;
+// The left scrim arrives just ahead of the caption, so the stage enters from the hold as the bare frame.
+const SCRIM_IN: [number, number] = [0.04, CAPTION_FROM];
 
 const LAMP = "#f0a63c";
 const SLATE = "#64748b";
@@ -57,7 +54,9 @@ function DividerTick({ n, to }: { n: string; to: number }) {
     [CAPTION_FROM - 0.02, CAPTION_FROM, to, Math.min(1.001, to + 0.02)],
     [SLATE, LAMP, LAMP, to >= 1 ? LAMP : SLATE],
   );
-  const opacity = useTransform(progress, [0.04, CAPTION_FROM, CAPTION_TO, 0.96], [0, 1, 1, 0]);
+  // Leaves with its caption: after the usual window, or over the held caption's own last 5 %.
+  const out: [number, number] = to > CAPTION_TO ? [to - 0.05, to] : [CAPTION_TO, 0.96];
+  const opacity = useTransform(progress, [0.04, CAPTION_FROM, out[0], out[1]], [0, 1, 1, 0]);
   return (
     <motion.div
       aria-hidden
@@ -71,9 +70,9 @@ function DividerTick({ n, to }: { n: string; to: number }) {
 }
 
 /**
- * A chapter divider: one short film (2 viewport heights of scroll) that fades up from the page base,
- * carries a single caption in the hero's typography, and fades back to the base. No tick rail or
- * hairlines — dividers stay quiet. Reduced motion shows the first and last frame as two stills.
+ * A chapter divider: one short segment of the reel (2 viewport heights of scroll) between two hold
+ * panels, carrying a single caption in the hero's typography. No tick rail or hairlines — dividers
+ * stay quiet. Reduced motion shows the first and last frame as two stills.
  */
 export function FilmDivider({
   film,
@@ -82,30 +81,29 @@ export function FilmDivider({
   line,
   support,
   holdCaption = false,
-  focus = [0.5, 0.45],
   ariaLabel,
 }: Props) {
   const { n, text } = splitLabel(label);
-  const to = holdCaption ? 1 : CAPTION_TO;
+  // A held caption leaves over the last 5 % of its window, so it is gone just before the stage releases
+  // and never rides up under the header.
+  const to = holdCaption ? HELD_CAPTION_TO : CAPTION_TO;
   const supports: readonly string[] =
     support === undefined ? [] : typeof support === "string" ? [support] : support;
 
   return (
-    <ScrollFilm
+    <FilmSegment
       film={film}
       id={id}
       aria-label={ariaLabel}
       length={2}
-      focus={focus}
-      fit="cover"
       reducedSteps={2}
-      // Room under the released stage so the next section's heading does not butt against it.
-      className="bg-night mb-6 sm:mb-10"
     >
-      <FilmFadeIn from={FADE_IN[0]} to={FADE_IN[1]} />
-      <FilmFadeOut from={FADE_OUT[0]} to={FADE_OUT[1]} />
       {/* The left band leaves with the caption, or stays when the caption is held to the end. */}
-      <FilmScrims left leftFade={holdCaption ? null : [CAPTION_TO - 0.04, CAPTION_TO + 0.02]} />
+      <FilmScrims
+        left
+        leftIn={SCRIM_IN}
+        leftFade={holdCaption ? null : [CAPTION_TO - 0.04, CAPTION_TO + 0.02]}
+      />
 
       <div className="pointer-events-none absolute inset-0">
         <FilmCaption from={CAPTION_FROM} to={to} className={CAPTION_COLUMN}>
@@ -126,6 +124,6 @@ export function FilmDivider({
       </div>
 
       {n ? <DividerTick n={n} to={to} /> : null}
-    </ScrollFilm>
+    </FilmSegment>
   );
 }

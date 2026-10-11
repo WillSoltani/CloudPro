@@ -17,6 +17,13 @@ html {
   }
 }
 
+/* Homepage only (the film segments exist nowhere else): a cold deep link such as /#projects lands at
+   once, so the backdrop paints the held frame instead of scrubbing the film on the way down. FilmBackdrop
+   sets data-reel-ready on load; anchor links scroll smoothly from then on. */
+html:has([data-film-segment]):not([data-reel-ready]) {
+  scroll-behavior: auto;
+}
+
 body {
   text-rendering: geometricPrecision;
   overflow-x: hidden;

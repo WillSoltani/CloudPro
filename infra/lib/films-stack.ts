@@ -83,7 +83,7 @@ export class FilmsStack extends cdk.Stack {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
       httpVersion: cloudfront.HttpVersion.HTTP2_AND_3,
       enableIpv6: true,
-      // No errorResponses: a missing frame is a 403 and <ScrollFilm> covers it with neighbours.
+      // No errorResponses: a missing frame is a 403 and <FilmBackdrop> covers it with neighbours.
       // Alias-ready later by adding `certificate` + `domainNames`; the /films/<name>/ layout stays.
     });
 

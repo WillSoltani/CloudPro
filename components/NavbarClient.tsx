@@ -55,12 +55,12 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   const [scrolled, setScrolled] = useState(false);
   const [nearTop, setNearTop] = useState(true);
   // The hero film's sticky stage has been released: the section's bottom edge is at or above the
-  // viewport's, so the scene-4 caption and CTA are riding up under the header. (The chapter
-  // dividers lower on the page are ordinary content as far as the header is concerned.)
+  // viewport's, so the scene-4 caption and CTA are riding up under the header.
   const [released, setReleased] = useState(false);
   const [open, setOpen] = useState(false);
-  // In view while the film extends below the header's bottom edge.
-  const film = useFilmInView("-80px 0px 0px 0px");
+  // `inView`: the hero extends below the header's bottom edge. `overFilm`: any film segment (hero or
+  // chapter divider) has reached the header's bottom edge and is still pinned.
+  const film = useFilmInView("-80px 0px 0px 0px", 80);
 
   const linkIds = useMemo(() => links.map((l) => l.id), []);
 
@@ -120,9 +120,11 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Over the film the header stays glass-clear; the blurred bar begins as soon as the stage has
-  // been released (the final caption scrolls up under the header), not only once the section has left.
-  const blurred = scrolled && (!film.inView || released);
+  // Over the film the header stays glass-clear, over the hero and every chapter divider alike, so the
+  // reel reads as one piece; the blurred bar begins as soon as a stage has been released (its caption
+  // scrolls up under the header) and stays over the hold panels.
+  const overFilm = film.overFilm || (film.inView && !released);
+  const blurred = scrolled && !overFilm;
   // The film's hero already says the name: hide the brand until the viewer has scrolled past
   // half a screen. Before the observer reports, assume the film (this navbar is homepage-only).
   const brandHidden = nearTop && (film.inView || !film.present);

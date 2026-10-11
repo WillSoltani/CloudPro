@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { FilmCaption } from "@/components/film/ScrollFilm";
+import { FilmCaption } from "@/components/film/FilmCaption";
 import {
   CAPTION_COLUMN,
   CAPTION_LINE,
@@ -9,37 +9,37 @@ import {
   CaptionLabel,
 } from "@/components/film/captionTokens";
 
-/** Caption beats, verbatim from films-src/beacon/storyboard.md §3. Labels are set in uppercase by CSS. */
+/** Caption beats, verbatim from the content files (films-src/reel/storyboard.md §6). Labels are set in uppercase by CSS. */
 const BEATS = [
   {
     n: "01",
     label: "Design it",
-    line: "Serverless-first designs; tradeoffs picked on latency, cost, and ops burden.",
-    support: "Browser → S3 (presigned) → SQS → Lambda → DynamoDB",
+    line: "I pick tradeoffs based on latency, cost, and ops burden.",
+    support: "Event-driven processing via S3 events → SQS → Lambda",
     from: 0.08,
     to: 0.27,
   },
   {
     n: "02",
     label: "Build it",
-    line: "Infrastructure as code: CDK and CloudFormation for repeatable infra.",
-    support: "Lambda · API Gateway · S3 · DynamoDB · Step Functions",
+    line: "CDK / CloudFormation for repeatable infra",
+    support: "GitHub Actions: lint, build, deploy + cache invalidation",
     from: 0.29,
     to: 0.5,
   },
   {
     n: "03",
     label: "Keep it running",
-    line: "Secure by default, observable in production.",
-    support: "CloudWatch alarms, structured logs, and runbooks · least-privilege IAM",
+    line: "AWS systems that are secure by default and observable in production.",
+    support: "CloudWatch alarms, structured logs, and runbooks",
     from: 0.53,
     to: 0.75,
   },
   {
     n: "04",
     label: "Ship it",
-    line: "Reliable, scalable, cost-aware systems on AWS, shipped with security and CI/CD.",
-    support: "Serverless File Processing Pipeline · ChapterFlow",
+    line: "Serverless File Processing Pipeline · ChapterFlow",
+    support: "Browser → S3 (presigned) → SQS → Lambda → DynamoDB + outputs.",
     from: 0.78,
     to: 1,
   },
@@ -53,11 +53,12 @@ const HERO = {
   cta: "View Projects & Case Studies",
 } as const;
 
-// Scenes Hero, 1, 2, 3 share the caption column (captionTokens.CAPTION_COLUMN).
-// Scene 4 alone sits in the middle: K4 is all sky.
-const CENTRE = [
+// Every scene shares the caption column on desktop (captionTokens.CAPTION_COLUMN); the reel's K4 puts its
+// subject and light at the centre of the frame, so scene 4 keeps clear of it too. On phones scene 4 stays
+// the centred bottom block, a touch taller (40svh) for the CTA.
+const FINALE = [
   "absolute inset-x-0 bottom-0 flex max-h-[40svh] flex-col items-center justify-end px-5 pb-[max(1.75rem,env(safe-area-inset-bottom))] text-center",
-  "wide:inset-x-auto wide:top-[42%] wide:bottom-auto wide:left-1/2 wide:w-[min(60vw,42rem)] wide:max-h-none wide:-translate-x-1/2 wide:-translate-y-1/2 wide:justify-start wide:px-0 wide:pb-0",
+  "wide:inset-x-auto wide:top-1/2 wide:bottom-auto wide:left-[5vw] wide:w-[25vw] wide:max-w-[34rem] wide:min-w-[20rem] wide:max-h-none wide:-translate-y-1/2 wide:items-start wide:justify-start wide:px-0 wide:pb-0 wide:text-left",
 ].join(" ");
 
 export function BeaconCaptions() {
@@ -99,10 +100,10 @@ export function BeaconCaptions() {
         </FilmCaption>
       ))}
 
-      <FilmCaption from={finale.from} to={finale.to} className={CENTRE}>
+      <FilmCaption from={finale.from} to={finale.to} className={FINALE}>
         <div aria-hidden>
           <CaptionLabel n={finale.n} label={finale.label} />
-          <p className="mt-3 font-serif text-3xl leading-[1.08] text-balance text-slate-50 wide:text-[clamp(2.25rem,2.9vw,3.25rem)]">
+          <p className="mt-3 font-serif text-3xl leading-[1.08] text-balance text-slate-50 wide:text-[clamp(1.75rem,2.1vw,2.5rem)] wide:leading-[1.12] wide:text-pretty">
             {finale.line}
           </p>
           <p className={CAPTION_SUPPORT}>{finale.support}</p>

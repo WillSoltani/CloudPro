@@ -65,7 +65,7 @@ export function ExperienceTimeline({ items }: Props) {
               whileHover={!reduceMotion ? { x: 6 } : undefined}
               transition={{ type: "spring", stiffness: 420, damping: 30 }}
             >
-              <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-4 backdrop-blur-sm sm:p-6 sm:backdrop-blur">
+              <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-4 sm:p-6">
                 {/* hover tint */}
                 <div className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100 bg-[radial-gradient(700px_circle_at_20%_10%,rgba(56,189,248,0.10),transparent_60%)]" />
 

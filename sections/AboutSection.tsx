@@ -11,7 +11,7 @@ export function AboutSection() {
       title={about.headline}
       subtitle="How I approach building cloud systems."
     >
-      <Card className="border-white/10 bg-white/5 p-6 backdrop-blur">
+      <Card className="border-white/10 bg-white/5 p-6">
         <ul className="list-disc space-y-3 pl-5 text-sm text-slate-300">
           {about.bullets.map((b) => (
             <li key={b}>{b}</li>

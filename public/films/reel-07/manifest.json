@@ -1,0 +1,12 @@
+{
+  "name": "reel-07",
+  "count": 145,
+  "fps": 24,
+  "widths": [768,1280,1920],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "/films/reel-07",
+  "poster": "/films/reel-07/poster.webp",
+  "kb": { "768": 1160, "1280": 2320, "1920": 4356 }
+}

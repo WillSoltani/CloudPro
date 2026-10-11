@@ -5,7 +5,7 @@ import { motion, useScroll, useTransform, type Variants } from "framer-motion";
 
 import { Section } from "@/components/Section";
 import { SkillCategoryCard } from "@/components/SkillCategoryCard";
-import { useReducedMotionSafe } from "@/components/film/ScrollFilm";
+import { useReducedMotionSafe } from "@/components/film/filmCore";
 import { skillCategories } from "@/content/skills";
 
 const skillsWrap: Variants = {

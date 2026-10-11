@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useTransform } from "framer-motion";
-import { useFilmProgress } from "@/components/film/ScrollFilm";
+import { useFilmProgress } from "@/components/film/filmProgress";
 
 // Landscape film aspect (manifest `aspect`); the hairlines only show in the landscape `wide:` layout.
 const ASPECT = 1.7778;
@@ -14,8 +14,8 @@ const ASPECT = 1.7778;
  * max-w-[34rem]`), so below 1280 px, where the min-width rather than 25 vw sets the edge, the
  * line clears the text instead of running through it.
  *
- * Horizon: 60 % of the *drawn* frame, not the stage. ScrollFilm paints with `fit="cover"` and
- * `focus=[0.5,0.45]`, so `drawnH = max(stageH, stageW / aspect)` offset by `(stageH − drawnH) · 0.45`;
+ * Horizon: 60 % of the *drawn* frame, not the stage. FilmBackdrop paints cover-fit at the reel's
+ * focus `[0.5, 0.45]` (REEL_FOCUS), so `drawnH = max(stageH, stageW / aspect)` offset by `(stageH − drawnH) · 0.45`;
  * the horizon therefore sits at `0.6·drawnH + 0.45·(stageH − drawnH) = 0.15·drawnH + 0.45·stageH`.
  * The wrapper is a size container so `cqw` reads the stage width.
  */

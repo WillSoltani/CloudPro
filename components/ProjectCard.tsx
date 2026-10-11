@@ -22,7 +22,7 @@ export function ProjectCard({ project }: Props) {
       whileHover={{ y: -2 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
-      <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-5 backdrop-blur-sm sm:p-6 sm:backdrop-blur">
+      <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-5 sm:p-6">
         {/* hover gradient overlay */}
         <div className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100 bg-[radial-gradient(700px_circle_at_20%_10%,rgba(56,189,248,0.12),transparent_60%)]" />
 

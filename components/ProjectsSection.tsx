@@ -28,11 +28,9 @@ export function ProjectsSection() {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* Filter bar: mobile horizontal scroll w/ fades + snap, desktop wraps */}
-      <div className="relative -mx-4 px-4 sm:mx-0 sm:px-0">
-        {/* fades (mobile only) */}
-        <div className="pointer-events-none absolute inset-y-0 left-0 w-6 bg-linear-to-r from-[#070b16] to-transparent sm:hidden" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-6 bg-linear-to-l from-[#070b16] to-transparent sm:hidden" />
+      {/* Filter bar: mobile horizontal scroll w/ edge fades + snap, desktop wraps. The fades are a mask
+          (chips fade to transparent), not a painted night gradient: the bar sits on a hold panel over the film. */}
+      <div className="relative -mx-4 px-4 [mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%-1.5rem),transparent)] sm:mx-0 sm:px-0 sm:[mask-image:none]">
 
         <div
           className="
@@ -73,7 +71,7 @@ export function ProjectsSection() {
 
       {/* Featured */}
       {featured.length > 0 ? (
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5 backdrop-blur-sm sm:backdrop-blur">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 sm:p-5">
           <p className="mb-3 text-xs font-semibold tracking-[0.22em] text-slate-400">
             FEATURED
           </p>

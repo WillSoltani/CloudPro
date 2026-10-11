@@ -1,13 +1,10 @@
 "use client";
 
-import film05 from "@/public/films/beacon-05/manifest.json";
-import film06 from "@/public/films/beacon-06/manifest.json";
-import film07 from "@/public/films/beacon-07/manifest.json";
-
 import { BeaconHero } from "@/components/film/BeaconHero";
+import { FilmBackdrop } from "@/components/film/FilmBackdrop";
 import { FilmDivider } from "@/components/film/FilmDivider";
-import { SectionHalftone } from "@/components/film/SectionHalftone";
-import { resolveFilm } from "@/components/film/filmBase";
+import { HoldPanel } from "@/components/film/HoldPanel";
+import { HOLD_KEYS, REEL } from "@/components/film/reel";
 import { ProofStrip } from "@/components/ProofStrip";
 import { DeliveryStrip } from "@/components/DeliveryStrip";
 import { ScrollToTop } from "@/components/ScrollToTop";
@@ -21,45 +18,45 @@ import { ProjectsBlock } from "@/sections/ProjectsBlock";
 import { ExperienceSection } from "@/sections/ExperienceSection";
 import { ContactSection } from "@/sections/ContactSection";
 
-// Module-level so each ScrollFilm sees one stable manifest object (a new object would restart loading).
-const itRuns = resolveFilm(film05);
-const oneThread = resolveFilm(film06);
-const oneLight = resolveFilm(film07);
+const [, itRuns, oneThread, oneLight] = REEL;
 
+
+/**
+ * The homepage as one film: FilmBackdrop paints the reel on a single fixed canvas; the hero and the
+ * three dividers scroll it, and each run of HTML sections sits on a HoldPanel over the held frame.
+ */
 export function HomeClient() {
   return (
-    <>
+    <FilmBackdrop reel={REEL} keys={HOLD_KEYS}>
       <BeaconHero />
-      {/* The film ends flush; ProofStrip used to sit on the Hero's own padding. */}
-      <div className="pt-16 sm:pt-24">
-        <ProofStrip />
-      </div>
-      <DeliveryStrip items={delivery} />
 
-      {/* Part two: the cloud continues as amber halftone behind these headers; each section dissolves in. */}
-      <SectionHalftone>
+      {/* Holds: keep in step with HOLD_SECTIONS (components/film/reel.ts). */}
+      <HoldPanel>
+        {/* The film ends flush; ProofStrip used to sit on the Hero's own padding. */}
+        <div className="pt-16 sm:pt-24">
+          <ProofStrip />
+        </div>
+        <DeliveryStrip items={delivery} />
         <AboutSection />
-      </SectionHalftone>
-      <SectionHalftone>
         <CertificationsSection />
-      </SectionHalftone>
-      <SectionHalftone>
         <SkillsSection />
-      </SectionHalftone>
+      </HoldPanel>
 
-      {/* Chapter dividers: short films between the remaining sections (wording: films-src/beacon2/storyboard.md). */}
+      {/* Chapter dividers between the remaining sections (wording: films-src/reel/storyboard.md §6). */}
       <FilmDivider
         film={itRuns}
         id="chapter-05"
         label="05 / It runs"
-        line="Case studies that explain architecture decisions, not just screenshots."
+        line="I write case studies that explain architecture decisions, not just screenshots."
         support={[
-          "Browser → S3 (presigned) → SQS → Lambda → DynamoDB",
-          "Serverless File Processing Pipeline · ChapterFlow",
+          "Retries with backoff and DLQ for poison messages",
+          "Idempotency to prevent double-processing",
         ]}
         ariaLabel="Chapter 05: It runs"
       />
-      <ProjectsBlock />
+      <HoldPanel>
+        <ProjectsBlock />
+      </HoldPanel>
 
       <FilmDivider
         film={oneThread}
@@ -68,11 +65,13 @@ export function HomeClient() {
         line="From architecture decisions to release readiness and production support."
         support={[
           "Co-founder, Silicon X · 2022 – Present",
-          "Computer Science, University of British Columbia · 2019 – 2024",
+          "Bachelors Degree, Computer Science · University of British Columbia · 2019 – 2024",
         ]}
         ariaLabel="Chapter 06: One thread"
       />
-      <ExperienceSection />
+      <HoldPanel>
+        <ExperienceSection />
+      </HoldPanel>
 
       <FilmDivider
         film={oneLight}
@@ -81,12 +80,13 @@ export function HomeClient() {
         line="Currently based in Toronto, ON. Open to remote roles across Canada."
         support="will@soltani.org · GitHub · LinkedIn"
         holdCaption
-        focus={[0.5, 0.5]}
         ariaLabel="Chapter 07: One light"
       />
-      <ContactSection />
+      <HoldPanel closing>
+        <ContactSection />
+      </HoldPanel>
 
       <ScrollToTop />
-    </>
+    </FilmBackdrop>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useTransform, type MotionValue } from "framer-motion";
-import { useFilmProgress } from "@/components/film/ScrollFilm";
+import { useFilmProgress } from "@/components/film/filmProgress";
 
 const LAMP = "#f0a63c";
 const SLATE = "#64748b";

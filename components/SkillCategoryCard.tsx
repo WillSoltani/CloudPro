@@ -85,7 +85,7 @@ export function SkillCategoryCard({ cat }: Props) {
       transition={{ type: "spring", stiffness: 450, damping: 30 }}
       className="h-full"
     >
-      <Card className="group relative h-full overflow-hidden border-white/10 bg-white/5 p-6 backdrop-blur">
+      <Card className="group relative h-full overflow-hidden border-white/10 bg-white/5 p-6">
         {/* hover glow */}
         <div
           className={[

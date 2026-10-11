@@ -38,7 +38,6 @@ function PillLink(props: {
         "border border-white/10",
         "bg-white/5",
         "text-sm font-medium text-slate-100",
-        "backdrop-blur",
 
         // Identical hover behavior
         "transition",
@@ -73,7 +72,7 @@ function PillLink(props: {
 
 export function ContactCTA({ email, githubUrl, linkedinUrl }: Props) {
   return (
-    <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-8 text-center backdrop-blur">
+    <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-8 text-center">
       {/* Subtle section gradient */}
       <div className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100 bg-[radial-gradient(800px_circle_at_50%_10%,rgba(56,189,248,0.10),transparent_60%)]" />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_circle_at_50%_120%,rgba(139,92,246,0.08),transparent_55%)]" />

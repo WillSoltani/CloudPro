@@ -1,0 +1,21 @@
+{
+  "name": "reel-01",
+  "count": 577,
+  "fps": 24,
+  "widths": [
+    768,
+    1280,
+    1920
+  ],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "/films/reel-01",
+  "poster": "/films/reel-01/poster.webp",
+  "kb": {
+    "768": 6924,
+    "1280": 13824,
+    "1920": 25184
+  },
+  "quality_note": "768/1280 at QUALITY 70; 1920 re-encoded at 62 to meet the 25 MB tier budget"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "reel-05",
+  "count": 145,
+  "fps": 24,
+  "widths": [768,1280,1920],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "/films/reel-05",
+  "poster": "/films/reel-05/poster.webp",
+  "kb": { "768": 1432, "1280": 3172, "1920": 6044 }
+}
