@@ -53,7 +53,7 @@ import { FilmCaption } from "@/components/film/FilmCaption";
 import { useFilmProgress } from "@/components/film/filmProgress";
 
 <FilmBackdrop reel={REEL} keys={["/images/reel/K4.webp", "/images/reel/K5.webp"]}>
-  <FilmSegment film={REEL[0]} id="hero" aria-labelledby="hero-title" length={6} reducedSteps={5}>
+  <FilmSegment film={REEL[0]} id="hero" aria-labelledby="hero-title" length={5} reducedSteps={5}>
     <FilmCaption from={0} to={0.22} persistent className="absolute left-12 top-1/3 max-w-md">
       <h1 id="hero-title" className="font-serif text-6xl">…</h1>
     </FilmCaption>

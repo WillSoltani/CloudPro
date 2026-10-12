@@ -28,6 +28,21 @@ type Props = {
   holdCaption?: boolean;
   /** Names the region for assistive tech, e.g. "Chapter 05: It runs". */
   ariaLabel: string;
+  /**
+   * Crossfade out of the hold above, as a fraction of this divider's scroll (FilmSegment `dissolveIn`;
+   * default ≈ 120 px). Set a long one where the subject changes.
+   */
+  dissolveIn?: number;
+  /**
+   * Progress at which the caption arrives (default CAPTION_FROM); the left scrim and the tick arrive
+   * with it. Push it later when a long dissolve should play on the bare frame first.
+   */
+  captionFrom?: number;
+  /**
+   * Peak alpha of the left scrim band (FilmScrims `leftAlpha`, default 0.65). Lower it over the brighter
+   * city frames, where the default band reads as a dark rectangle.
+   */
+  scrimAlpha?: number;
 };
 
 // One caption window per divider. The film itself never fades: it continues out of the hold above
@@ -35,8 +50,13 @@ type Props = {
 const CAPTION_FROM = 0.1;
 const CAPTION_TO = 0.9;
 const HELD_CAPTION_TO = 0.985;
-// The left scrim arrives just ahead of the caption, so the stage enters from the hold as the bare frame.
-const SCRIM_IN: [number, number] = [0.04, CAPTION_FROM];
+// The held caption leaves over 0.935–0.985; its scrim follows, gone by the time the stage releases.
+const HELD_SCRIM_FADE: [number, number] = [0.95, 1];
+// The left scrim arrives just ahead of the caption (over SCRIM_LEAD), so the stage enters from the hold
+// as the bare frame.
+const SCRIM_LEAD = 0.06;
+// Where the scrim and tick start arriving; rounded so the default is exactly 0.04 (0.1 − 0.06 is not).
+const leadIn = (from: number) => Math.round((from - SCRIM_LEAD) * 1e4) / 1e4;
 
 const LAMP = "#f0a63c";
 const SLATE = "#64748b";
@@ -47,16 +67,16 @@ function splitLabel(label: string): { n: string; text: string } {
 }
 
 /** The chapter number as one quiet tick at the right edge (desktop only), lit while the caption plays. */
-function DividerTick({ n, to }: { n: string; to: number }) {
+function DividerTick({ n, from, to }: { n: string; from: number; to: number }) {
   const progress = useFilmProgress();
   const color = useTransform(
     progress,
-    [CAPTION_FROM - 0.02, CAPTION_FROM, to, Math.min(1.001, to + 0.02)],
+    [from - 0.02, from, to, Math.min(1.001, to + 0.02)],
     [SLATE, LAMP, LAMP, to >= 1 ? LAMP : SLATE],
   );
   // Leaves with its caption: after the usual window, or over the held caption's own last 5 %.
   const out: [number, number] = to > CAPTION_TO ? [to - 0.05, to] : [CAPTION_TO, 0.96];
-  const opacity = useTransform(progress, [0.04, CAPTION_FROM, out[0], out[1]], [0, 1, 1, 0]);
+  const opacity = useTransform(progress, [leadIn(from), from, out[0], out[1]], [0, 1, 1, 0]);
   return (
     <motion.div
       aria-hidden
@@ -73,6 +93,10 @@ function DividerTick({ n, to }: { n: string; to: number }) {
  * A chapter divider: one short segment of the reel (2 viewport heights of scroll) between two hold
  * panels, carrying a single caption in the hero's typography. No tick rail or hairlines — dividers
  * stay quiet. Reduced motion shows the first and last frame as two stills.
+ *
+ * By default the hold above crossfades out over ≈ 120 px and the caption arrives at 10 %. Where the
+ * subject changes (the act break into the city), `dissolveIn` lengthens the crossfade and `captionFrom`
+ * holds the caption, its scrim and its tick back until the dissolve has nearly resolved.
  */
 export function FilmDivider({
   film,
@@ -82,6 +106,9 @@ export function FilmDivider({
   support,
   holdCaption = false,
   ariaLabel,
+  dissolveIn,
+  captionFrom = CAPTION_FROM,
+  scrimAlpha,
 }: Props) {
   const { n, text } = splitLabel(label);
   // A held caption leaves over the last 5 % of its window, so it is gone just before the stage releases
@@ -97,16 +124,19 @@ export function FilmDivider({
       aria-label={ariaLabel}
       length={2}
       reducedSteps={2}
+      dissolveIn={dissolveIn}
     >
-      {/* The left band leaves with the caption, or stays when the caption is held to the end. */}
+      {/* The left band leaves with the caption: with the usual window, or over the last 5 % when the
+          caption is held to the end (so it does not outstay the caption and leave a strip at the release). */}
       <FilmScrims
         left
-        leftIn={SCRIM_IN}
-        leftFade={holdCaption ? null : [CAPTION_TO - 0.04, CAPTION_TO + 0.02]}
+        leftIn={[leadIn(captionFrom), captionFrom]}
+        leftFade={holdCaption ? HELD_SCRIM_FADE : [CAPTION_TO - 0.04, CAPTION_TO + 0.02]}
+        leftAlpha={scrimAlpha}
       />
 
       <div className="pointer-events-none absolute inset-0">
-        <FilmCaption from={CAPTION_FROM} to={to} className={CAPTION_COLUMN}>
+        <FilmCaption from={captionFrom} to={to} className={CAPTION_COLUMN}>
           <div aria-hidden>
             <CaptionLabel n={n} label={text} />
             <p className={CAPTION_LINE}>{line}</p>
@@ -123,7 +153,7 @@ export function FilmDivider({
         </p>
       </div>
 
-      {n ? <DividerTick n={n} to={to} /> : null}
+      {n ? <DividerTick n={n} from={captionFrom} to={to} /> : null}
     </FilmSegment>
   );
 }

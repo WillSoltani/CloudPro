@@ -18,7 +18,33 @@ type Props = {
    * Dividers pass their caption's exit window.
    */
   leftFade?: readonly [number, number] | null;
+  /**
+   * Peak alpha of the left band (default 0.65, which the dark server-hall frames want). Lower it over
+   * brighter frames, where a strong band reads as a dark rectangle with a visible edge.
+   */
+  leftAlpha?: number;
 };
+
+const NIGHT = "7,11,22";
+
+/**
+ * The left band's gradient: `a` across the caption column (to 20 vw), then an eased fall to transparent
+ * at 46 vw with no slope break, so the band has no visible vertical edge over a bright frame. The first
+ * stop overshoots (1.2 a) to keep the page edge as dark as it was.
+ */
+function leftBand(a: number): string {
+  const c = (k: number) => `rgba(${NIGHT},${Math.round(Math.min(1, k * a) * 1000) / 1000})`;
+  return [
+    `linear-gradient(to right`,
+    `${c(1.2)} 0`,
+    `${c(1)} 20vw`,
+    `${c(0.78)} 28vw`,
+    `${c(0.5)} 34vw`,
+    `${c(0.26)} 39vw`,
+    `${c(0.1)} 43vw`,
+    `transparent 46vw)`,
+  ].join(", ");
+}
 
 /**
  * Legibility scrims under the captions: a bottom band on phones, an optional left band on desktop.
@@ -28,7 +54,7 @@ type Props = {
  * at the stage's top and bottom (captions sit in the middle), so a stage's edges are always the bare
  * frame on desktop.
  */
-export function FilmScrims({ left = false, leftIn = null, leftFade = null }: Props) {
+export function FilmScrims({ left = false, leftIn = null, leftFade = null, leftAlpha = 0.65 }: Props) {
   const progress = useFilmProgress();
   const input: number[] = [];
   const output: number[] = [];
@@ -49,11 +75,11 @@ export function FilmScrims({ left = false, leftIn = null, leftFade = null }: Pro
     <div aria-hidden className="pointer-events-none absolute inset-0">
       <div className="absolute inset-x-0 bottom-0 h-[42svh] bg-[linear-gradient(to_top,#070b16_18%,rgba(7,11,22,0.75)_48%,transparent)] wide:hidden" />
       {left ? (
-        // Holds ≈0.65 alpha across the whole caption column (x 5–30 vw), where K0–K3's haze is brightest,
-        // then falls off before the drafting lines / cranes begin around x ≈ 0.35 of the frame.
+        // Holds the peak alpha across the caption column (to 20 vw, where K0–K3's haze is brightest),
+        // then eases out before the drafting lines / cranes begin around x ≈ 0.35 of the frame.
         <motion.div
-          style={{ opacity: leftOpacity }}
-          className="absolute inset-y-0 left-0 hidden w-[46vw] bg-[linear-gradient(to_right,rgba(7,11,22,0.78)_0,rgba(7,11,22,0.65)_30vw,rgba(7,11,22,0.3)_38vw,transparent_46vw)] [mask-image:linear-gradient(to_bottom,transparent,#000_15%,#000_85%,transparent)] wide:block"
+          style={{ opacity: leftOpacity, backgroundImage: leftBand(leftAlpha) }}
+          className="absolute inset-y-0 left-0 hidden w-[46vw] [mask-image:linear-gradient(to_bottom,transparent,#000_15%,#000_85%,transparent)] wide:block"
         />
       ) : null}
     </div>

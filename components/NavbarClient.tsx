@@ -72,8 +72,11 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   useEffect(() => {
     const onScroll = () => {
       setScrolled(window.scrollY > 8);
-      setNearTop(window.scrollY < 0.55 * window.innerHeight);
-      const f = document.querySelector(HERO_FILM_SELECTOR);
+      const f = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
+      // The hero's opening caption is gone by 10 % of the film's scrub, so the name returns there
+      // (a fixed half screen would leave it missing for a few hundred px on the long hero).
+      const range = f ? f.offsetHeight - window.innerHeight : 0;
+      setNearTop(window.scrollY < (range > 0 ? 0.1 * range : 0.55 * window.innerHeight));
       setReleased(!!f && f.getBoundingClientRect().bottom <= window.innerHeight);
     };
     onScroll();
@@ -125,8 +128,9 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   // scrolls up under the header) and stays over the hold panels.
   const overFilm = film.overFilm || (film.inView && !released);
   const blurred = scrolled && !overFilm;
-  // The film's hero already says the name: hide the brand until the viewer has scrolled past
-  // half a screen. Before the observer reports, assume the film (this navbar is homepage-only).
+  // The film's hero already says the name: hide the brand while its opening caption is on screen, i.e.
+  // until the first 10 % of the hero's scrub (nearTop; half a screen if there is no hero). Before the
+  // observer reports, assume the film (this navbar is homepage-only).
   const brandHidden = nearTop && (film.inView || !film.present);
 
   return (

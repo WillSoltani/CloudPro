@@ -1,0 +1,12 @@
+{
+  "name": "tower-03",
+  "count": 145,
+  "fps": 24,
+  "widths": [768,1280,1920],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "/films/tower-03",
+  "poster": "/films/tower-03/poster.webp",
+  "kb": { "768": 1160, "1280": 2900, "1920": 5612 }
+}

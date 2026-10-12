@@ -16,6 +16,11 @@ type Props = {
   "aria-labelledby"?: string;
   /** Under prefers-reduced-motion, step through this many stills instead of scrubbing. */
   reducedSteps?: number;
+  /**
+   * Length of the crossfade out of the previous hold as this segment begins, as a fraction of this
+   * segment's scroll (default ≈ 120 px). Use a long one where the subject changes.
+   */
+  dissolveIn?: number;
   /** Overlays inside the sticky stage; read progress with useFilmProgress(). */
   children?: ReactNode;
 };
@@ -40,6 +45,7 @@ export function FilmSegment({
   "aria-label": ariaLabel,
   "aria-labelledby": ariaLabelledby,
   reducedSteps = 5,
+  dissolveIn,
   children,
 }: Props) {
   const backdrop = useFilmBackdrop();
@@ -61,8 +67,8 @@ export function FilmSegment({
       console.error(`FilmSegment: "${film.name}" is not in the backdrop's reel`);
       return;
     }
-    return backdrop.register({ index, film, el, reducedSteps, progress });
-  }, [backdrop, index, film, reducedSteps, progress]);
+    return backdrop.register({ index, film, el, reducedSteps, progress, dissolveIn });
+  }, [backdrop, index, film, reducedSteps, progress, dissolveIn]);
 
   return (
     <FilmProgressContext.Provider value={progress}>

@@ -18,7 +18,7 @@ export function BeaconHero() {
       film={HERO_FILM}
       id="hero"
       aria-labelledby="hero-title"
-      length={6}
+      length={5}
       reducedSteps={5}
     >
       <FilmScrims left />

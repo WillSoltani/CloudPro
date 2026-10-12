@@ -1,0 +1,12 @@
+{
+  "name": "tower-04",
+  "count": 145,
+  "fps": 24,
+  "widths": [768,1280,1920],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "/films/tower-04",
+  "poster": "/films/tower-04/poster.webp",
+  "kb": { "768": 892, "1280": 1784, "1920": 3340 }
+}

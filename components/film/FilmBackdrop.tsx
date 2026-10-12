@@ -27,7 +27,8 @@ const STRIDES = [16, 8, 4, 2, 1];
 // A segment starts loading once it is within ~1.5 viewports.
 const NEAR = "150% 0px";
 // Hold keys: segment i's end key fades in over the last KEY_IN_PX of its scroll (the hero keeps its
-// 6 %) and out over the first KEY_OUT_PX of segment i+1, converted per segment to its scroll range.
+// 6 %) and out over the first KEY_OUT_PX of segment i+1, converted per segment to its scroll range,
+// unless segment i+1 sets its own `dissolveIn` (a longer crossfade where the subject changes).
 const HERO_KEY_IN = 0.06;
 const KEY_IN_PX = 160;
 const KEY_OUT_PX = 120;
@@ -48,6 +49,11 @@ export type SegmentRegistration = {
   reducedSteps: number;
   /** Set by the backdrop to clamp(r − index, 0, 1); the segment provides it to its overlays. */
   progress: MotionValue<number>;
+  /**
+   * Fraction (0–0.5) of this segment's scroll range over which the previous hold's key fades out as the
+   * segment begins; default: min(0.5, KEY_OUT_PX / range), i.e. 120 px.
+   */
+  dissolveIn?: number;
 };
 
 type BackdropApi = {
@@ -117,7 +123,8 @@ export function FilmBackdrop({
   /**
    * The approved still for the hold after each segment (`keys[i]` after segment i). Layered over the
    * canvas, fixed like it, from the end of segment i through the start of segment i+1, so a hold shows
-   * the key itself and the join into the next segment is a crossfade. Stable.
+   * the key itself and the join into the next segment is a crossfade (≈ 120 px, or the next segment's
+   * own `dissolveIn`). Stable.
    */
   keys?: readonly (string | undefined)[];
   children: ReactNode;
@@ -470,7 +477,13 @@ export function FilmBackdrop({
       const own = segments.get(i);
       const next = segments.get(i + 1);
       const into = i === 0 ? HERO_KEY_IN : own?.range ? Math.min(0.5, KEY_IN_PX / own.range) : HERO_KEY_IN;
-      const out = next?.range ? Math.min(0.5, KEY_OUT_PX / next.range) : 0.04;
+      const dissolve = next?.reg.dissolveIn;
+      const out =
+        next && next.range > 0
+          ? dissolve !== undefined
+            ? Math.min(0.5, Math.max(0.01, dissolve))
+            : Math.min(0.5, KEY_OUT_PX / next.range)
+          : 0.04;
       const t = r - (i + 1);
       if (t <= -into || t >= out) return 0;
       return t < 0 ? 1 + t / into : 1 - t / out;
