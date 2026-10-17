@@ -176,8 +176,8 @@ and 390×844 DPR 3 touch, sized from disk; keys (`/images/reel/`) and posters re
 1280 ≤ 25 MB, report 1920 (≤ 40); portrait 432 ≤ 12 MB, 720 ≤ 25 MB, report 1080; each film within its manifest `kb`; keys ≤ 200 KB.
 **C19 Production** (:3006, cold context, cache disabled): LCP < 2.5 s (`largest-contentful-paint`, buffered); poster
 `encodedBodySize` ≤ 200 KB; first scrub ≤ 1.5 s (navigation start → the first `data-frame` change after a scroll issued once
-`data-frame="0"`); zero console errors except the logged-out Cognito session probe (the CORS-blocked `…amazoncognito.com/oauth2/
-authorize` fetch and its `net::ERR_FAILED`); the C11 deep links again; `npm run verify` green. Timings need a quiet machine: record
+`data-frame="0"`); zero console errors except the logged-out Cognito session probe (the CORS-blocked `…/oauth2/authorize` fetch, host
+`…amazoncognito.com` locally and `auth.soltani.org` on the live site, and its `net::ERR_FAILED`); the C11 deep links again; `npm run verify` green. Timings need a quiet machine: record
 `uptime` and repeat on a load average above ≈ 8 (a Blender render on the same Mac doubles them).
 **C20 Footage joins.** `cmp` rack-0N last vs rack-0(N+1) f0 at every tier and camera (rack-04 → rack-05 included): identical.
 Dissolves (exit → tower-01) and the tower-K3 → tower-04 hand-over: screenshots at 0, 25,
