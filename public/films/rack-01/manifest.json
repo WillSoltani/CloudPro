@@ -2,11 +2,19 @@
   "name": "rack-01",
   "count": 169,
   "fps": 24,
-  "widths": [768,1280,1920],
+  "widths": [
+    768,
+    1280,
+    1920
+  ],
   "aspect": 1.7778,
   "pad": 4,
   "ext": "webp",
-  "base": "/films/rack-01",
-  "poster": "/films/rack-01/poster.webp",
-  "kb": { "768": 1132, "1280": 2096, "1920": 3644 }
+  "base": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-01",
+  "poster": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-01/poster.webp",
+  "kb": {
+    "768": 1132,
+    "1280": 2096,
+    "1920": 3644
+  }
 }

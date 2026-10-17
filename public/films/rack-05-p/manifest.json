@@ -10,8 +10,8 @@
   "aspect": 0.4615,
   "pad": 4,
   "ext": "webp",
-  "base": "/films/rack-05-p",
-  "poster": "/films/rack-05-p/poster.webp",
+  "base": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-05-p",
+  "poster": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-05-p/poster.webp",
   "kb": {
     "432": 1168,
     "720": 1980,

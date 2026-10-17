@@ -2,11 +2,17 @@
   "name": "tower-01-p",
   "count": 289,
   "fps": 24,
-  "widths": [432,499],
+  "widths": [
+    432,
+    499
+  ],
   "aspect": 0.4620,
   "pad": 4,
   "ext": "webp",
-  "base": "/films/tower-01-p",
-  "poster": "/films/tower-01-p/poster.webp",
-  "kb": { "432": 1408, "499": 2052 }
+  "base": "https://dkkkpszkw3bz9.cloudfront.net/films/tower-01-p",
+  "poster": "https://dkkkpszkw3bz9.cloudfront.net/films/tower-01-p/poster.webp",
+  "kb": {
+    "432": 1408,
+    "499": 2052
+  }
 }
