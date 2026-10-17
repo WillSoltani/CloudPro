@@ -3,13 +3,15 @@
  * rack-01…04 only, the exit rack-05 carries no caption), copied verbatim
  * from films-src/rack/captions.json (G1, 2026-10-11; that file is gitignored, so the copy lives here).
  * G1 chose plate labels by section name (option B: `label`; `labelAlt` is the unused machine names) and the
- * hero line below. Re-copy this file if captions.json changes; never edit a string here alone.
+ * hero line below. Re-copy this file if captions.json changes; never edit a string here alone. Exception:
+ * the services copy of 2026-10-16 (hero.badge, hero.line, contact.line, Contact as plate 05) is edited here
+ * and in content/about.ts; captions.json (gitignored) still has the old strings.
  *
  * Sources (file · field), as listed in captions.json:
  * - hero.badge / name / title / location / cta: components/film/BeaconCaptions.tsx HERO (now heroBeats.ts HERO_COPY)
  * - hero.line: content/about.ts bullets[0], contiguous, leading "I build " dropped
  * - plates.headingText: the `title` of sections/AboutSection.tsx (content/about.ts headline),
- *   CertificationsSection, SkillsSection, ProjectsBlock, ExperienceSection, ContactSection
+ *   CertificationsSection, SkillsSection, ProjectsBlock, ContactSection
  * - contact.line: content/about.ts closing; contact.links: sections/ContactSection.tsx ContactCTA email,
  *   content/social.ts github / linkedin
  * - alternates.heroLine: content/about.ts bullets[1], the clause after "but"
@@ -41,11 +43,11 @@ export type RackCaptions = {
 
 export const RACK_CAPTIONS = {
   hero: {
-    badge: "Open to impactful roles and select project collaborations.",
+    badge: "Available for new engagements.",
     name: "Will Soltani",
     title: ["Cloud Engineer", "AWS Solutions Architect"],
     location: "Toronto, ON · Remote-friendly",
-    line: "AWS systems that are secure by default and observable in production.",
+    line: "I design, build and run AWS systems for teams that need them to work in production.",
     cta: { label: "View Projects & Case Studies", href: "#projects" },
   },
   plates: [
@@ -53,11 +55,10 @@ export const RACK_CAPTIONS = {
     { n: "02", section: "certifications", label: "02 / Certifications", headingText: "Certifications", machine: "Security", labelAlt: "02 / Security" },
     { n: "03", section: "skills", label: "03 / Skills", headingText: "Skills", machine: "Storage", labelAlt: "03 / Storage" },
     { n: "04", section: "projects", label: "04 / Projects", headingText: "Projects", machine: "Server", labelAlt: "04 / Server" },
-    { n: "05", section: "experience", label: "05 / Experience", headingText: "Experience", machine: "Power", labelAlt: "05 / Power" },
-    { n: "06", section: "contact", label: "06 / Contact", headingText: "Contact", machine: "Fibre", labelAlt: "06 / Fibre" },
+    { n: "05", section: "contact", label: "05 / Contact", headingText: "Contact", machine: "Fibre", labelAlt: "05 / Fibre" },
   ],
   contact: {
-    line: "Currently based in Toronto, ON. Open to remote roles across Canada.",
+    line: "Have an AWS system to design, build or fix? Tell me about it.",
     links: [
       { id: "email", label: "will@soltani.org", href: "mailto:will@soltani.org" },
       { id: "github", label: "GitHub", href: "https://github.com/WillSoltani" },

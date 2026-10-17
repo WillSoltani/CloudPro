@@ -59,16 +59,19 @@ const rackKey = (n: number, portrait = false) =>
   `/images/reel/rack-K0${n}${portrait ? "-p" : ""}.webp`;
 
 /**
- * Chapter pace (part five §2h, Will 2026-10-13): 84 film frames per viewport for the chapters, the exit,
- * the bridge and the tower; the hero keeps the timeline's 96.
+ * Chapter pace (part five §2h, Will 2026-10-13): 84 film frames per viewport for the chapters, the exit
+ * and the tower; the hero keeps the timeline's 96.
  */
 const CHAPTER_PACE = 84;
+/** The bridge carries no text since Experience left the page (2026-10-16): a quicker passage, ≈ 2.4 vh. */
+const BRIDGE_PACE = 120;
 
 /**
  * The hold key's breath wherever no rendered tail frames play (§2a, §2e): a push of
  * 1 + scale·sin²(π·g(τ)) about `origin` (frame fractions). The rack's holds about the reel's centre point C
  * (only on the fallback paths: Save-Data, or TAILS_ON off; never under reduced motion), the tower's about
  * its lamp (tower-01 0.012 at (0.50, 0.35), tower-04 0.010 at (0.50, 0.848); the tower has no tail frames).
+ * The bridge is joined to Contact (no hold), so tower-K3 only shows through its fades and never breathes.
  */
 const RACK_BREATH: Breath = { scale: 0.01, origin: [0.5, 0.45] };
 const TOWER_01_BREATH: Breath = { scale: 0.012, origin: [0.5, 0.35] };
@@ -87,18 +90,18 @@ const TOWER_04_BREATH: Breath = { scale: 0.01, origin: [0.5, 0.848] };
  *               the fog; no section; its last frame dissolves into the bridge. Final on both cameras
  *               (163 frames, no tail); its first frame is rack-04's last, byte for byte
  *   6 tower-01  the bridge out of the fog over the lake to the tower (145 frames) and the city's lights
- *               coming on (144), one film of 289 (clips mode); Experience, joined to the exit; read pin
- *               on tower-K3. Its 1920 tier has one codec pop at frame 2 (FLUX's first-frame step), under
- *               the dissolve from the exit's key.
+ *               coming on (144), one film of 289 (clips mode); a wordless passage like the exit, joined to
+ *               it and to Contact (no hold). Its 1920 tier has one codec pop at frame 2 (FLUX's
+ *               first-frame step), under the dissolve from the exit's key.
  *   7 tower-04  the crane up into the cloud to the lamp (K3 → K4); Contact and the footer, the page's end
  *
  * Each entry: the landscape manifest, the portrait one where the second camera exists (the rack's second
  * camera; the tower's centre crops x 0.370–0.630, aspect 0.462, tiers 432/499, a quarter of the pixels),
  * the hold key after it (rack-K01…K04: the rack chapters' fallback where no tail plays, and the boot key;
- * rack-K05(-p) for the exit's dissolve into the bridge; tower-K3(-p) and tower-K4(-p) under the tower's
- * push: each byte-identical to its film's last frame at the top tier, which for rack-01…04 is also the
- * hold frame f_M), the pace and the key's breath. Resolved once at module level (NEXT_PUBLIC_FILM_BASE
- * applied).
+ * rack-K05(-p) for the exit's dissolve into the bridge; tower-K3(-p) for the bridge's dissolve into
+ * Contact; tower-K4(-p) under the tower's push: each byte-identical to its film's last frame at the top
+ * tier, which for rack-01…04 is also the hold frame f_M), the pace and the key's breath. Resolved once at
+ * module level (NEXT_PUBLIC_FILM_BASE applied).
  *
  * Server-safe: app/page.tsx imports it, so it must not pull in client hooks (filmCore is a type import).
  */
@@ -144,7 +147,7 @@ export const REEL: readonly FilmEntry[] = [
     portrait: tower01p,
     key: "/images/reel/tower-K3.webp",
     portraitKey: "/images/reel/tower-K3-p.webp",
-    pace: CHAPTER_PACE,
+    pace: BRIDGE_PACE,
     breath: TOWER_01_BREATH,
   }),
   film(tower04, {
@@ -164,7 +167,7 @@ export const REEL_INDEX = {
   skills: 3,
   projects: 4,
   exit: 5,
-  experience: 6,
+  bridge: 6,
   contact: 7,
 } as const;
 
@@ -184,8 +187,8 @@ export const HOLD_KEYS: HoldKeys = {
 /**
  * Section ids in each hold, in hold order (hold i follows segment i): the anchor each chapter puts at its
  * camera rest. The boot script in app/page.tsx uses it to show the right held key on a cold deep link
- * before any JS has run. An empty list is a hold with no section (the hero and the exit are joined to the
- * next chapter).
+ * before any JS has run. An empty list is a hold with no section (the hero, the exit and the bridge are
+ * joined to what follows; a stale /#experience link matches none, so the page loads at the top).
  */
 export const HOLD_SECTIONS: readonly (readonly string[])[] = [
   [],
@@ -194,7 +197,7 @@ export const HOLD_SECTIONS: readonly (readonly string[])[] = [
   ["skills"],
   ["projects"],
   [],
-  ["experience"],
+  [],
   ["contact"],
 ];
 
@@ -263,7 +266,7 @@ export function moveVhOf(entry: FilmEntry): number {
 }
 
 /**
- * FilmSegment `length` (viewport heights of scroll) of a legacy segment (the hero, the exit): its move plus
+ * FilmSegment `length` (viewport heights of scroll) of a legacy segment (the hero, the exit, the bridge): its move plus
  * the viewport its sticky stage occupies.
  */
 export function lengthOf(entry: FilmEntry): number {
@@ -277,7 +280,7 @@ export function breathOf(entry: FilmEntry): FilmEntry["breath"] {
 
 /**
  * Rendered breathing-tail frames of an entry (renderer §2e): rack-01…04 `{from: M, frames: 48}` while
- * TAILS_ON (frames 0 when off); none for the hero, the exit and the tower.
+ * TAILS_ON (frames 0 when off); none for the hero, the exit, the bridge and the tower.
  */
 export function tailOf(entry: FilmEntry): FilmEntry["tail"] {
   return entry.tail;

@@ -63,7 +63,7 @@ export function AboutSection() {
           n={PLATE.n}
           title={PLATE.headingText}
           support={PLATE.machine}
-          lede="How I approach building cloud systems."
+          lede="How I build and run AWS systems for clients."
         />
       </FrameBand>
       <FrameBand from={0.38} to={0.66} after={0.36} x={0.18} right={0.6}>

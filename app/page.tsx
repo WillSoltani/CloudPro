@@ -32,7 +32,7 @@ const json = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
  * sessionStorage wins (even over a #hash left in the URL, which may name a chapter the viewer has since
  * scrolled past; a saved "" means the viewer was not in a hold, so no key); otherwise a #section deep link.
  *
- * The held chapter's read-pin and tail items (About's proof tokens, Experience's bullets, Contact's footer)
+ * The held chapter's read-pin and tail items (About's proof tokens, Contact's footer)
  * are clocked by the backdrop, but the server HTML is fully revealed (no-JS, SEO), so the same style pins
  * them until the backdrop has set the clock (`!important` beats the reveals' server inline opacity;
  * FilmBackdrop removes the style two frames after the key is on its layer, by when the reveals carry their

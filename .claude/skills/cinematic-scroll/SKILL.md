@@ -67,7 +67,7 @@ export const REEL = [
   film(tower01, { portrait: tower01p, key: "/images/reel/tower-K3.webp", portraitKey: …, pace: 84, breath: TOWER_01_BREATH }),
   film(tower04, { …, breath: TOWER_04_BREATH }),
 ];
-export const HOLD_SECTIONS = [[], ["about"], ["certifications"], ["skills"], ["projects"], [], ["experience"], ["contact"]];
+export const HOLD_SECTIONS = [[], ["about"], ["certifications"], ["skills"], ["projects"], [], [], ["contact"]];
 
 // components/HomeClient.tsx
 <FilmBackdrop reel={REEL} keys={HOLD_KEYS}>
@@ -75,7 +75,7 @@ export const HOLD_SECTIONS = [[], ["about"], ["certifications"], ["skills"], ["p
   <AboutSection />            {/* FilmChapter join, plate handoff, body = DeliveryStrip */}
   <CertificationsSection /> <SkillsSection /> <ProjectsBlock />
   <FilmSegment film={exit} id="exit" length={lengthOf(exit)} reducedSteps={2} section="" />
-  <ExperienceSection />       {/* FilmChapter join dissolveIn 0.2 */}
+  <FilmSegment id="bridge" … />  {/* tower-01: a wordless passage, joined, dissolveIn 0.2, pace 120 */}
   <ContactSection />          {/* the footer inside, the page ends in its read pin */}
 </FilmBackdrop>
 ```
