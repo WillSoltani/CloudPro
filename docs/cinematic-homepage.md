@@ -7,7 +7,7 @@ Goal: turn the soltani.org homepage into a scroll-scrubbed cinematic film in the
 - **Audience** — hiring managers and engineers evaluating him for remote cloud roles in Canada. They skim. The film earns attention; the facts must still be findable in seconds.
 
 ## Keep
-About, Certifications (with Credly links), Skills, Projects and case studies, Experience, Contact. Source of truth is `content/*.ts`. All of it stays real HTML; invent nothing.
+About, Certifications (with Credly links), Skills, Projects and case studies, Contact. Source of truth is `content/*.ts`. All of it stays real HTML; invent nothing.
 
 ## Narrative shape
 3–4 scenes, each paired with a short HTML caption — for example **Design it → Build it → Keep it running → Ship it** (architecture, IaC and serverless, observability and security, outcomes). The film is the metaphor; the captions carry the meaning.
@@ -141,3 +141,7 @@ labels beside titles, Education inline; `lamp-low` = portrait ≤ 700 px tall or
 in the two bottom corners and the closing band clear of the lamp to 0.045·fh; `phone-short` ≤ 700 px tall portrait: Contact halos);
 ScrollToTop hides over phone text and the footer; focus rings on the auth controls. Final pass: no blocker, no major; production LCP
 64–124 ms, contrast minimum 8.15 / 4.72 over 1708 block states at 15 sizes.
+**2026-10-16, after the merge:** Will removed the Experience/Education section and asked for a services tone (the site offers AWS
+work to companies, founders and teams; nothing reads as job-seeking). tower-01 now plays as a wordless passage (`#bridge`,
+FilmSegment, pace 120 ≈ 2.4 vh, dissolveIn 0.2 from the exit's key), Contact is chapter 05 and carries the offer; hero badge
+\"Available for new engagements.\"; copy rewritten in content/about.ts, the hero line, Contact and the Projects lede.

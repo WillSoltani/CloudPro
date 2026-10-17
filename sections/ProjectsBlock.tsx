@@ -129,7 +129,7 @@ export function ProjectsBlock() {
           n={PLATE.n}
           title={PLATE.headingText}
           support={PLATE.machine}
-          lede="Portfolio-grade builds with real security, reliability, and observability. Click into a case study for architecture + tradeoffs."
+          lede="Production-grade builds with real security, reliability, and observability. Click into a case study for architecture + tradeoffs."
         />
       </FrameBand>
       <FrameBand from={0.3} to={0.8} after={0.26}>

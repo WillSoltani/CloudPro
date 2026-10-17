@@ -14,7 +14,7 @@ import { NIGHT, boxHalo, closingBand } from "@/components/film/tones";
 
 const FILM = REEL[REEL_INDEX.contact];
 const C = CHOREO.contact;
-const PLATE = RACK_CAPTIONS.plates[5];
+const PLATE = RACK_CAPTIONS.plates[4];
 const EXTRA = C.head.plate.extra ?? {};
 const LINKS = RACK_CAPTIONS.contact.links;
 /** The lamp's distance from the bottom of the viewport (frame y 0.848; frameBox vars): the band's clear disc. */
@@ -38,9 +38,9 @@ const LINK_SHORT = {
 } as CSSProperties;
 
 /**
- * 06 Contact and the footer, the page's last chapter (§2f) on tower-04: the camera cranes up into the cloud
- * to the lamp; as the lamp settles (S) "06" and the name arrive, then "Let's Connect", the closing line,
- * the paragraph and the three links one by one; at rest tower-K4 breathes about the lamp and the footer
+ * 05 Contact and the footer, the page's last chapter (§2f) on tower-04, joined to the bridge: the camera
+ * cranes up into the cloud to the lamp; as the lamp settles (S) "05" and the name arrive, then "Start a
+ * project", the offer line, the paragraph and the three links one by one; at rest tower-K4 breathes about the lamp and the footer
  * arrives in the bottom band. The page ends inside this chapter's read pin (0.6 vh), so the composition is
  * still pinned at the bottom of the page.
  *
@@ -61,6 +61,8 @@ export function ContactSection() {
       choreo={C}
       section={PLATE.section}
       breath={breathOf(FILM)}
+      // Joined to the bridge (no hold between): its move starts where tower-01's ends.
+      join
       // tower-04's first frame matches tower-K3 only at SSIM 0.95 (not a byte join): dissolve out of the key,
       // over 0.1 of the move (the key gone by f14, before the crane starts moving at f16: no doubled roofs).
       dissolveIn={0.1}
@@ -74,7 +76,7 @@ export function ContactSection() {
             // in the darker part and end by the band's frame y 0.52 (1280×650, 1366×657).
             <Reveal at={EXTRA.kicker} className="mt-6 wide:mt-8 wide-tight:mt-3">
               <h3 className="font-serif text-[1.75rem] font-normal leading-tight text-slate-50 wide:text-[clamp(1.6rem,2vw,2.2rem)]">
-                Let’s Connect
+                Start a project
               </h3>
             </Reveal>
           ) : null}
@@ -91,8 +93,8 @@ export function ContactSection() {
               className={`mx-auto mt-4 max-w-[32rem] ${BODY_TEXT} wide-tight:mt-2`}
               style={PARAGRAPH_SHORT}
             >
-              I’m looking for cloud roles and I love building production-style AWS projects. Reach out for
-              opportunities, collaborations, or code reviews.
+              I work with companies, founders and teams on new AWS builds, architecture and code reviews, and
+              fixes for systems already in production.
             </Reveal>
           ) : null}
           <ul className="mt-7 flex flex-wrap items-baseline justify-center gap-x-6 gap-y-3 wide-tight:mt-2">

@@ -253,39 +253,8 @@ function towerBeat(name: string, id: string): number {
 }
 
 /**
- * Experience on tower-01 (the bridge + lights-on): the bridge half carries nothing · "05" [L, L+4], name
- * [L+2, L+8], nav → Experience at L (lamp_lit 123) · Work at [lights_1 + 4, +10] (240–246), Education at
- * [lights_2 + 4, +10] (255–261) · the bullets on the read pin (τ [.05, .15] and [.10, .20] of a ≈ 0.33 pin)
- * · read pin on tower-K3 with the key's push · release.
- */
-function experience(): ChapterChoreo {
-  const name = "tower-01";
-  const L = towerBeat(name, "lamp_lit");
-  const l1 = towerBeat(name, "lights_1");
-  const l2 = towerBeat(name, "lights_2");
-  const head: HeadWindows = { number: [L, L + 4], h2: [L + 2, L + 8] };
-  return {
-    film: name,
-    M: towerFilm(name).count - 1,
-    amber: L,
-    land: L + 2,
-    headAt: L + 2,
-    head: { plate: head, noPlate: head },
-    items: [
-      [l1 + 4, l1 + 10],
-      [l2 + 4, l2 + 10],
-    ],
-    pins: [
-      [0.15, 0.45],
-      [0.3, 0.6],
-    ],
-    readVh: 0.5,
-  };
-}
-
-/**
  * Contact + footer on tower-04, the page's last chapter (it ends inside the read pin): lamp_settle S (112) ·
- * "06" [S−12, S−8], name [S−10, S−4] · "Let's Connect" [S−4, S+2] · the closing line [S, S+6] · paragraph
+ * "05" [S−12, S−8], name [S−10, S−4] · "Let's Connect" [S−4, S+2] · the closing line [S, S+6] · paragraph
  * [S+2, S+8] · link k at [S+4+3k, S+8+3k] · the footer over the first fifth of the pin (τ [0, .2]) · read
  * pin 0.6 vh.
  */
@@ -315,7 +284,6 @@ export const CHOREO = {
   certifications: certifications(),
   skills: skills(),
   projects: projects(),
-  experience: experience(),
   contact: contact(),
 } as const;
 

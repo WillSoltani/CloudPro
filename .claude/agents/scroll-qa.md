@@ -28,10 +28,10 @@ You QA the homepage reel. Do not edit source files: report findings with numbers
 | 3 | `skills` | `rack-03` · `-p` | 120 | 84 | `rack-K03(-p)` | byte-identical join |
 | 4 | `projects` | `rack-04` · `-p` | 96 | 84 | `rack-K04(-p)` | byte-identical join |
 | 5 | `#exit` (FilmSegment, no section) | `rack-05` · `rack-05-p` (163 frames, scene 648–810; static tail f144–162) | 162 | 84 | `rack-K05(-p)` (its exact last frame: fog and the point) | byte-identical from rack-04 on both cameras (no dissolve) |
-| 6 | `experience` | `tower-01` · `tower-01-p` (289 frames: bridge 145 + lights-on 144, clips mode) | 288 | 84 | `tower-K3(-p)` | joined; dissolve from the exit's key (`dissolveIn` 0.2) |
+| 6 | `#bridge` (FilmSegment, no section: a wordless passage since the Experience chapter was removed) | `tower-01` · `tower-01-p` (289 frames: bridge 145 + lights-on 144, clips mode) | 288 | 120 | `tower-K3(-p)` | joined; dissolve from the exit's key (`dissolveIn` 0.2) |
 | 7 | `contact` + footer | `tower-04` · `tower-04-p` (145 frames) | 144 | 84 | `tower-K4(-p)` | generated join over tower-K3 (`dissolveIn` 0.2); the page ends inside its read pin |
 
-- `HOLD_SECTIONS = [[], [about], [certifications], [skills], [projects], [], [experience], [contact]]`; `HOLD_KEYS` comes from
+- `HOLD_SECTIONS = [[], [about], [certifications], [skills], [projects], [], [], [contact]]`; `HOLD_KEYS` comes from
   REEL (portrait per index, falling back to the landscape key). M = the timeline's `segment` (rack films,
   `components/film/rack.timeline.json`; tower films: count − 1, beats from `tower.timeline.json`). Rack films rack-01…04 carry
   48 breathing-tail frames after M on both cameras (manifest counts 169/145/169/145; `tail.frames` 48 in the timeline; `TAILS_ON`
@@ -69,7 +69,7 @@ measure, until 500 ms after load and on leaps > 1 segment; no spring under reduc
 `data-compose-mode` `auto` | `stacked`) → `div[data-frame-area]` (+ `div[data-body]`) → spacer. `join` = `margin-top: −100svh`.
 - Reveals `[data-reveal]`: `data-at="f0,f1"` (the smoothed film frame), `data-tail="a,b"` (τ), `data-pin="a,b"` (fractions of the read
   pin, τ = pin·τ_read); `[data-flow]` body items fade on raw scroll. Tones: `[data-halo]` (::before radial halo, 0.58 at centre),
-  `[data-block-tone]` (stacked layouts), `[data-body]` (body tone), Experience's column tone (`[data-framed-only]`), the footer's
+  `[data-block-tone]` (stacked layouts), `[data-body]` (body tone), the column tone (`[data-framed-only]`, unused since Experience was removed), the footer's
   closing band. Layout: `[data-head]`, `[data-band]`, `[data-columns] > [data-col]`, `[data-rows] > [data-row]`, `[data-split-left|right]`, `[data-fit]`.
 - Plates (rack-01…04, both cameras: tracks `components/film/plates/rack-0N.json` and `rack-0N-p.json`; none under reduced motion
   or Save-Data): `[data-perspective-plate=i]` with
@@ -128,7 +128,7 @@ plate is hidden and the h2 at opacity 1; an instant jump from f0 to the read pin
 frames, and so does a jump from another segment (the spring jumps); a fast flick past the pin (release guard) lands or hides it
 within 2 frames. Lifts come from the tracks (`liftOf`, the last alpha ≥ 0.99 row): landscape rack-01 f75, rack-02 f66, rack-03 f71,
 rack-04 f37; portrait f75, f64, f70, f43.
-**C11 Deep links** (new context per load, cache disabled; dev and production): cold `/#<id>` for the six chapters: `scroll-behavior`
+**C11 Deep links** (new context per load, cache disabled; dev and production): cold `/#<id>` for the five chapters (and a stale `/#experience`: no hold, no key): `scroll-behavior`
 `auto` until `data-reel-ready`; `style#reel-hold-boot[data-hold]` = the HOLD_SECTIONS index with that key, before hydration; no
 other segment painted on the way; scrollY = T + m ± 2; `data-frame` = M; the key at 1 (tails off) or the boot key fading after the
 canvas has painted (tails on); screenshots at the `load` event and at 1 s, below the header and excluding ScrollToTop: mean |Δ| ≤ 2
@@ -137,7 +137,7 @@ must not paint them on a deep link: one that shows at load and vanishes after hy
 at τ = τ_read/2 of each chapter, reload: the boot key from sessionStorage, the same scrollY ± 2 and frame, no pop.
 **C12 Chrome and nav.** `data-reel-chrome` = `film` at p < 1, `composed` through the read pin, `body` after it (`composed` at the very
 end of Contact). `aria-current` / `data-reel-section`: none in the hero; About from rack-01 f20; Certifications from rack-02 f26;
-Skills rack-03 f42; Projects rack-04 f32; none over the exit; Experience at `lamp_lit`; Contact at its amber (S − 12) — one frame before
+Skills rack-03 f42; Projects rack-04 f32; none over the exit; none over the bridge; Contact at its amber (S − 12) — one frame before
 each switch shows the previous section. Header transparent (no blur classes) in `film` and `composed`, blurred in `body` once
 scrolled. ScrollToTop absent in `film`, present elsewhere past 500 px, except on coarse pointers where it is hidden whenever its box
 (+8 px) would cover a visible text line of the active composition or the footer text. Brand hidden through the hero intro, visible after.
@@ -156,7 +156,7 @@ no text within 0.07·h of the tower's lamp in Contact; plates per C10; `scrollWi
 LinkedIn; deep link `/#contact` boots `HOLD_KEYS.portrait[7]`.
 **C16 Contrast gate.** Per chapter at τ 0, τ_read (the breath's peak, g = 0.5) and τ 0.5, on desktop at 1440×900 AND at
 1280×800, 1366×768, 1366×657, 1440×700, 1536×730, 1280×650, 1440×775, 1280×720, 1920×1080 (small frames use the `wide-small`
-/ `wide-short` / `wide-tight` layouts, with box halos behind the Experience bullets; Contact's links and paragraph keep radial
+/ `wide-short` / `wide-tight` layouts, with box halos (the Experience ones are unused since that chapter was removed); Contact's links and paragraph keep radial
 halos), on phone, plus every body
 when fully in view: for every innermost text `[data-reveal]` / `[data-flow]` in view, take its text line boxes (Range client rects
 of its text nodes ∩ viewport); film pixels F = `getImageData` of the canvas drawn at CSS size, with every `[data-key]` whose opacity

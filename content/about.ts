@@ -6,6 +6,6 @@ export const about = {
       "I write case studies that explain architecture decisions, not just screenshots.",
     ],
     closing:
-      "Currently based in Toronto, ON. Open to remote roles across Canada.",
+      "Have an AWS system to design, build or fix? Tell me about it.",
   };
   
