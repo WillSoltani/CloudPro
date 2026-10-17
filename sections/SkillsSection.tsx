@@ -43,7 +43,7 @@ const COLS = { title: fwOf(0.22), gap: fwOf(0.02) };
  *
  * Desktop: head x 0.13, y 0.10–0.255 · five rows over the drives, y 0.27–0.87 (0.12 each): the group's
  * title at x 0.13–0.35 (Fraunces), its items at x 0.37–0.87 as one inline mono list. Phones: one block from
- * y 0.52 over a 0.75 tone; groups 1–2 in the block, 3–5 flow.
+ * y 0.54 (clear of the drawer at 0.52) over a 0.75 tone; groups 1–2 in the block, 3–5 flow.
  */
 export function SkillsSection() {
   return (
@@ -57,14 +57,14 @@ export function SkillsSection() {
       tail={tailOf(FILM)}
       plate={<RackPlate index={REEL_INDEX.skills} n={PLATE.n} name={PLATE.headingText} handoff />}
     >
-      <BlockTone top={0.52} alpha={0.75} />
-      <FrameBand from={0.1} to={HEAD_TO} x={0.13} right={0.87} stackedTop={0.52}>
+      <BlockTone top={0.54} alpha={0.75} />
+      <FrameBand from={0.1} to={HEAD_TO} x={0.13} right={0.87} stackedTop={0.54}>
         <ChapterHead
           compact={{ cols: `${COLS.title} minmax(0, 1fr)`, gap: COLS.gap }}
           n={PLATE.n}
           title={PLATE.headingText}
           support={PLATE.machine}
-          lede="A curated stack for building reliable, secure, and production-ready cloud systems."
+          lede="Five areas I work across, from the cloud bill to the pixel."
         />
       </FrameBand>
       <FrameBand from={ROWS_FROM} to={ROWS_TO} after={HEAD_TO} x={0.13} right={0.87}>

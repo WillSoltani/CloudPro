@@ -29,7 +29,7 @@ export type ChapterChoreo = {
   items: readonly FrameWindow[];
   /**
    * Windows in fractions of the read pin (Reveal `pin`: 0 = camera rest, 1 = the pin's end), for what
-   * arrives while the picture breathes (About's ProofStrip tokens, Experience's bullets, the footer).
+   * arrives while the picture breathes (About's ProofStrip tokens, the footer).
    */
   pins?: readonly FrameWindow[];
   /** The read pin after camera rest, in viewport heights. */

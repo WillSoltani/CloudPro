@@ -46,7 +46,6 @@ export function ChapterHead({
   lede,
   plateTarget = true,
   compact,
-  h2ClassName,
   className,
 }: {
   n: string;
@@ -62,8 +61,6 @@ export function ChapterHead({
    * frame y from 1280×800 down to 1366×657, the support line and lede on the rows' item column).
    */
   compact?: { cols: string; gap: string };
-  /** Extra classes on the h2 (Experience: 36 px on the short laptop windows). */
-  h2ClassName?: string;
   className?: string;
 }) {
   const { id, head } = useChapter();
@@ -85,7 +82,7 @@ export function ChapterHead({
           plateTarget
             ? `${CHAPTER_H2} ${CHAPTER_H2_PLATE} ${CHAPTER_H2_CLIP}`
             : `${CHAPTER_H2} ${CHAPTER_H2_PLAIN}`
-        }${compact ? ` ${COMPACT.h2}` : ""}${h2ClassName ? ` ${h2ClassName}` : ""}`}
+        }${compact ? ` ${COMPACT.h2}` : ""}`}
       >
         {plateTarget || !head.number ? (
           <Reveal

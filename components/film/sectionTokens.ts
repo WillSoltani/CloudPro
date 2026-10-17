@@ -68,5 +68,5 @@ export const MONO_LABEL = "font-mono text-[11px] uppercase leading-snug tracking
 /** Body copy over film or a tone: Geist Sans 15–16 px, slate-200. */
 export const BODY_TEXT = "text-[15px] leading-relaxed text-pretty text-slate-200 wide:text-base";
 
-/** A group or entry title (Skills' groups, Experience's roles): Fraunces, slate-50. */
+/** A group or entry title (Skills' groups, Certifications' and Projects' entries): Fraunces, slate-50. */
 export const GROUP_TITLE = "font-serif text-lg font-normal leading-snug text-slate-50 wide:text-[clamp(1.1rem,1.35vw,1.45rem)]";

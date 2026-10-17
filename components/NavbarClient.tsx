@@ -110,8 +110,10 @@ export function NavbarClient({ initialLoggedIn }: Props) {
       ].join(" ")}
     >
       <div className="flex items-center justify-between px-4 py-4 sm:px-6">
+        {/* The current route: nothing to prefetch (it only produced aborted `/?_rsc=` requests). */}
         <Link
           href="/#about"
+          prefetch={false}
           className={[
             "shrink-0 rounded-sm text-lg font-semibold transition-opacity duration-300",
             FOCUS_RING,

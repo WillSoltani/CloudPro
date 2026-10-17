@@ -17,7 +17,7 @@ const C = CHOREO.about;
 const PLATE = RACK_CAPTIONS.plates[0];
 
 /** The ProofStrip's four tokens (folded into About: they arrive on the read pin, one line above the ports). */
-const PROOF = ["AWS Certified x3", "Security-first", "Observability built-in", "IaC: CDK/CloudFormation"];
+const PROOF = ["AWS Certified x3", "Web, mobile and AI", "Security-first", "IaC: CDK/CloudFormation"];
 
 /** DeliveryStrip, folded into About as its body: how the site itself ships. */
 function DeliveryBody() {

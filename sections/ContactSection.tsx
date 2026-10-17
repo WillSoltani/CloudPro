@@ -93,8 +93,8 @@ export function ContactSection() {
               className={`mx-auto mt-4 max-w-[32rem] ${BODY_TEXT} wide-tight:mt-2`}
               style={PARAGRAPH_SHORT}
             >
-              I work with companies, founders and teams on new AWS builds, architecture and code reviews, and
-              fixes for systems already in production.
+              I work with companies, founders and teams on AWS architecture, web and mobile products, AI
+              features, and systems already in production.
             </Reveal>
           ) : null}
           <ul className="mt-7 flex flex-wrap items-baseline justify-center gap-x-6 gap-y-3 wide-tight:mt-2">

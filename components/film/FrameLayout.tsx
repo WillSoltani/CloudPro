@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { columnTracks, fhOf, fwOf, fx, fy } from "@/components/film/frameBox";
+import { columnTracks, fhOf, fx, fy } from "@/components/film/frameBox";
 import { blockTone } from "@/components/film/tones";
 import { Reveal } from "@/components/film/Reveal";
 import { useChapter } from "@/components/film/chapterContext";
@@ -159,61 +159,5 @@ export function FrameRows({
         </li>
       ))}
     </ul>
-  );
-}
-
-/**
- * Two columns at frame x [left[0], left[1]] and [right[0], right[1]] (framed; the right one offset down by
- * `rightTop` frame heights relative to the left), one column when stacked (Experience: Work beside
- * Education). On small frames (fh < 880 px, the `wide-small` variant) the left column may start at
- * `smallLeft` instead (wider, so it wraps less) and the right one sit `smallRightTop` down; on the short
- * laptop windows (`wide-tight`) the left one may start at `tight.left` and the right span `tight.right`.
- * Children: exactly two nodes, left then right.
- */
-export function FrameSplit({
-  left,
-  right,
-  rightTop = 0,
-  smallLeft,
-  smallRightTop,
-  tight,
-  children,
-}: {
-  left: readonly [number, number];
-  right: readonly [number, number];
-  rightTop?: number;
-  smallLeft?: number;
-  smallRightTop?: number;
-  tight?: { left: number; right: readonly [number, number] };
-  children: readonly [ReactNode, ReactNode];
-}) {
-  // Each column keeps its frame x where it can and is cut back (never moved) where the frame runs past the
-  // viewport's 24 px edges on 4:3-ish windows: the left one starts at ≥ 24 px and still ends on left[1], the
-  // right one starts on right[0] and ends ≤ 24 px from the right edge.
-  const cols = (x0: number, r: readonly [number, number] = right) => {
-    const lead = `max(${EDGE}, ${fx(x0)})`;
-    return [
-      lead,
-      `min(${fwOf(left[1] - x0)}, calc(${fx(left[1])} - ${lead}))`,
-      fwOf(r[0] - left[1]),
-      `min(${fwOf(r[1] - r[0])}, calc(100cqw - ${EDGE} - ${fx(r[0])}))`,
-    ].join(" ");
-  };
-  const style = {
-    "--split-cols": cols(left[0]),
-    "--split-right-mt": fhOf(rightTop),
-    ...(smallLeft !== undefined ? { "--split-cols-s": cols(smallLeft) } : {}),
-    ...(smallRightTop !== undefined ? { "--split-right-mt-s": fhOf(smallRightTop) } : {}),
-    ...(tight ? { "--split-cols-t": cols(tight.left, tight.right) } : {}),
-  } as CSSProperties;
-  return (
-    <div data-split="" style={style}>
-      <div data-split-left="" data-fit="">
-        {children[0]}
-      </div>
-      <div data-split-right="" data-fit="">
-        {children[1]}
-      </div>
-    </div>
   );
 }

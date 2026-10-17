@@ -47,7 +47,7 @@ export const RACK_CAPTIONS = {
     name: "Will Soltani",
     title: ["Cloud Engineer", "AWS Solutions Architect"],
     location: "Toronto, ON · Remote-friendly",
-    line: "I design, build and run AWS systems for teams that need them to work in production.",
+    line: "I build production software end to end: AWS back ends, web and mobile apps, AI features.",
     cta: { label: "View Projects & Case Studies", href: "#projects" },
   },
   plates: [
