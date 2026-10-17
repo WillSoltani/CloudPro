@@ -1,0 +1,20 @@
+{
+  "name": "rack-00",
+  "count": 217,
+  "fps": 24,
+  "widths": [
+    768,
+    1280,
+    1920
+  ],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-00",
+  "poster": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-00/poster.webp",
+  "kb": {
+    "768": 2200,
+    "1280": 3996,
+    "1920": 6492
+  }
+}

@@ -6,15 +6,34 @@ section[id] {
   scroll-margin-top: 96px;
 }
 
-html { 
+html {
   scroll-behavior: smooth;
   scroll-padding-top: 88px;
  }
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Homepage only (the film segments exist nowhere else): a cold deep link such as /#projects lands at
+   once, so the backdrop paints the held frame instead of scrubbing the film on the way down. FilmBackdrop
+   sets data-reel-ready on load; anchor links scroll smoothly from then on. */
+html:has([data-film-segment]):not([data-reel-ready]) {
+  scroll-behavior: auto;
+}
 
 body {
   text-rendering: geometricPrecision;
   overflow-x: hidden;
   -webkit-tap-highlight-color: rgba(56, 189, 248, 0.18);
+}
+
+/* Portfolio surface (PageShell): the tap flash is the lamp amber, so no second accent appears over the
+   film's CTA or the navbar. Inherited, so it covers every link inside. ChapterFlow keeps the body default. */
+[data-surface="portfolio"] {
+  -webkit-tap-highlight-color: rgba(240, 166, 60, 0.18);
 }
 
 /* Safe-area bottom padding for notched/Dynamic Island devices */
@@ -27,12 +46,56 @@ body {
 }
 
 @custom-variant dark (&:is(.dark *));
+/* Desktop film layout: wide enough for a caption column and landscape, so a cover-cropped frame keeps its quiet left quarter. */
+@custom-variant wide (@media (min-width: 64rem) and (orientation: landscape));
+/* The same, on windows at most 800 px tall (1280×800 down to the maximised-browser sizes of 768 / 864 / 900
+   px laptops: 1366×657, 1440×700–775, 1536×730, 1280×650): a compact chapter head (ChapterHead `compact`) so
+   a frame band below it still lands on its frame y. */
+@custom-variant wide-short (@media (min-width: 64rem) and (orientation: landscape) and (max-height: 50rem));
+/* The same where the film's frame is under 880 px tall (fh = max(width · 9/16, height): 1280×800, 1366×768
+   and every shorter laptop window): fixed-px type then fills more of the frame, so Experience tightens and
+   moves its columns off the beam and the skyline (ExperienceSection, FrameSplit `small*`, box halos). */
+@custom-variant wide-small (@media (min-width: 64rem) and (orientation: landscape) and (max-width: 1563px) and (max-height: 879px));
+/* Within those, the short laptop windows: at most 760 px tall (1280×720, 1366×657, 1440×700, 1536×730,
+   1280×650), or a window so much wider than 16:9 that the frame is cropped top and bottom (aspect ≥ 1.85:
+   1440×775). The 96 px header line then falls at frame y 0.13–0.19, so Experience folds its entries tighter
+   still (labels beside the titles, Education's bullets inline, a wider Work and Education). 1280×800 and
+   1366×768 are not in it. */
+/* Short phones (portrait, at most 700 px tall: 375×667, 360×640, 320×568), where the portrait crop of tower-04
+   puts the lamp at ≈ 0.93 of the height: Contact's footer splits into the corners around it. */
+@custom-variant phone-short (@media (orientation: portrait) and (max-height: 700px));
+/* Where tower-04's lamp sits on the footer's row, so Contact's footer splits into the bottom corners around it:
+   the short phones (as `phone-short`) and landscape windows much wider than 16:9 (aspect ≥ 1.85, or at most
+   600 px tall), where the cover-fit crops the frame top and bottom and the lamp falls 55–105 px from the
+   bottom (1366×657, 1440×700, 1536×730, 1280×650, 1440×775; also 1920×970). */
+@custom-variant lamp-low {
+  @media (orientation: portrait) and (max-height: 700px) {
+    @slot;
+  }
+  @media (min-width: 64rem) and (orientation: landscape) and (min-aspect-ratio: 37/20) {
+    @slot;
+  }
+  @media (min-width: 64rem) and (orientation: landscape) and (max-height: 600px) {
+    @slot;
+  }
+}
+@custom-variant wide-tight {
+  @media (min-width: 64rem) and (orientation: landscape) and (max-width: 1563px) and (max-height: 760px) {
+    @slot;
+  }
+  @media (min-width: 64rem) and (orientation: landscape) and (max-width: 1563px) and (max-height: 879px) and (min-aspect-ratio: 37/20) {
+    @slot;
+  }
+}
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-fraunces), "Iowan Old Style", Georgia, serif;
+  --color-lamp: #f0a63c;
+  --color-night: #070b16;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -162,5 +225,216 @@ body {
   body {
     background: rgb(var(--bg));
     color: rgb(var(--text));
+  }
+}
+
+/* Part five: chapter compositions (components/film/FilmChapter.tsx, FrameLayout.tsx, frameBox.ts). The
+   frame variables take the playing film's aspect by the page's `wide` rule (the one FilmBackdrop picks its
+   films with). The framed layout applies where `wide` holds and the chapter's fit guard has not set
+   data-compose-mode="stacked"; everywhere else the composition is one stacked block, as on phones. In a
+   layer so utilities on the same elements still win. */
+@layer components {
+  [data-compose] {
+    --fa: var(--fa-p);
+  }
+  [data-band] {
+    margin-top: var(--band-mt-s, 0px);
+    padding-inline: max(20px, calc((100cqw - 36rem) / 2));
+  }
+  [data-columns] {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  [data-block-tone] {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  /* A halo behind a small-text block (tones.ts HALO via --halo): shade on the picture, never a panel. */
+  [data-halo] {
+    position: relative;
+    /* No isolation: the halo's ::before (z-index -1) must sit under every sibling's text in the composition
+       (the sticky box is the stacking context), not over an earlier block's last line. */
+  }
+  [data-halo]::before {
+    content: "";
+    position: absolute;
+    inset: -18px -36px;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--halo);
+  }
+  @media (min-width: 64rem) and (orientation: landscape) {
+    [data-compose] {
+      --fa: var(--fa-l);
+    }
+    [data-compose-mode="auto"] [data-band] {
+      margin-top: var(--band-mt, 0px);
+      min-height: var(--band-min, 0px);
+      padding-inline: var(--band-pl, 0px) 0px;
+      max-width: var(--band-max, none);
+    }
+    [data-compose-mode="auto"] [data-columns] {
+      display: grid;
+      grid-template-columns: var(--cols);
+      column-gap: 0;
+      align-items: start;
+    }
+    [data-compose-mode="auto"] [data-col] {
+      grid-row: 1;
+      grid-column: var(--col);
+    }
+    [data-compose-mode="auto"] [data-block-tone] {
+      display: none;
+    }
+  }
+  /* A focused link inside a not-yet-revealed element is shown at once (Reveal). */
+  [data-reveal]:focus-within {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* A chapter's body (FilmChapter `body`): flat block tone when stacked; the light centre tone with its
+   eased 160 px top where the composition is framed. */
+@layer components {
+  [data-body] {
+    background-color: rgb(7 11 22 / 0.85);
+    mask-image: var(--body-mask-bottom);
+  }
+  @media (min-width: 64rem) and (orientation: landscape) {
+    [data-compose-mode="auto"] [data-body] {
+      background-color: transparent;
+      background-image: var(--body-tone);
+      mask-image: var(--body-mask);
+    }
+  }
+}
+
+/* Rows and splits (FrameLayout FrameRows / FrameSplit): stacked by default, framed where `wide` holds. */
+@layer components {
+  [data-rows] {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+  }
+  [data-split] {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding-inline: max(20px, calc((100cqw - 36rem) / 2));
+  }
+  @media (min-width: 64rem) and (orientation: landscape) {
+    [data-compose-mode="auto"] [data-rows] {
+      gap: 0;
+    }
+    [data-compose-mode="auto"] [data-row] {
+      min-height: var(--row-h);
+    }
+    /* The row's one child (its Reveal) is the grid: the title track, then the body track. */
+    [data-compose-mode="auto"] [data-row] > * {
+      display: grid;
+      grid-template-columns: var(--row-cols);
+      column-gap: var(--row-gap);
+      align-items: baseline;
+    }
+    [data-compose-mode="auto"] [data-split] {
+      display: grid;
+      grid-template-columns: var(--split-cols);
+      align-items: start;
+      gap: 0;
+      padding-inline: 0;
+    }
+    [data-compose-mode="auto"] [data-split-left] {
+      grid-column: 2;
+      grid-row: 1;
+    }
+    [data-compose-mode="auto"] [data-split-right] {
+      grid-column: 4;
+      grid-row: 1;
+      margin-top: var(--split-right-mt);
+    }
+  }
+  /* Small frames (the `wide-small` variant): FrameSplit's `smallLeft` / `smallRightTop`, and the soft box
+     halo (tones.ts boxHalo via --box-*) for a small-text block over bright fog, which follows its block. */
+  @media (min-width: 64rem) and (orientation: landscape) and (max-width: 1563px) and (max-height: 879px) {
+    [data-compose-mode="auto"] [data-split] {
+      grid-template-columns: var(--split-cols-s, var(--split-cols));
+    }
+    [data-compose-mode="auto"] [data-split-right] {
+      margin-top: var(--split-right-mt-s, var(--split-right-mt));
+    }
+    [data-compose-mode="auto"] [data-halo="box"]::before {
+      inset: var(--box-inset);
+      background: var(--box-bg);
+      mask-image: var(--box-mask);
+    }
+  }
+  /* The short laptop windows (`wide-tight`): FrameSplit's `tight` columns, a box halo's own profile there
+     (--box-bg-t), and a list set inline (`data-inline-tight`: Experience's Education bullets) with a quiet
+     separator between its items. */
+  [data-compose-mode="auto"] [data-split] {
+    @variant wide-tight {
+      grid-template-columns: var(--split-cols-t, var(--split-cols-s, var(--split-cols)));
+    }
+  }
+  [data-compose-mode="auto"] [data-halo="box"]::before {
+    @variant wide-tight {
+      background: var(--box-bg-t, var(--box-bg));
+    }
+  }
+  /* Contact's closing band keeps tower-04's lamp and its halo clear at every size: a clear disc of 0.045 of the
+     frame round the lamp (frame x 0.50; --lamp-b: its distance from the band's bottom), full shade again at
+     0.07 of the frame, where the short phones' footer corners begin. In landscape the footer is far from the
+     lamp, so the shade eases back in over a wider ring (to 0.105 of the frame) and reads as the lamp's glow. */
+  [data-closing-band] {
+    mask-image: radial-gradient(
+      circle at calc(var(--fx0) + var(--fw) * 0.5) calc(100% - var(--lamp-b)),
+      rgb(0 0 0 / 0) 0,
+      rgb(0 0 0 / 0) calc(var(--fh) * 0.045),
+      rgb(0 0 0 / 1) calc(var(--fh) * 0.07)
+    );
+    @variant wide {
+      mask-image: radial-gradient(
+        circle at calc(var(--fx0) + var(--fw) * 0.5) calc(100% - var(--lamp-b)),
+        rgb(0 0 0 / 0) 0,
+        rgb(0 0 0 / 0) calc(var(--fh) * 0.045),
+        rgb(0 0 0 / 0.2) calc(var(--fh) * 0.06),
+        rgb(0 0 0 / 0.55) calc(var(--fh) * 0.075),
+        rgb(0 0 0 / 0.85) calc(var(--fh) * 0.09),
+        rgb(0 0 0 / 1) calc(var(--fh) * 0.105)
+      );
+    }
+  }
+  /* Contact on the short phones, where its paragraph and links sit over brighter sky: a halo can take a stronger
+     shape there from custom properties (ContactSection: the paragraph a soft box, tones.ts boxHalo; the links a
+     deeper radial); without them it is the plain halo. */
+  [data-halo]::before {
+    @variant phone-short {
+      inset: var(--halo-inset-s, -18px -36px);
+      background: var(--halo-s, var(--halo));
+      mask-image: var(--halo-mask-s, none);
+    }
+  }
+  [data-compose-mode="auto"] [data-inline-tight] > li + li::before {
+    @variant wide-tight {
+      content: " · ";
+      content: " · " / "";
+      color: rgb(100 116 139);
+    }
+  }
+}
+
+/* Layers that only exist in the framed layout (Experience's column tone; phones use the block tone). */
+@layer components {
+  [data-framed-only] {
+    display: none;
+  }
+  @media (min-width: 64rem) and (orientation: landscape) {
+    [data-compose-mode="auto"] [data-framed-only] {
+      display: block;
+    }
   }
 }

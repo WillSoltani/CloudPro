@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { LayoutDashboard, Menu, X } from "lucide-react";
+import { ExternalLink, Github, LayoutDashboard, Linkedin, Menu, X } from "lucide-react";
 import Link from "next/link";
 
 import { LoginButton } from "@/components/auth/LoginButton";
 import { LogoutButton } from "@/components/auth/LogoutButton";
+import { FOCUS_RING } from "@/components/focusRing";
 import { useAuthStatus } from "@/components/auth/useAuthStatus";
+import { HERO_INTRO_END } from "@/components/film/heroBeats";
+import { HERO_FILM_SELECTOR, useFilmInView } from "@/components/film/useFilmInView";
+import { useReelChrome } from "@/components/film/useReelChrome";
+import { social, type SocialId } from "@/content/social";
 
 const links = [
   { id: "about", label: "About" },
@@ -17,6 +22,8 @@ const links = [
   { id: "experience", label: "Experience" },
   { id: "contact", label: "Contact" },
 ] as const;
+
+const socialIcons: Record<SocialId, typeof Github> = { github: Github, linkedin: Linkedin };
 
 const panelVariants = {
   hidden: { opacity: 0, y: -10, scale: 0.98 },
@@ -44,47 +51,38 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     ? (initialLoggedIn ?? false)
     : loggedIn === true;
 
-  const [active, setActive] = useState<string>("about");
   const [scrolled, setScrolled] = useState(false);
+  const [nearTop, setNearTop] = useState(true);
   const [open, setOpen] = useState(false);
+  // `inView`: the hero extends below the header's bottom edge (the brand hides there).
+  const film = useFilmInView("-80px 0px 0px 0px");
+  // The reel clock (FilmBackdrop): `section` is the chapter whose unit has lit (the active pill, in step
+  // with the film rather than a scroll-spy band); `chrome` is what lies under the header.
+  const { chrome, section } = useReelChrome();
+  const active: string | null = section || null;
 
-  const linkIds = useMemo(() => links.map((l) => l.id), []);
-
-  const handleNavClick = (id: string) => {
-    setActive(id);
+  const handleNavClick = () => {
     setOpen(false);
   };
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
+    const onScroll = () => {
+      setScrolled(window.scrollY > 8);
+      const f = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
+      // The hero's opening caption is gone at the end of its intro window (heroBeats HERO_INTRO_END, 10 %
+      // of the film's scrub today), so the name returns there (a fixed half screen would leave it missing
+      // for a few hundred px on the long hero).
+      const range = f ? f.offsetHeight - window.innerHeight : 0;
+      setNearTop(window.scrollY < (range > 0 ? HERO_INTRO_END * range : 0.55 * window.innerHeight));
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    window.addEventListener("resize", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
   }, []);
-
-  useEffect(() => {
-    const els = linkIds
-      .map((id) => document.getElementById(id))
-      .filter(Boolean) as HTMLElement[];
-
-    if (els.length === 0) return;
-
-    const obs = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) => (b.intersectionRatio ?? 0) - (a.intersectionRatio ?? 0)
-          )[0];
-
-        if (visible?.target?.id) setActive(visible.target.id);
-      },
-      { threshold: 0.15, rootMargin: "-10% 0px -70% 0px" }
-    );
-
-    els.forEach((el) => obs.observe(el));
-    return () => obs.disconnect();
-  }, [linkIds]);
 
   useEffect(() => {
     const onResize = () => {
@@ -94,32 +92,54 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // Over the film the header stays glass-clear (camera moves, the hero, a chapter's pinned composition),
+  // so the reel reads as one piece; the blurred bar comes only over bodies: hold panels, a chapter's
+  // release and anything that scrolls over the film as a block.
+  const blurred = scrolled && chrome === "body";
+  // The film's hero already says the name: hide the brand while its opening caption is on screen, i.e.
+  // until the end of the hero's intro window (nearTop; half a screen if there is no hero). Before the
+  // observer reports, assume the film (this navbar is homepage-only).
+  const brandHidden = nearTop && (film.inView || !film.present);
+
   return (
     <header
       className={[
-        "fixed top-0 left-0 right-0 z-50 transition",
-        scrolled
-          ? "border-b border-white/10 bg-[#070b16]/70 backdrop-blur"
-          : "border-b border-white/5 bg-transparent",
+        "fixed top-0 left-0 right-0 z-50 border-b transition-colors duration-300",
+        blurred
+          ? "border-white/10 bg-[#070b16]/70 backdrop-blur"
+          : "border-transparent bg-transparent",
       ].join(" ")}
     >
       <div className="flex items-center justify-between px-4 py-4 sm:px-6">
-        <Link href="/#about" className="shrink-0 text-lg font-semibold">
+        <Link
+          href="/#about"
+          className={[
+            "shrink-0 rounded-sm text-lg font-semibold transition-opacity duration-300",
+            FOCUS_RING,
+            brandHidden ? "pointer-events-none opacity-0" : "opacity-100",
+          ].join(" ")}
+          tabIndex={brandHidden ? -1 : undefined}
+          aria-hidden={brandHidden || undefined}
+        >
           <span className="bg-linear-to-b from-white to-slate-300 bg-clip-text text-transparent">
             Will Soltani
           </span>
         </Link>
 
         <div className="flex items-center gap-3">
-          <nav className="relative hidden gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm text-slate-300 md:flex">
+          <nav
+            aria-label="Primary"
+            className="relative hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1 text-sm text-slate-300 md:flex"
+          >
             {links.map((l) => {
               const isActive = active === l.id;
               return (
                 <a
                   key={l.id}
                   href={`#${l.id}`}
-                  onClick={() => handleNavClick(l.id)}
-                  className="relative rounded-full px-3 py-1.5 hover:text-slate-100"
+                  onClick={handleNavClick}
+                  aria-current={isActive ? "location" : undefined}
+                  className={`relative rounded-full px-3 py-1.5 hover:text-slate-100 ${FOCUS_RING}`}
                 >
                   {isActive ? (
                     <motion.span
@@ -136,12 +156,28 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                 </a>
               );
             })}
+            <span aria-hidden className="mx-0.5 h-4 w-px bg-white/10" />
+            {social.map((s) => {
+              const Icon = socialIcons[s.id];
+              return (
+                <a
+                  key={s.id}
+                  href={s.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`${s.label} (opens in a new tab)`}
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-300 transition-colors hover:bg-white/10 hover:text-slate-100 ${FOCUS_RING}`}
+                >
+                  <Icon aria-hidden className="h-4 w-4" />
+                </a>
+              );
+            })}
           </nav>
 
           {showLoggedIn ? (
             <Link
               href="/dashboard"
-              className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 text-sm text-slate-100 shadow-[0_0_0_0_rgba(56,189,248,0.0)] transition hover:bg-white/15 hover:shadow-[0_0_28px_rgba(56,189,248,0.22)]"
+              className={`hidden md:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 text-sm text-slate-100 shadow-[0_0_0_0_rgba(56,189,248,0.0)] transition hover:bg-white/15 hover:shadow-[0_0_28px_rgba(56,189,248,0.22)] ${FOCUS_RING}`}
             >
               <LayoutDashboard className="h-4 w-4 text-sky-200" />
               Dashboard
@@ -153,7 +189,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
 
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden"
+            className={`inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden ${FOCUS_RING}`}
             onClick={() => setOpen((v) => !v)}
             aria-label="Toggle menu"
             aria-expanded={open}
@@ -173,7 +209,10 @@ export function NavbarClient({ initialLoggedIn }: Props) {
             className="md:hidden"
           >
             <div className="px-4 pb-4 sm:px-6">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-2 backdrop-blur">
+              <nav
+                aria-label="Primary"
+                className="rounded-2xl border border-white/10 bg-[#070b16]/80 p-2 backdrop-blur"
+              >
                 {showLoggedIn ? (
                   <motion.div
                     custom={-1}
@@ -185,7 +224,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                     <Link
                       href="/dashboard"
                       onClick={() => setOpen(false)}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-slate-100 transition hover:bg-white/10"
+                      className={`flex items-center justify-between rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-slate-100 transition hover:bg-white/10 ${FOCUS_RING}`}
                     >
                       <span className="flex items-center gap-2">
                         <LayoutDashboard className="h-4 w-4 text-sky-200" />
@@ -206,13 +245,15 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                       variants={itemVariants}
                       initial="hidden"
                       animate="show"
+                      aria-current={isActive ? "location" : undefined}
                       className={[
                         "flex items-center justify-between rounded-xl px-4 py-3 text-sm transition",
+                        FOCUS_RING,
                         isActive
                           ? "bg-white/10 text-slate-100"
                           : "text-slate-300 hover:bg-white/10 hover:text-slate-100",
                       ].join(" ")}
-                      onClick={() => handleNavClick(l.id)}
+                      onClick={handleNavClick}
                     >
                       <span>{l.label}</span>
                       {isActive ? (
@@ -221,10 +262,38 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                     </motion.a>
                   );
                 })}
+
+                <div className="mt-2 border-t border-white/10 pt-2">
+                  {social.map((s, i) => {
+                    const Icon = socialIcons[s.id];
+                    return (
+                      <motion.a
+                        key={s.id}
+                        href={s.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        custom={links.length + i}
+                        variants={itemVariants}
+                        initial="hidden"
+                        animate="show"
+                        onClick={() => setOpen(false)}
+                        className={`flex items-center justify-between rounded-xl px-4 py-3 text-sm text-slate-300 transition hover:bg-white/10 hover:text-slate-100 ${FOCUS_RING}`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Icon aria-hidden className="h-4 w-4" />
+                          {s.label}
+                          <span className="sr-only"> (opens in a new tab)</span>
+                        </span>
+                        <ExternalLink aria-hidden className="h-4 w-4 text-slate-500" />
+                      </motion.a>
+                    );
+                  })}
+                </div>
+
                 <div className="mt-2 border-t border-white/10 px-2 pb-1 pt-2">
                   {showLoggedIn ? <LogoutButton /> : <LoginButton />}
                 </div>
-              </div>
+              </nav>
             </div>
           </motion.div>
         ) : null}

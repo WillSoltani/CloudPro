@@ -113,15 +113,32 @@ npm --prefix infra run cdk -- bootstrap aws://<ACCOUNT_ID>/<REGION>
    - S3
    - Step Functions
    - Lambda
-   - any IAM roles used by the stack
+   - CloudFront
+   - any IAM roles used by the stacks
 
-### Deploy the infra stack
+### Deploy the infra stacks
+
+Two stacks, both in `us-east-1`:
+
+- `CloudPortfolioStorage` — table, buckets, Step Functions, worker
+- `CloudPortfolioFilms` — S3 + CloudFront for the homepage film frames. It needs no application env vars:
+  the CDN URL is baked into the committed `public/films/<film>/manifest.json`.
 
 ```bash
-npm --prefix infra run cdk -- deploy <STACK_NAME> --require-approval never
+npm --prefix infra run cdk -- deploy CloudPortfolioStorage CloudPortfolioFilms --require-approval never --outputs-file cdk.out/films-outputs.json
 ```
 
 After deploy, capture the live resource names and update the application environment variables if they differ from your expected values.
+
+### Upload film frames
+
+After the infra deploy, with the film built locally by `scripts/films/build-film.sh`:
+
+```bash
+scripts/films/sync-film.sh <film> --write-manifest
+```
+
+Commit the rewritten `public/films/<film>/manifest.json` (its `base` and `poster` now point at CloudFront). The frames themselves are gitignored and never committed; a re-cut film gets a new name rather than overwriting an immutable path.
 
 ## 5. Stripe billing setup
 
@@ -224,6 +241,11 @@ Run these checks against the deployed app:
 - profile stats and settings persist after refresh
 - badge surfaces load and update
 - checkout and billing portal buttons behave correctly based on Stripe configuration
+
+### Homepage film
+- film frames load from the CloudFront host (Network panel: `https://<distribution>.cloudfront.net/films/<film>/…`, `image/webp`)
+- no console errors, including CORS
+- the poster image is the LCP element
 
 ### Cloud Portfolio
 - project list loads

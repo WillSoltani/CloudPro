@@ -1,0 +1,18 @@
+{
+  "name": "tower-04-p",
+  "count": 145,
+  "fps": 24,
+  "widths": [
+    432,
+    499
+  ],
+  "aspect": 0.4620,
+  "pad": 4,
+  "ext": "webp",
+  "base": "https://dkkkpszkw3bz9.cloudfront.net/films/tower-04-p",
+  "poster": "https://dkkkpszkw3bz9.cloudfront.net/films/tower-04-p/poster.webp",
+  "kb": {
+    "432": 984,
+    "499": 1220
+  }
+}

@@ -1,93 +1,102 @@
 "use client";
 
-import { BadgeCheck } from "lucide-react";
-import { motion } from "framer-motion";
+import { FilmChapter } from "@/components/film/FilmChapter";
+import { ChapterHead } from "@/components/film/ChapterHead";
+import { BlockTone, FrameBand, FrameColumns } from "@/components/film/FrameLayout";
+import { Reveal } from "@/components/film/Reveal";
+import { RackPlate } from "@/components/film/RackPlate";
+import { RideAnchor } from "@/components/film/RideAnchor";
+import { ANCHORS, CHOREO, type FrameWindow } from "@/components/film/choreo";
+import { RACK_CAPTIONS } from "@/components/film/rackCaptions";
+import { REEL, REEL_INDEX, breathOf, moveVhOf, tailOf } from "@/components/film/reel";
+import { FILM_LINK, ITEM_META, ITEM_NAME } from "@/components/film/sectionTokens";
+import { certifications, type Certification } from "@/content/certifications";
 
-import { Section } from "@/components/Section";
-import { certifications } from "@/content/certifications";
+const FILM = REEL[REEL_INDEX.certifications];
+const CHOREO_CERTS = CHOREO.certifications;
+const PLATE = RACK_CAPTIONS.plates[1];
+/** Column centres on the four cartridges at rest (the renderer's exported anchors, choreo.ts ANCHORS). */
+const CARTRIDGES = ANCHORS.cartridges.map(([x]) => x);
+/** Each column's width as a share of the frame (the cartridges sit 0.19 apart). */
+const COLUMN_WIDTH = 0.17;
 
-import { Card } from "@/components/ui/card";
+function CertificationItem({ c, at }: { c: Certification; at: FrameWindow }) {
+  const meta = [c.issuer, c.year].filter(Boolean).join(" · ");
+  return (
+    <Reveal at={at} data-halo="">
+      <p className={ITEM_META}>{meta}</p>
+      <h3 className={ITEM_NAME}>{c.name}</h3>
+      {c.verifyUrl ? (
+        <a
+          href={c.verifyUrl}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`Verify ${c.name} (opens in a new tab)`}
+          className={`mt-3 ${FILM_LINK}`}
+        >
+          Verify <span aria-hidden>↗</span>
+        </a>
+      ) : null}
+    </Reveal>
+  );
+}
 
+/**
+ * 02 Certifications, the first chapter of part five (§2f): rack-02 opens the security unit and the
+ * section arrives with it. f26 the unit lights (plate 02 on its label well, nav → Certifications); the
+ * plate lifts at f66 and lands in the heading at f84 while the camera settles straight down over the
+ * carrier; each certification arrives once its cartridge has tipped face-up and the carrier has come to
+ * rest ([74 + 5k, 80 + 5k]), in a column centred on that cartridge, riding the cartridge's exported track
+ * until the camera rests (f84); then the h2, "● SECURITY" and the lede; a 0.5 vh read pin; no body.
+ *
+ * Desktop: head at frame x 0.13, y 0.17–0.33; the cartridges (y 0.34–0.54) stay clear; the four columns
+ * y 0.57–0.80. Phones (portrait film) and anything the fit guard stacks: one block from y 0.62 over the
+ * block tone, the four certifications as rows (same windows); what does not fit enters on release.
+ */
 export function CertificationsSection() {
   return (
-    <Section
-      id="certifications"
-      title="Certifications"
-      subtitle="Verified credentials with direct issuer verification links."
+    <FilmChapter
+      film={FILM}
+      id={PLATE.section}
+      moveVh={moveVhOf(FILM)}
+      choreo={CHOREO_CERTS}
+      section={PLATE.section}
+      breath={breathOf(FILM)}
+      tail={tailOf(FILM)}
+      plate={<RackPlate index={2} n={PLATE.n} name={PLATE.headingText} handoff />}
     >
-      <p className="mb-4 text-xs font-semibold tracking-[0.22em] text-slate-400">
-        CERTIFICATIONS
-      </p>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        {certifications.map((c, idx) => (
-          <motion.div
-            key={c.name}
-            whileHover={{ y: -3, scale: 1.01 }}
-            transition={{ type: "spring", stiffness: 400, damping: 28 }}
-          >
-            <Card className="group relative overflow-hidden border-white/10 bg-white/5 p-6 backdrop-blur">
-              <div
-                className={[
-                  "pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100",
-                  idx === 0
-                    ? "bg-[radial-gradient(600px_circle_at_20%_10%,rgba(56,189,248,0.14),transparent_60%)]"
-                    : idx === 1
-                    ? "bg-[radial-gradient(600px_circle_at_20%_10%,rgba(34,197,94,0.12),transparent_60%)]"
-                    : "bg-[radial-gradient(600px_circle_at_20%_10%,rgba(168,85,247,0.12),transparent_60%)]",
-                ].join(" ")}
-              />
-
-              <div className="relative flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm text-slate-400">{c.issuer}</p>
-                  <h3 className="mt-1 text-base font-semibold leading-snug bg-gradient-to-b from-white to-slate-300 bg-clip-text text-transparent">
-                    {c.name}
-                  </h3>
-                  {c.year ? (
-                    <p className="mt-2 text-xs text-slate-400">{c.year}</p>
-                  ) : null}
-                </div>
-
-                {c.verifyUrl ? (
-                  <a
-                    href={c.verifyUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group relative inline-flex items-center gap-2 rounded-full
-                              border border-sky-400/30
-                              bg-sky-500/10
-                              px-3 py-1.5
-                              text-sm font-medium text-sky-200
-                              transition
-                              hover:border-sky-400/60
-                              hover:bg-sky-500/20
-                              focus:outline-none focus:ring-2 focus:ring-sky-400/40"
-                  >
-                    {/* glow on hover */}
-                    <span className="pointer-events-none absolute -inset-1 rounded-full
-                                    opacity-0 blur-md
-                                    bg-sky-400/20
-                                    transition
-                                    group-hover:opacity-100" />
-
-                    <motion.span
-                      whileHover={{ rotate: [0, -10, 10, -6, 0] }}
-                      transition={{ duration: 0.45 }}
-                      className="relative z-10"
-                    >
-                      <BadgeCheck className="h-4 w-4" />
-                    </motion.span>
-
-                    <span className="relative z-10">Verify</span>
-                  </a>
-                ) : null}
-
-              </div>
-            </Card>
-          </motion.div>
-        ))}
-      </div>
-    </Section>
+      <BlockTone top={0.62} />
+      <FrameBand from={0.17} to={0.33} x={0.13} right={0.62}>
+        <ChapterHead
+          n={PLATE.n}
+          title={PLATE.headingText}
+          support={PLATE.machine}
+          lede="Verified credentials with direct issuer verification links."
+        />
+      </FrameBand>
+      <FrameBand from={0.57} to={0.8} after={0.33}>
+        <FrameColumns
+          anchors={CARTRIDGES}
+          width={COLUMN_WIDTH}
+          items={certifications.map((c, k) => {
+            const at = CHOREO_CERTS.items[Math.min(k, CHOREO_CERTS.items.length - 1)];
+            const slot = Math.min(k, CARTRIDGES.length - 1);
+            return {
+              key: c.name,
+              node: (
+                <RideAnchor
+                  film={CHOREO_CERTS.film}
+                  anchor={`cartridge_${slot}`}
+                  rest={ANCHORS.cartridges[slot]}
+                  from={at[0] - 1}
+                >
+                  <CertificationItem c={c} at={at} />
+                </RideAnchor>
+              ),
+            };
+          })}
+        />
+      </FrameBand>
+    </FilmChapter>
   );
 }

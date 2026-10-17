@@ -24,6 +24,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Guard public/films (frames never committed, manifest base is https)
+        shell: bash
+        run: |
+          set -euo pipefail
+          stray="$(git ls-files public/films | grep -vE '^public/films/[^/]+/manifest\.json$' || true)"
+          if [ -n "$stray" ]; then
+            echo "Only public/films/<name>/manifest.json may be committed (frames live on the CDN); found:"
+            echo "$stray"
+            exit 1
+          fi
+          for m in $(git ls-files public/films | grep -E '^public/films/[^/]+/manifest\.json$' || true); do
+            base="$(jq -r '.base // ""' "$m")"
+            case "$base" in
+              https://*) ;;
+              *) echo "$m: base must start with https:// (got '$base'); run scripts/films/sync-film.sh --write-manifest"; exit 1 ;;
+            esac
+          done
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

@@ -1,0 +1,20 @@
+{
+  "name": "rack-04",
+  "count": 145,
+  "fps": 24,
+  "widths": [
+    768,
+    1280,
+    1920
+  ],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-04",
+  "poster": "https://dkkkpszkw3bz9.cloudfront.net/films/rack-04/poster.webp",
+  "kb": {
+    "768": 1052,
+    "1280": 1700,
+    "1920": 2496
+  }
+}
