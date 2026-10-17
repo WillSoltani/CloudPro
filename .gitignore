@@ -58,3 +58,8 @@ infra/lib/lambdas/*/node_modules/
 /public/films/*/*
 !/public/films/*/manifest.json
 infra/dist/
+
+# Python caches and merge leftovers under scripts/films
+__pycache__/
+*.pyc
+*.orig

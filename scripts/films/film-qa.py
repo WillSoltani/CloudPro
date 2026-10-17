@@ -4,16 +4,51 @@
   film-qa.py still  <image> [--key K0] [--json out.json]
   film-qa.py still  <image> --profile reel [--key K0..K7] [--prev prev-key.json] [--strict-regions] [--json out.json]
                     (reel profile is auto-selected for paths containing /films-src/reel/)
+  film-qa.py still  <image> --profile t0 [--stage final|raw] [--min-f 0.90] [--sim-out sim.png] [--json out.json]
+                    (part five's landing key T0, the tower above a fog sea; raw = simulate the commit first)
   film-qa.py clip   <clip.mp4> --prev K.png --next K.png --out <dir> --tag 01_t1 [--tophalf] [--json out.json]
+  film-qa.py seq    <dir of png|webp frames> [--json out.json] [--pop 4.0] [--full]
+  film-qa.py lamp   <clip.mp4|dir of frames> --window X0 X1 Y0 Y1 --target LX LY --tol T [TY] [--from N]
+                    [--core 245] [--count-change 0.40] [--json out.json] [--full]
   film-qa.py join   --last <last.png|clip.mp4> --key <key.png> [--alpha 0.80] [--base 070b16] [--out join.png]
   film-qa.py sheet  --out sheet.png [--cols N] [--labels a,b,c] [--tile-width 960] <images...>
   film-qa.py phone  --out strip.png [--labels a,b] [--width 390 --height 844] <images...>
                     (sheet / phone take any number of images, e.g. K0 … K7 with --cols 4)
-  film-qa.py ledger --dir films-src/beacon/ledger --out films-src/beacon/ledger.md [--ceiling 598]
+  film-qa.py ledger --dir films-src/beacon/ledger --out films-src/beacon/ledger.md [--ceiling 598] [--title beacon]
 
 Luma is full-range Rec.709 computed on RGB pixels in Python (Y = .2126R + .7152G + .0722B, 0..255),
 so absolute targets from the storyboard (base ≈ 11, K4 top-half ≤ 22) compare directly. ffmpeg's
 signalstats is used only for per-frame series inside one file, where the limited-range offset cancels.
+
+`seq` (the rack film) decodes a directory of PNG or WebP frames (natural sort: f_2 before f_10) to 480 px wide
+Rec.709 luma and prints a compact table, then a summary and flags; --json writes every series. Per frame:
+mean Y; "diff" = mean |Y[i] - Y[i-1]|; "shimmer" = temporal second difference mean |Y[i-1] - 2 Y[i] + Y[i+1]|
+(per pixel, so it catches boil and moire that the mean Y hides); clip% = share of pixels with Y >= 250 at 480 px
+(a speck of LED that is clipped at full size can average out below that). Flags: "pop" when a frame's diff exceeds
+--pop x the median diff (median floored at 0.05 so a long static hold does not flag every move); drift is a
+summary line (first vs last mean Y), never a flag, because a dolly into a lit unit is meant to brighten.
+Frame numbers are 1-based positions in the sorted list. Without PIL WebP support, frames decode through ffmpeg
+(its YUV-to-RGB step reads lossy WebP about 1.5 levels darker than libwebp, so compare absolute Y only within one
+decoder; the diff and shimmer series agree to about 0.1).
+
+`lamp` (part five's tower act) follows the brightest blob inside a window on every frame of a clip (16:9 content:
+FLUX's 1920x1088 is centre-cropped to 1080 rows first) or a frame directory: the blob is the 8-connected
+component set at Y >= --core (245) when the window reaches it, otherwise at a relative threshold (peak - 0.2 x
+(peak - median), reported as mode "rel"); components within --merge (0.02 of frame height) of the brightest one
+are one lamp. Per frame: the luma-weighted centroid (fractions of the full frame), the blob count (clusters of at
+least --min-area px at 1920 width and --second-frac (0.30) of the lamp's area; a cluster longer than --second-elong
+(3) times its width is a line, e.g. the pod's lit window band, counted as n_lines and never as a second lamp), the
+lamp's >= core pixel count, a second blob if any. Gates: centroid within --tol of --target on every frame from
+--from, one blob, the lamp's core count changing by at most --count-change frame to frame (relative to the
+previous frame, ignored while both are below --count-floor px at 1920 width). `steady_from` is the first frame from which the core count stays within 15 % of
+the median of the last 12 frames (a candidate `lamp_lit` beat). stdout carries the summary; --json every series.
+
+`still --profile t0` checks the landing key T0 against its storyboard must-holds: the lamp blob in x 0.40-0.60 /
+y 0.25-0.45 at (0.50 +/- 0.01, 0.35 +/- 0.01); mean Y 48-56; top quarter <= 45; fog sea (rows 0.50-0.95) 55-70;
+amber <= 1 %; left quarter quiet (high-pass detail <= 2.6); no warm pixels outside the lamp disc, the beam wedge to
+camera-right and the tower column; tower scale (mast tip to lamp, fraction of frame height) within 6 % of K3's.
+`--stage raw` centre-crops to 16:9, re-centres on the lamp with recentre-key.py's arithmetic (target (0.50, 0.35),
+f >= --min-f) and solves the commit gamma into 48-56, then measures that simulated committed frame.
 
 `still --profile reel` and `join` (part-three "reel" film) print {metrics, failures[], flags[], verdict}; a hard
 failure sets verdict "fail" / objective_reject true but the exit status stays 0, like the other subcommands.
@@ -313,6 +348,367 @@ def reel_metrics(path: str, key: str, prev_y: float | None, strict_regions: bool
             "objective_reject": bool(failures)}
 
 
+# ---------------------------------------------------------------- bright blobs (shared by `lamp` and the t0 profile)
+
+
+def components(mask: np.ndarray) -> list[list[tuple[int, int, int]]]:
+    """8-connected components of a boolean mask as lists of runs (row, c0, c1) with c1 exclusive.
+    Run-length labelling with union-find (numpy + stdlib only; scipy is not installed here)."""
+    runs: list[tuple[int, int, int]] = []
+    parent: list[int] = []
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    prev: list[int] = []
+    for r in range(mask.shape[0]):
+        row = mask[r]
+        if not row.any():
+            prev = []
+            continue
+        d = np.diff(np.concatenate(([0], row.astype(np.int8), [0])))
+        cur = []
+        for s, e in zip(np.nonzero(d == 1)[0], np.nonzero(d == -1)[0]):
+            i = len(runs)
+            runs.append((r, int(s), int(e)))
+            parent.append(i)
+            cur.append(i)
+            for k in prev:
+                _, ps, pe = runs[k]
+                if ps <= e and pe >= s:  # 8-connected: the previous row's run touches [s - 1, e]
+                    a, b = find(i), find(k)
+                    if a != b:
+                        parent[max(a, b)] = min(a, b)
+        prev = cur
+    groups: dict[int, list[tuple[int, int, int]]] = {}
+    for i, run in enumerate(runs):
+        groups.setdefault(find(i), []).append(run)
+    return list(groups.values())
+
+
+def blob_clusters(y: np.ndarray, thr: float, merge_px: float, core: float = 245.0) -> list[dict]:
+    """Components of y >= thr, merged into clusters when their bounding boxes lie within merge_px of each other
+    (a lamp core fragmented by its own bloom is one lamp). Sorted by luma-weighted mass (brightest first).
+    Coordinates are pixels of y; weights are (Y - thr + 1); "core" counts the pixels at Y >= core."""
+    comps = []
+    for runs in components(y >= thr):
+        area = wsum = wx = wy = ncore = 0.0
+        peak = 0.0
+        r0 = c0 = 10 ** 9
+        r1 = c1 = -1
+        for r, s, e in runs:
+            v = y[r, s:e]
+            wgt = v - thr + 1.0
+            area += e - s
+            ncore += float((v >= core).sum())
+            wsum += float(wgt.sum())
+            wx += float((wgt * np.arange(s, e)).sum())
+            wy += float(wgt.sum()) * r
+            peak = max(peak, float(v.max()))
+            r0, r1, c0, c1 = min(r0, r), max(r1, r), min(c0, s), max(c1, e - 1)
+        comps.append({"area": area, "core": ncore, "wsum": wsum, "wx": wx, "wy": wy, "peak": peak,
+                      "bbox": [r0, c0, r1, c1]})
+    comps.sort(key=lambda c: -c["wsum"])
+    clusters: list[dict] = []
+    for c in comps:
+        for cl in clusters:
+            r0, c0, r1, c1 = cl["bbox"]
+            gr = max(0, c["bbox"][0] - r1, r0 - c["bbox"][2])
+            gc = max(0, c["bbox"][1] - c1, c0 - c["bbox"][3])
+            if max(gr, gc) <= merge_px:
+                for k in ("area", "core", "wsum", "wx", "wy"):
+                    cl[k] += c[k]
+                cl["peak"] = max(cl["peak"], c["peak"])
+                cl["bbox"] = [min(r0, c["bbox"][0]), min(c0, c["bbox"][1]), max(r1, c["bbox"][2]), max(c1, c["bbox"][3])]
+                cl["parts"] += 1
+                break
+        else:
+            clusters.append(dict(c, parts=1))
+    for cl in clusters:
+        cl["cx"] = cl["wx"] / cl["wsum"] if cl["wsum"] else float("nan")
+        cl["cy"] = cl["wy"] / cl["wsum"] if cl["wsum"] else float("nan")
+    clusters.sort(key=lambda c: -c["wsum"])
+    return clusters
+
+
+LAMP_CORE = 245.0  # "core" pixels: Y >= this
+LAMP_REL = 0.20  # relative threshold below the core: peak - REL x (peak - median)
+LAMP_MIN_CONTRAST = 12.0  # peak - median below this: no distinct blob in the window
+LAMP_MERGE = 0.02  # cluster merge distance, fraction of frame height
+LAMP_MIN_AREA = 4.0  # px at 1920 width (scaled by (w / 1920)^2)
+LAMP_SECOND_FRAC = 0.30  # a second cluster counts when its area is at least this share of the lamp's (the CN Tower
+# pod's window lights sit 0.03 below the lamp at 4-7 px against the lamp's ~30 at 1920 in the accepted clip 03)
+LAMP_SECOND_ELONG = 3.0  # ... and is compact: bbox long side / short side at most this. The pod's lit window band
+# (a flat line 0.03 below the lamp, up to 0.47 of the lamp's area in clip 03) is a line, never a second lamp.
+
+
+def lamp_in_window(y: np.ndarray, window: tuple[float, float, float, float], core: float = LAMP_CORE,
+                   merge: float = LAMP_MERGE, min_area_1920: float = LAMP_MIN_AREA,
+                   second_frac: float = LAMP_SECOND_FRAC, second_elong: float = LAMP_SECOND_ELONG) -> dict:
+    """Brightest blob of a full-frame luma array inside window (x0, x1, y0, y1 as fractions)."""
+    h, w = y.shape
+    x0, x1 = int(round(window[0] * w)), int(round(window[1] * w))
+    y0, y1 = int(round(window[2] * h)), int(round(window[3] * h))
+    win = y[y0:y1, x0:x1]
+    scale = (w / 1920.0) ** 2
+    min_area = max(1.0, min_area_1920 * scale)
+    peak, med = float(win.max()), float(np.median(win))
+    core_px = int((win >= core).sum())
+    out: dict = {"peak": round(peak, 1), "median": round(med, 1), "core_px": core_px,
+                 "core_px_1920": round(core_px / scale, 1)}
+    if peak >= core:
+        thr, mode = core, "core"
+    elif peak - med >= LAMP_MIN_CONTRAST:
+        thr, mode = peak - LAMP_REL * (peak - med), "rel"
+    else:
+        out.update(mode="none", thr=None, centroid=None, n_blobs=0, main_area=0, lamp_core_px_1920=0.0, second=None)
+        return out
+    cls = blob_clusters(win, thr, merge * h, core)
+    main = cls[0]
+    def elong(c: dict) -> float:
+        bh, bw = c["bbox"][2] - c["bbox"][0] + 1, c["bbox"][3] - c["bbox"][1] + 1
+        return max(bh, bw) / min(bh, bw)
+
+    big = [c for c in cls if c is not main and c["area"] >= min_area and c["area"] >= second_frac * main["area"]]
+    lines = [c for c in big if elong(c) > second_elong]
+    sig = ([main] if main["area"] >= min_area else []) + [c for c in big if elong(c) <= second_elong]
+    second = next((c for c in sig if c is not main), None)
+    out.update(mode=mode, thr=round(thr, 1),
+               centroid=[round((x0 + main["cx"]) / w, 4), round((y0 + main["cy"]) / h, 4)],
+               n_blobs=len(sig), n_lines=len(lines),
+               main_area=int(main["area"]), main_area_1920=round(main["area"] / scale, 1), main_parts=main["parts"],
+               lamp_core_px_1920=round(main["core"] / scale, 1),
+               second=None if second is None else {
+                   "centroid": [round((x0 + second["cx"]) / w, 4), round((y0 + second["cy"]) / h, 4)],
+                   "area": int(second["area"]), "area_ratio": round(second["area"] / main["area"], 3),
+                   "peak": round(second["peak"], 1)})
+    return out
+
+
+# ---------------------------------------------------------------- still: t0 profile (part five, the tower act)
+#
+# T0 is the landing key of the bridge (the light out of the rack becomes the CN Tower's lamp over a sea of fog)
+# and the start frame of the lights-on clip (T0 -> K3), so it shares K3's framing: lamp at (0.50, 0.35), the same
+# tower size, a level fog-sea surface at y 0.42-0.48, nothing below the pod but fog. Storyboard:
+# films-src/tower2/storyboard.md section 3.
+
+T0_LAMP = (0.50, 0.35)
+T0_LAMP_BAND = (0.40, 0.60, 0.25, 0.45)  # x0, x1, y0, y1: where the lamp blob is searched
+T0_LAMP_TOL = (0.01, 0.01)
+T0_MEAN_Y = (48.0, 56.0)
+T0_TOP_QUARTER_MAX = 45.0
+T0_FOG_ROWS = (0.50, 0.95)
+T0_FOG_Y = (55.0, 70.0)
+T0_AMBER_MAX = 1.0  # percent
+T0_LEFT_DETAIL_FAIL, T0_LEFT_DETAIL_FLAG = 2.6, 1.8  # highpass_detail of the left quarter (K0 1.23, K4 2.14, K3 2.30, tower-04 f1 2.61)
+T0_WARM_FAIL, T0_WARM_FLAG = 0.05, 0.02  # percent of the frame warm outside the lamp, beam and tower column
+T0_SURFACE = (0.42, 0.48)  # fog-sea surface (flag only; the judges read it)
+T0_K3_MAST = 0.1572  # K3.png: mast tip (y 0.1953) to lamp centroid (y 0.3525), fraction of frame height (mast_length)
+T0_SCALE_TOL = 0.06
+T0_MIN_F = 0.90
+
+
+def warm_mask(rgb: np.ndarray) -> np.ndarray:
+    """Any warm colour (red through amber; PIL hue <= 45 or >= 240), saturated and not dark."""
+    hsv = np.asarray(Image.fromarray(rgb.astype(np.uint8)).convert("HSV"), dtype=np.int16)
+    h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    return ((h <= 45) | (h >= 240)) & (s >= 70) & (v >= 50)
+
+
+def box_blur(a: np.ndarray, k: int) -> np.ndarray:
+    """k x k mean filter (edge-padded, same size) via a summed-area table."""
+    p = k // 2
+    c = np.pad(np.cumsum(np.cumsum(np.pad(a, p, mode="edge"), 0), 1), ((1, 0), (1, 0)))
+    return (c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]) / (k * k)
+
+
+def highpass_detail(y: np.ndarray) -> float:
+    """Local detail: std of 8-px box means (at 1920 width) minus their 7 x 7-box local mean. Smooth gradients, a soft
+    fog surface and thin veils read low; rooftops, a skyline or hard cloud edges read high. Beacon calibration
+    (left quarter): K0 1.23, K1 1.11 (fog and water), K3 2.30 (low skyline), K3_a 5.15 (edge-to-edge towers),
+    K4 2.14 (cloud banks)."""
+    bm = box_means(y, max(4, int(round(8 * y.shape[1] * 4 / 1920))))  # y is the left quarter: scale by full width
+    return float((bm - box_blur(bm, 7)).std())
+
+
+def mast_length(y: np.ndarray, lx: float, ly: float) -> dict:
+    """Mast tip above the lamp: scanning up from just above the lamp, the highest row (before a gap of 1 % of the
+    height) where a narrow column at lx is darker than the sky either side by at least 35 % of the mast body's
+    contrast. Returns the length lamp -> tip as a fraction of frame height and whether the reading is confident."""
+    h, w = y.shape
+    cx = int(round(lx * w))
+    hw = max(2, int(round(0.006 * w)))
+    s0, s1 = int(round(0.015 * w)), int(round(0.03 * w))
+    if cx - s1 < 0 or cx + s1 >= w:
+        return {"tip_y": None, "length": None, "body_contrast": None, "confident": False}
+
+    def contrast(r: int) -> float:
+        b = y[max(0, r - 2): r + 3].mean(axis=0)
+        side = np.r_[b[cx - s1: cx - s0], b[cx + s0: cx + s1]]
+        return float(np.median(side) - b[cx - hw: cx + hw + 1].min())
+
+    start, stop = int((ly - 0.03) * h), int(0.02 * h)
+    body = [contrast(r) for r in range(int((ly - 0.10) * h), start) if r > 0]
+    ref = float(np.median(body)) if body else 0.0
+    thr = max(6.0, 0.35 * ref)
+    tip, miss = None, 0
+    for r in range(start, stop, -1):
+        if contrast(r) >= thr:
+            tip, miss = r, 0
+        else:
+            miss += 1
+            if miss > 0.01 * h:
+                break
+    if tip is None:
+        return {"tip_y": None, "length": None, "body_contrast": round(ref, 1), "confident": False}
+    return {"tip_y": round(tip / h, 4), "length": round(ly - tip / h, 4), "body_contrast": round(ref, 1),
+            "confident": ref >= 12.0 and tip > stop + 2}
+
+
+def _recentre_module():
+    """recentre-key.py's crop and gamma arithmetic (one source of truth for the commit simulation)."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recentre-key.py")
+    spec = importlib.util.spec_from_file_location("recentre_key", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def t0_metrics(path: str, stage: str = "final", min_f: float = T0_MIN_F, sim_out: str | None = None) -> dict:
+    im = crop_169(ImageOps.exif_transpose(Image.open(path)).convert("RGB"))
+    failures: list[str] = []
+    flags: list[str] = []
+    notes: list[str] = []
+    sim = None
+    if stage == "raw":
+        lamp0 = lamp_in_window(luma(np.asarray(im, dtype=np.float32)), T0_LAMP_BAND)
+        sim = {"input_dims": list(Image.open(path).size), "dims_169": list(im.size), "lamp_raw": lamp0["centroid"]}
+        if lamp0["centroid"] is None:
+            failures.append("no lamp in x 0.40-0.60, y 0.25-0.45 (raw)")
+        else:
+            rk = _recentre_module()
+            f, box = rk.plan_crop(im.width, im.height, lamp0["centroid"][0], lamp0["centroid"][1], *T0_LAMP)
+            sim.update(f=round(f, 4), box=list(box))
+            if f < min_f:
+                failures.append(f"lamp not crop-fixable: re-centring to (0.50, 0.35) needs f {f:.4f} < {min_f}")
+            else:
+                im = im.crop(box)
+                g = rk.fit_gamma(im, *T0_MEAN_Y)
+                im = rk.apply_gamma(im, g)
+                sim.update(gamma=g, dims=list(im.size))
+                if sim_out:
+                    im.save(sim_out)
+                    sim["out"] = sim_out
+                if not 0.80 <= g <= 1.25:
+                    flags.append(f"commit gamma {g} is a large correction (judge the grade)")
+    rgb = np.asarray(im, dtype=np.float32)
+    h, w, _ = rgb.shape
+    y = luma(rgb)
+    m: dict = {}
+    m["mean_y"] = round(float(y.mean()), 2)
+    m["top_quarter_y"] = round(float(y[: h // 4].mean()), 2)
+    m["fog_sea_y"] = round(float(y[int(T0_FOG_ROWS[0] * h): int(T0_FOG_ROWS[1] * h)].mean()), 2)
+    amber = amber_mask(rgb)
+    m["amber_pct"] = round(float(amber.mean() * 100), 3)
+    left = y[:, : w // 4]
+    m["left_quarter_y"] = round(float(left.mean()), 2)
+    m["left_quarter_texture"] = round(texture(left), 2)
+    m["left_quarter_detail"] = round(highpass_detail(left), 2)
+
+    lamp = lamp_in_window(y, T0_LAMP_BAND)
+    m["lamp"] = lamp
+    m["lamp_centroid"] = lamp["centroid"]
+    if lamp["centroid"] is None:
+        failures.append("no lamp in x 0.40-0.60, y 0.25-0.45")
+        lx, ly = T0_LAMP
+    else:
+        lx, ly = lamp["centroid"]
+        m["lamp_dx"], m["lamp_dy"] = round(lx - T0_LAMP[0], 4), round(ly - T0_LAMP[1], 4)
+        if abs(m["lamp_dx"]) > T0_LAMP_TOL[0]:
+            failures.append(f"lamp x off by {m['lamp_dx']:+.4f} (>{T0_LAMP_TOL[0]})")
+        if abs(m["lamp_dy"]) > T0_LAMP_TOL[1]:
+            failures.append(f"lamp y off by {m['lamp_dy']:+.4f} (>{T0_LAMP_TOL[1]})")
+        if lamp["n_blobs"] > 1:
+            flags.append(f"second bright blob in the lamp band at {lamp['second']['centroid']} (judge: doubled lamp?)")
+        if lamp["mode"] != "core":
+            flags.append(f"lamp core below Y {LAMP_CORE:g} (peak {lamp['peak']})")
+
+    lo, hi = T0_MEAN_Y
+    if not lo <= m["mean_y"] <= hi:
+        failures.append(f"mean Y {m['mean_y']} outside {lo:g}-{hi:g}")
+    if m["top_quarter_y"] > T0_TOP_QUARTER_MAX:
+        failures.append(f"top quarter Y {m['top_quarter_y']} > {T0_TOP_QUARTER_MAX:g}")
+    if not T0_FOG_Y[0] <= m["fog_sea_y"] <= T0_FOG_Y[1]:
+        failures.append(f"fog sea (rows {T0_FOG_ROWS[0]}-{T0_FOG_ROWS[1]}) Y {m['fog_sea_y']} outside "
+                        f"{T0_FOG_Y[0]:g}-{T0_FOG_Y[1]:g}")
+    if m["amber_pct"] > T0_AMBER_MAX:
+        failures.append(f"amber {m['amber_pct']}% > {T0_AMBER_MAX:g}%")
+    if m["left_quarter_detail"] > T0_LEFT_DETAIL_FAIL:
+        failures.append(f"left quarter not quiet: detail {m['left_quarter_detail']} > {T0_LEFT_DETAIL_FAIL:g}")
+    elif m["left_quarter_detail"] > T0_LEFT_DETAIL_FLAG:
+        flags.append(f"left quarter detail {m['left_quarter_detail']} > {T0_LEFT_DETAIL_FLAG:g} (judge)")
+
+    # Warm outside the amber uses: allowed = lamp disc (6 % of height), the beam wedge to camera-right, the tower
+    # column (|x - lx| <= 0.012: aviation lights on the mast and the pod's window band).
+    yy, xx = np.mgrid[0:h, 0:w]
+    fx, fy = xx / w, yy / h
+    disc = ((fx - lx) * w) ** 2 + ((fy - ly) * h) ** 2 <= (0.06 * h) ** 2
+    wedge = (fx >= lx) & (np.abs(fy - ly) <= 0.035 + 0.10 * (fx - lx))
+    column = np.abs(fx - lx) <= 0.012
+    warm_out = warm_mask(rgb) & ~(disc | wedge | column)
+    m["warm_outside_pct"] = round(float(warm_out.mean() * 100), 4)
+    if warm_out.any():
+        wy, wx = np.nonzero(warm_out)
+        m["warm_outside_centroid"] = [round(float(wx.mean() / w), 4), round(float(wy.mean() / h), 4)]
+    if m["warm_outside_pct"] > T0_WARM_FAIL:
+        failures.append(f"warm outside the lamp/beam {m['warm_outside_pct']}% > {T0_WARM_FAIL:g}% "
+                        f"(city lights, ferry, sunset?) near {m.get('warm_outside_centroid')}")
+    elif m["warm_outside_pct"] > T0_WARM_FLAG:
+        flags.append(f"warm outside the lamp/beam {m['warm_outside_pct']}% > {T0_WARM_FLAG:g}% (judge)")
+
+    # Tower scale: mast tip to lamp vs K3.
+    mast = mast_length(y, lx, ly)
+    m["mast"] = mast
+    if mast["length"] is not None:
+        m["scale_vs_k3"] = round(mast["length"] / T0_K3_MAST, 4)
+        off = m["scale_vs_k3"] - 1
+        if abs(off) > T0_SCALE_TOL:
+            (failures if mast["confident"] else flags).append(
+                f"tower scale {m['scale_vs_k3']:.3f} x K3 (mast {mast['length']} vs {T0_K3_MAST})"
+                + ("" if mast["confident"] else " (low-confidence reading; judge)"))
+        elif not mast["confident"]:
+            notes.append("mast reading low-confidence (veils over the mast?)")
+    else:
+        m["scale_vs_k3"] = None
+        flags.append("mast tip not found (judge the tower scale)")
+
+    # Fog-sea surface: the strongest change (either sign) of the row profile left of the tower (x 0.05-0.45; the
+    # beam runs to camera-right) between y 0.36 (below the pod) and 0.62; a rough reading, flag only.
+    rows = y[:, int(0.05 * w): int(0.45 * w)].mean(axis=1)
+    k = max(3, int(0.01 * h))
+    sm = np.convolve(rows, np.ones(k) / k, mode="same")
+    r0, r1 = int(0.36 * h), int(0.62 * h)
+    step = max(2, int(0.02 * h))
+    rise = sm[r0 + step: r1 + step] - sm[r0 - step: r1 - step]
+    i = int(np.abs(rise).argmax())
+    m["fog_surface_y_estimate"] = round((r0 + i) / h, 4)
+    m["fog_surface_step"] = round(float(rise[i]), 2)
+    if not T0_SURFACE[0] <= m["fog_surface_y_estimate"] <= T0_SURFACE[1]:
+        flags.append(f"fog surface estimate y {m['fog_surface_y_estimate']} outside {T0_SURFACE[0]}-{T0_SURFACE[1]} "
+                     "(rough; judge)")
+
+    res = {"file": path, "dims": [w, h], "key": "T0", "profile": "t0", "stage": stage, "metrics": m,
+           "failures": failures, "flags": flags, "notes": notes,
+           "verdict": "fail" if failures else "flag" if flags else "pass", "objective_reject": bool(failures)}
+    if sim is not None:
+        res["simulated"] = sim
+    return res
+
+
 # ---------------------------------------------------------------- clip
 
 
@@ -476,6 +872,312 @@ def clip_metrics(clip: str, prev: str, nxt: str, out_dir: str, tag: str, tophalf
     hard = [f for f in flags if "(judge)" not in f and "(soft)" not in f]
     res["objective_reject"] = bool(hard)
     res["hard_flags"] = hard
+    return res
+
+
+# ---------------------------------------------------------------- seq (a rendered frame sequence)
+
+SEQ_EXTS = (".png", ".webp")
+SEQ_WIDTH = 480  # frames are compared at this width, which keeps a 900-frame film to a minute or two
+SEQ_CLIP_Y = 250.0  # "clipped" = Y at or above this (0..255)
+SEQ_DIFF_FLOOR = 0.05  # median-diff floor, so a pop is not flagged on every move after a long static hold
+
+
+def natural_key(name: str) -> list:
+    """Natural sort key (f_2 < f_10; f_00001 works too). re.split alternates str, int, str, ... so keys compare."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
+def seq_files(dir_: str) -> list[str]:
+    names = [n for n in os.listdir(dir_) if n.lower().endswith(SEQ_EXTS) and not n.startswith(".")]
+    return [os.path.join(dir_, n) for n in sorted(names, key=natural_key)]
+
+
+def webp_ok() -> bool:
+    try:
+        from PIL import features
+        return bool(features.check("webp"))
+    except Exception:
+        return False
+
+
+def seq_luma_pil(path: str) -> np.ndarray:
+    with Image.open(path) as im:
+        im = ImageOps.exif_transpose(im).convert("RGB")
+        w, h = im.size
+        small = im.resize((SEQ_WIDTH, max(1, round(h * SEQ_WIDTH / w))), Image.BOX)
+    return luma(np.asarray(small, dtype=np.float32))
+
+
+def seq_luma_ffmpeg(path: str) -> np.ndarray:
+    """Same reduction through ffmpeg (raw RGB, then the same Rec.709 luma) for a PIL build without WebP."""
+    p = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-frames:v", "1",
+                        "-vf", f"scale={SEQ_WIDTH}:-2:flags=area", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                       capture_output=True)
+    row = SEQ_WIDTH * 3
+    if p.returncode != 0 or not p.stdout or len(p.stdout) % row:
+        raise SystemExit(f"ffmpeg could not decode {path}: {p.stderr.decode(errors='replace').strip()}")
+    rgb = np.frombuffer(p.stdout, dtype=np.uint8).reshape(-1, SEQ_WIDTH, 3).astype(np.float32)
+    return luma(rgb)
+
+
+def seq_metrics(dir_: str, pop: float, force_ffmpeg: bool = False) -> dict:
+    files = seq_files(dir_)
+    if not files:
+        raise SystemExit(f"no .png/.webp frames in {dir_}")
+    names = [os.path.basename(p) for p in files]
+    use_ffmpeg = force_ffmpeg or (any(n.lower().endswith(".webp") for n in names) and not webp_ok())
+    decode = seq_luma_ffmpeg if use_ffmpeg else seq_luma_pil
+    n = len(files)
+
+    mean_y: list[float] = []
+    clip_pct: list[float] = []
+    diff: list[float | None] = [None] * n  # diff[i]: mean |Y[i] - Y[i-1]|
+    shimmer: list[float | None] = [None] * n  # shimmer[i]: mean |Y[i-1] - 2 Y[i] + Y[i+1]|
+    prev = prev2 = None
+    shape = None
+    for i, path in enumerate(files):
+        y = decode(path)
+        if shape is None:
+            shape = y.shape
+        elif y.shape != shape:
+            raise SystemExit(f"{names[i]} decodes to {y.shape[1]}x{y.shape[0]}, the first frame to {shape[1]}x{shape[0]}")
+        mean_y.append(float(y.mean()))
+        clip_pct.append(float((y >= SEQ_CLIP_Y).mean() * 100))
+        if prev is not None:
+            diff[i] = float(np.abs(y - prev).mean())
+        if prev2 is not None:
+            shimmer[i - 1] = float(np.abs(prev2 - 2.0 * prev + y).mean())
+        prev2, prev = prev, y
+
+    # Frame numbers below are 1-based positions in the sorted list, not the numbers inside the file names.
+    ys = series_stats(mean_y)
+    if "max_step_at" in ys:
+        ys["max_step_at"] += 1  # series_stats counts from 0; the step lands on this (1-based) frame
+    res: dict = {
+        "dir": dir_, "n": n, "decoder": "ffmpeg" if use_ffmpeg else "pil", "dims": [shape[1], shape[0]],
+        "pop_threshold": pop, "files": names,
+        "mean_y": [round(v, 3) for v in mean_y],
+        "diff": [None if v is None else round(v, 4) for v in diff],
+        "shimmer": [None if v is None else round(v, 4) for v in shimmer],
+        "clip_pct": [round(v, 4) for v in clip_pct],
+        "y_series": ys,
+        "drift": {"first": round(mean_y[0], 2), "last": round(mean_y[-1], 2),
+                  "delta": round(mean_y[-1] - mean_y[0], 3)},
+    }
+
+    d = np.asarray([v for v in diff if v is not None])
+    res["diff_series"] = {}
+    pops: list[dict] = []
+    if d.size:
+        med = float(np.median(d))
+        base = max(med, SEQ_DIFF_FLOOR)
+        res["diff_series"] = {"median": round(med, 4), "max": round(float(d.max()), 4),
+                              "max_over_median": round(float(d.max()) / base, 2),
+                              "max_at": int(np.nanargmax([np.nan if v is None else v for v in diff])) + 1}
+        for i, v in enumerate(diff):
+            if v is not None and v > pop * base:
+                pops.append({"frame": i + 1, "file": names[i], "diff": round(v, 4), "over_median": round(v / base, 2)})
+    s = np.asarray([v for v in shimmer if v is not None])
+    res["shimmer_series"] = {}
+    if s.size:
+        res["shimmer_series"] = {"median": round(float(np.median(s)), 4), "max": round(float(s.max()), 4),
+                                 "max_at": int(np.nanargmax([np.nan if v is None else v for v in shimmer])) + 1}
+    cp = np.asarray(clip_pct)
+    res["clip"] = {"max_pct": round(float(cp.max()), 4), "max_at": int(cp.argmax()) + 1,
+                   "frames_with_clipping": int((cp > 0).sum())}
+    res["pops"] = pops
+    res["flags"] = [f"pop @ frame {p['frame']} ({p['file']}): diff {p['diff']:.2f} = {p['over_median']:.1f}x median"
+                    for p in pops]
+    return res
+
+
+def print_seq(res: dict, full: bool) -> None:
+    n = res["n"]
+    names = res["files"]
+    pop_frames = {p["frame"] for p in res["pops"]}
+    # A long film prints every ~n/40th row plus the ends and each pop with the frame before it; --full prints all.
+    step = 1 if full or n <= 48 else -(-n // 40)
+    show = {i for i in range(n) if i % step == 0 or i == n - 1}
+    for f in pop_frames:
+        show.update({f - 1, f - 2})
+    show = sorted(i for i in show if 0 <= i < n)
+    wname = min(24, max(len(x) for x in names))
+
+    def cell(v: float | None, spec: str, width: int) -> str:
+        return ("-" if v is None else format(v, spec)).rjust(width)
+
+    print(f"{res['dir']}: {n} frames, decoded {res['dims'][0]}x{res['dims'][1]} ({res['decoder']}), "
+          f"pop > {res['pop_threshold']:g}x median")
+    print(f"{'#':>5}  {'file':<{wname}} {'meanY':>7} {'dY':>7} {'diff':>7} {'shimmer':>8} {'clip%':>6}")
+    if len(show) < n:
+        print(f"(every {step}th frame, the last, and each pop with the frame before it; --full prints all {n})")
+    for i in show:
+        dy = None if i == 0 else res["mean_y"][i] - res["mean_y"][i - 1]
+        mark = "  <- pop" if (i + 1) in pop_frames else ""
+        print(f"{i + 1:>5}  {names[i][:wname]:<{wname}} {res['mean_y'][i]:7.2f} {cell(dy, '+.2f', 7)} "
+              f"{cell(res['diff'][i], '.3f', 7)} {cell(res['shimmer'][i], '.3f', 8)} {res['clip_pct'][i]:6.2f}{mark}")
+    ys, ds, ss, cl, dr = res["y_series"], res["diff_series"], res["shimmer_series"], res["clip"], res["drift"]
+    print()
+    print(f"mean Y   range {ys.get('min', dr['first'])}..{ys.get('max', dr['first'])}"
+          + (f"  max step {ys['max_step']} @ {ys['max_step_at']}  max trend residual {ys['max_trend_residual']}"
+             if "max_step" in ys else ""))
+    print(f"drift    first {dr['first']}  last {dr['last']}  delta {dr['delta']:+.2f}")
+    if ds:
+        print(f"diff     median {ds['median']}  max {ds['max']} @ {ds['max_at']}  ({ds['max_over_median']}x median)")
+    if ss:
+        print(f"shimmer  median {ss['median']}  max {ss['max']} @ {ss['max_at']}")
+    print(f"clip     max {cl['max_pct']}% @ {cl['max_at']}  frames with any clipping {cl['frames_with_clipping']}/{n}")
+    print(f"flags    {len(res['flags']) or 'none'}")
+    for f in res["flags"]:
+        print(f"  {f}")
+
+
+# ---------------------------------------------------------------- lamp (per-frame lamp tracking, part five)
+
+LAMP_COUNT_CHANGE = 0.40
+LAMP_COUNT_FLOOR = 20.0  # core px at 1920 width; count changes are ignored while both frames are below this
+LAMP_STEADY_TOL = 0.15
+
+
+def crop_rows_169(rgb: np.ndarray) -> np.ndarray:
+    """Centre-crop rows to 16:9 as build-film.sh does (FLUX's 1920x1088 -> 1920x1080); wider frames untouched."""
+    h, w = rgb.shape[:2]
+    oh = min(h, int(w * 9 / 16 / 2) * 2)
+    y0 = (h - oh) // 2
+    return rgb[y0: y0 + oh]
+
+
+def iter_frames_rgb(src: str):
+    """(n, name, rgb float32) for a directory of png/webp frames (natural order) or every frame of a video."""
+    if os.path.isdir(src):
+        files = seq_files(src)
+        if not files:
+            raise SystemExit(f"no .png/.webp frames in {src}")
+        for n, p in enumerate(files):
+            with Image.open(p) as im:
+                rgb = np.asarray(ImageOps.exif_transpose(im).convert("RGB"), dtype=np.float32)
+            yield n, os.path.basename(p), crop_rows_169(rgb)
+        return
+    p = run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height",
+             "-of", "json", src])
+    st = json.loads(p.stdout)["streams"][0]
+    w, h = int(st["width"]), int(st["height"])
+    proc = subprocess.Popen(["ffmpeg", "-v", "error", "-i", src, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                            stdout=subprocess.PIPE)
+    size = w * h * 3
+    n = 0
+    try:
+        while True:
+            buf = proc.stdout.read(size)
+            if len(buf) < size:
+                break
+            rgb = np.frombuffer(buf, dtype=np.uint8).reshape(h, w, 3).astype(np.float32)
+            yield n, f"n={n}", crop_rows_169(rgb)
+            n += 1
+    finally:
+        proc.stdout.close()
+        proc.wait()
+    if n == 0:
+        raise SystemExit(f"ffmpeg decoded no frames from {src}")
+
+
+def lamp_series(src: str, window: tuple[float, float, float, float], target: tuple[float, float],
+                tol: tuple[float, float], start: int = 0, core: float = LAMP_CORE,
+                count_change: float = LAMP_COUNT_CHANGE, count_floor: float = LAMP_COUNT_FLOOR,
+                merge: float = LAMP_MERGE, min_area: float = LAMP_MIN_AREA,
+                second_frac: float = LAMP_SECOND_FRAC, second_elong: float = LAMP_SECOND_ELONG) -> dict:
+    frames: list[dict] = []
+    dims = None
+    for n, name, rgb in iter_frames_rgb(src):
+        y = luma(rgb)
+        dims = [y.shape[1], y.shape[0]]
+        r = lamp_in_window(y, window, core, merge, min_area, second_frac, second_elong)
+        r = {"n": n, "file": name, **r}
+        if r["centroid"] is not None:
+            r["dx"] = round(r["centroid"][0] - target[0], 4)
+            r["dy"] = round(r["centroid"][1] - target[1], 4)
+        frames.append(r)
+
+    checked = [f for f in frames if f["n"] >= start]
+    off, multi, missing, jumps = [], [], [], []
+    prev = None
+    for f in checked:
+        why = []
+        if f["centroid"] is None:
+            missing.append(f["n"])
+            why.append("no lamp")
+        else:
+            if abs(f["dx"]) > tol[0] or abs(f["dy"]) > tol[1]:
+                off.append(f["n"])
+                why.append(f"off target ({f['dx']:+.4f}, {f['dy']:+.4f})")
+            if f["n_blobs"] > 1:
+                multi.append(f["n"])
+                why.append(f"{f['n_blobs']} blobs (second at {f['second']['centroid']})")
+        c = f["lamp_core_px_1920"]
+        if prev is not None:
+            p = prev["lamp_core_px_1920"]
+            if max(p, c) >= count_floor:
+                ch = abs(c - p) / max(p, count_floor)
+                f["count_change"] = round(ch, 3)
+                if ch > count_change:
+                    jumps.append({"n": f["n"], "prev": p, "cur": c, "change": round(ch, 3)})
+                    why.append(f"core count {p:g} -> {c:g} ({ch:.0%})")
+        f["ok"] = not why
+        f["why"] = why
+        prev = f
+
+    res: dict = {"src": src, "frames": len(frames), "from": start, "checked": len(checked), "dims": dims,
+                 "window": list(window), "target": list(target), "tol": list(tol), "core": core,
+                 "count_change_max": count_change, "count_floor_1920": count_floor}
+    with_c = [f for f in checked if f["centroid"] is not None]
+    if with_c:
+        wdx = max(with_c, key=lambda f: abs(f["dx"]))
+        wdy = max(with_c, key=lambda f: abs(f["dy"]))
+        res["max_abs_dx"] = {"value": abs(wdx["dx"]), "n": wdx["n"]}
+        res["max_abs_dy"] = {"value": abs(wdy["dy"]), "n": wdy["n"]}
+        res["mean_centroid"] = [round(float(np.mean([f["centroid"][0] for f in with_c])), 4),
+                                round(float(np.mean([f["centroid"][1] for f in with_c])), 4)]
+    counts = [f["lamp_core_px_1920"] for f in checked]
+    if counts:
+        tail = counts[-12:]
+        ref = float(np.median(tail))
+        band = LAMP_STEADY_TOL * max(ref, count_floor)
+        steady = len(counts)
+        for i in range(len(counts) - 1, -1, -1):
+            if abs(counts[i] - ref) <= band:
+                steady = i
+            else:
+                break
+        res["lamp_core_px_1920"] = {"first": counts[0], "last": counts[-1], "min": min(counts), "max": max(counts),
+                               "median": float(np.median(counts)), "tail_median": ref}
+        res["steady_from"] = checked[steady]["n"] if steady < len(checked) else None
+    res["modes"] = {m: sum(1 for f in checked if f["mode"] == m) for m in ("core", "rel", "none")}
+    res["max_count_change"] = max((f.get("count_change", 0.0) for f in checked), default=0.0)
+
+    def span(ns: list[int]) -> str:
+        return ", ".join(str(x) for x in ns[:12]) + (f" ... ({len(ns)} frames)" if len(ns) > 12 else "")
+
+    failures = []
+    if missing:
+        failures.append(f"no lamp in the window on frames {span(missing)}")
+    if off:
+        failures.append(f"lamp off target (tol {tol[0]}, {tol[1]}) on frames {span(off)}; worst |dx| "
+                        f"{res['max_abs_dx']['value']} @ {res['max_abs_dx']['n']}, |dy| "
+                        f"{res['max_abs_dy']['value']} @ {res['max_abs_dy']['n']}")
+    if multi:
+        failures.append(f"more than one blob on frames {span(multi)}")
+    if jumps:
+        worst = max(jumps, key=lambda j: j["change"])
+        failures.append(f"core count changed > {count_change:.0%} frame to frame on frames "
+                        f"{span([j['n'] for j in jumps])}; worst {worst['prev']:g} -> {worst['cur']:g} @ {worst['n']}")
+    res["off_target"] = off
+    res["multi_blob"] = multi
+    res["no_lamp"] = missing
+    res["count_jumps"] = jumps
+    res["failures"] = failures
+    res["verdict"] = "fail" if failures else "pass"
+    res["series"] = frames
     return res
 
 
@@ -693,7 +1395,7 @@ def join_metrics(last: str, key: str, alpha: float, base_rgb: tuple[int, int, in
 # ---------------------------------------------------------------- ledger
 
 
-def render_ledger(dir_: str, out: str, ceiling: int) -> dict:
+def render_ledger(dir_: str, out: str, ceiling: int, title: str = "beacon") -> dict:
     start = {}
     sp = os.path.join(dir_, "_start.json")
     if os.path.exists(sp):
@@ -708,7 +1410,7 @@ def render_ledger(dir_: str, out: str, ceiling: int) -> dict:
             continue
     rows.sort(key=lambda r: r.get("time", ""))
     total = 0.0
-    lines = ["# Ledger — beacon", "",
+    lines = [f"# Ledger — {title}", "",
              f"Balance at start: {start.get('balance_start', '?')} · ceiling {ceiling} · rendered {now_iso()}", "",
              "| time | kind | model | item | attempt | prompt summary | credits | job id | status | reason |",
              "|---|---|---|---|---|---|---|---|---|---|"]
@@ -740,11 +1442,16 @@ def main(argv: list[str]) -> int:
     s.add_argument("image")
     s.add_argument("--key")
     s.add_argument("--json")
-    s.add_argument("--profile", choices=("beacon", "reel"),
+    s.add_argument("--profile", choices=("beacon", "reel", "t0"),
                    help="default: reel when the path contains /films-src/reel/, otherwise beacon")
     s.add_argument("--prev", help="reel: metrics json of the previous key (K1-K3 and K7 mean-Y rules)")
     s.add_argument("--strict-regions", action="store_true",
                    help="reel: turn the provisional left-quarter / bottom-third ceilings (Y and texture) into hard fails")
+    s.add_argument("--stage", choices=("final", "raw"), default="final",
+                   help="t0: final = measure as is (the committed key); raw = simulate the commit (16:9 crop, "
+                        "re-centre to (0.50, 0.35), gamma into 48-56) and measure that")
+    s.add_argument("--min-f", type=float, default=T0_MIN_F, help="t0 --stage raw: smallest allowed re-centring crop")
+    s.add_argument("--sim-out", help="t0 --stage raw: save the simulated committed frame (png) here")
 
     c = sub.add_parser("clip")
     c.add_argument("clip")
@@ -754,6 +1461,12 @@ def main(argv: list[str]) -> int:
     c.add_argument("--tag", required=True)
     c.add_argument("--tophalf", action="store_true")
     c.add_argument("--json")
+
+    sq = sub.add_parser("seq")
+    sq.add_argument("dir")
+    sq.add_argument("--json")
+    sq.add_argument("--pop", type=float, default=4.0, help="flag a frame whose diff exceeds POP x the median diff")
+    sq.add_argument("--full", action="store_true", help="print every frame row (default: ~40 rows plus pops)")
 
     jn = sub.add_parser("join")
     jn.add_argument("--last", required=True, help="last frame of the clip: a png or a video (last frame is extracted)")
@@ -782,12 +1495,40 @@ def main(argv: list[str]) -> int:
     lg.add_argument("--dir", required=True)
     lg.add_argument("--out", required=True)
     lg.add_argument("--ceiling", type=int, default=598)
+    lg.add_argument("--title", default="beacon", help="film name in the ledger heading")
+
+    lp = sub.add_parser("lamp")
+    lp.add_argument("src", help="a clip (mp4/mov/...) or a directory of png/webp frames")
+    lp.add_argument("--window", nargs=4, type=float, required=True, metavar=("X0", "X1", "Y0", "Y1"),
+                    help="search window, fractions of the 16:9 frame")
+    lp.add_argument("--target", nargs=2, type=float, required=True, metavar=("LX", "LY"))
+    lp.add_argument("--tol", nargs="+", type=float, required=True, metavar="T",
+                    help="centroid tolerance: one value for x and y, or two (x then y)")
+    lp.add_argument("--from", dest="start", type=int, default=0,
+                    help="first frame (0-based) the gates apply to; 1 skips FLUX's pasted start image")
+    lp.add_argument("--core", type=float, default=LAMP_CORE)
+    lp.add_argument("--count-change", type=float, default=LAMP_COUNT_CHANGE)
+    lp.add_argument("--count-floor", type=float, default=LAMP_COUNT_FLOOR)
+    lp.add_argument("--merge", type=float, default=LAMP_MERGE)
+    lp.add_argument("--min-area", type=float, default=LAMP_MIN_AREA)
+    lp.add_argument("--second-frac", type=float, default=LAMP_SECOND_FRAC)
+    lp.add_argument("--second-elong", type=float, default=LAMP_SECOND_ELONG)
+    lp.add_argument("--json")
+    lp.add_argument("--full", action="store_true", help="also print the per-frame series on stdout")
 
     a = ap.parse_args(argv)
     if a.cmd == "still":
         profile = a.profile or ("reel" if "/films-src/reel/" in os.path.abspath(a.image).replace(os.sep, "/")
                                 else "beacon")
-        if profile == "reel":
+        if profile != "t0" and (a.stage != "final" or a.min_f != T0_MIN_F or a.sim_out):
+            ap.error("--stage / --min-f / --sim-out only apply to --profile t0")
+        if a.sim_out and a.stage != "raw":
+            ap.error("--sim-out needs --stage raw")
+        if profile == "t0":
+            if a.prev or a.strict_regions:
+                ap.error("--prev / --strict-regions only apply to --profile reel")
+            res = t0_metrics(a.image, a.stage, a.min_f, a.sim_out)
+        elif profile == "reel":
             key = (a.key or reel_key_from_name(a.image) or "").upper()
             if key not in REEL_KEYS:
                 ap.error(f"reel profile needs --key K0..K7 (got {a.key or os.path.basename(a.image)!r})")
@@ -798,6 +1539,17 @@ def main(argv: list[str]) -> int:
             res = still_metrics(a.image, a.key)
     elif a.cmd == "clip":
         res = clip_metrics(a.clip, a.prev, a.next, a.out, a.tag, a.tophalf)
+    elif a.cmd == "seq":
+        if not os.path.isdir(a.dir):
+            ap.error(f"not a directory: {a.dir}")
+        if a.pop <= 0:
+            ap.error("--pop must be positive")
+        res = seq_metrics(a.dir, a.pop)
+        print_seq(res, a.full)
+        if a.json:
+            with open(a.json, "w") as fh:
+                fh.write(json.dumps(res, indent=2))
+        return 0
     elif a.cmd == "join":
         if not 0.0 <= a.alpha <= 1.0:
             ap.error("--alpha must be between 0 and 1")
@@ -812,8 +1564,25 @@ def main(argv: list[str]) -> int:
     elif a.cmd == "phone":
         make_phone_strip(a.images, a.out, split_labels(a.labels, len(a.images)), a.width, a.height)
         res = {"out": a.out, "n": len(a.images)}
+    elif a.cmd == "lamp":
+        x0, x1, y0, y1 = a.window
+        if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+            ap.error("--window needs 0 <= X0 < X1 <= 1 and 0 <= Y0 < Y1 <= 1")
+        if len(a.tol) not in (1, 2):
+            ap.error("--tol takes one or two values")
+        if not (os.path.isdir(a.src) or os.path.isfile(a.src)):
+            ap.error(f"no such clip or directory: {a.src}")
+        tol = (a.tol[0], a.tol[-1])
+        res = lamp_series(a.src, (x0, x1, y0, y1), tuple(a.target), tol, a.start, a.core, a.count_change,
+                          a.count_floor, a.merge, a.min_area, a.second_frac, a.second_elong)
+        if a.json:
+            with open(a.json, "w") as fh:
+                fh.write(json.dumps(res, indent=2))
+        shown = res if a.full else {k: v for k, v in res.items() if k != "series"}
+        print(json.dumps(shown, indent=2))
+        return 0
     else:
-        res = render_ledger(a.dir, a.out, a.ceiling)
+        res = render_ledger(a.dir, a.out, a.ceiling, a.title)
     text = json.dumps(res, indent=2)
     if getattr(a, "json", None):
         with open(a.json, "w") as fh:
