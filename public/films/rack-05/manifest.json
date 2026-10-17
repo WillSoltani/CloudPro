@@ -1,0 +1,12 @@
+{
+  "name": "rack-05",
+  "count": 163,
+  "fps": 24,
+  "widths": [768,1280,1920],
+  "aspect": 1.7778,
+  "pad": 4,
+  "ext": "webp",
+  "base": "/films/rack-05",
+  "poster": "/films/rack-05/poster.webp",
+  "kb": { "768": 1120, "1280": 1844, "1920": 3092 }
+}

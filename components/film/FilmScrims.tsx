@@ -23,6 +23,13 @@ type Props = {
    * brighter frames, where a strong band reads as a dark rectangle with a visible edge.
    */
   leftAlpha?: number;
+  /**
+   * The phone band's bottom edge. `solid` (default): night at the stage's bottom edge, for a stage followed
+   * by solid content. `clear`: eased out over the last few svh, for a stage that hands straight over to
+   * another segment (the hero into About's rack-01), so the band never ends on a hard line against the next
+   * segment's bare film.
+   */
+  phoneEnd?: "solid" | "clear";
 };
 
 const NIGHT = "7,11,22";
@@ -46,15 +53,27 @@ function leftBand(a: number): string {
   ].join(", ");
 }
 
+// The phone band: night across its lower part (to 18 %), easing out above. The `clear` end eases in from
+// transparent over the bottom 5svh, under the caption block's bottom padding.
+const PHONE_SOLID = "bg-[linear-gradient(to_top,#070b16_18%,rgba(7,11,22,0.75)_48%,transparent)]";
+const PHONE_CLEAR =
+  "bg-[linear-gradient(to_top,transparent,rgba(7,11,22,0.7)_2.5svh,#070b16_5svh,#070b16_18%,rgba(7,11,22,0.75)_48%,transparent)]";
+
 /**
  * Legibility scrims under the captions: a bottom band on phones, an optional left band on desktop.
  *
- * Seams with the hold panels (HoldPanel): the phone band is always on, so every stage ends on solid
- * night at its bottom edge, which is where the panel after it starts; the left band is feathered out
+ * Seams: the phone band is always on, so a stage ends on solid night at its bottom edge
+ * (`phoneEnd="clear"` where it hands straight over to another segment instead); the left band is feathered out
  * at the stage's top and bottom (captions sit in the middle), so a stage's edges are always the bare
  * frame on desktop.
  */
-export function FilmScrims({ left = false, leftIn = null, leftFade = null, leftAlpha = 0.65 }: Props) {
+export function FilmScrims({
+  left = false,
+  leftIn = null,
+  leftFade = null,
+  leftAlpha = 0.65,
+  phoneEnd = "solid",
+}: Props) {
   const progress = useFilmProgress();
   const input: number[] = [];
   const output: number[] = [];
@@ -73,7 +92,9 @@ export function FilmScrims({ left = false, leftIn = null, leftFade = null, leftA
   const leftOpacity = useTransform(progress, input, output);
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0">
-      <div className="absolute inset-x-0 bottom-0 h-[42svh] bg-[linear-gradient(to_top,#070b16_18%,rgba(7,11,22,0.75)_48%,transparent)] wide:hidden" />
+      <div
+        className={`absolute inset-x-0 bottom-0 h-[42svh] wide:hidden ${phoneEnd === "clear" ? PHONE_CLEAR : PHONE_SOLID}`}
+      />
       {left ? (
         // Holds the peak alpha across the caption column (to 20 vw, where K0–K3's haze is brightest),
         // then eases out before the drafting lines / cranes begin around x ≈ 0.35 of the frame.

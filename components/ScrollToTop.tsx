@@ -3,11 +3,48 @@
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowUp } from "lucide-react";
-import { useFilmInView } from "@/components/film/useFilmInView";
+import { useReelChrome } from "@/components/film/useReelChrome";
+
+// The button's box: fixed 24 px (bottom-6 / right-6) from the corner, 46 px square (p-3 + 20 px icon + border).
+const INSET = 24;
+const SIZE = 46;
+// Clear space kept between the button and the footer text.
+const CLEAR = 8;
+// After the corner has been clear of text this long, the button comes back (no flicker as lines pass it).
+const TEXT_CLEAR_MS = 300;
+// How often the corner is re-checked while a chapter is on screen (its reveals run after the scroll stops).
+const TEXT_POLL_MS = 200;
+
+/** True when a visible line of text inside `root` comes within CLEAR px of the button's corner box. */
+function textUnderButton(root: Element): boolean {
+  const vw = document.documentElement.clientWidth;
+  const vh = window.innerHeight;
+  const left = vw - INSET - SIZE - CLEAR;
+  const top = vh - INSET - SIZE - CLEAR;
+  const right = vw - INSET + CLEAR;
+  const bottom = vh - INSET + CLEAR;
+  const hits = (r: DOMRect) => r.width > 0 && r.right > left && r.left < right && r.bottom > top && r.top < bottom;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const el = n.parentElement;
+    if (!el || !n.textContent?.trim() || !hits(el.getBoundingClientRect())) continue;
+    let opacity = 1;
+    for (let e: Element | null = el; e && e !== root.parentElement && opacity >= 0.05; e = e.parentElement) {
+      opacity *= Number(getComputedStyle(e).opacity);
+    }
+    if (opacity < 0.05) continue;
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    for (const r of range.getClientRects()) if (hits(r)) return true;
+  }
+  return false;
+}
 
 export function ScrollToTop() {
   const [past, setPast] = useState(false);
-  const film = useFilmInView();
+  const [overFooter, setOverFooter] = useState(false);
+  const [overText, setOverText] = useState(false);
+  const { chrome, section } = useReelChrome();
   const reduced = useReducedMotion();
 
   useEffect(() => {
@@ -17,8 +54,69 @@ export function ScrollToTop() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Stay out of the film: hidden while the hero is on screen and while any chapter divider plays.
-  const show = past && !film.inView && !film.overFilm;
+  // The page ends inside Contact's read pin with the footer line pinned in the bottom band: where the button
+  // would cover that text (phones, where the centred line runs under the corner) it steps aside.
+  const atPageEnd = chrome === "composed" && section === "contact";
+  useEffect(() => {
+    if (!atPageEnd) return;
+    const check = () => {
+      const text = document.querySelector("[data-page-footer]")?.getBoundingClientRect();
+      const vw = document.documentElement.clientWidth;
+      const vh = window.innerHeight;
+      const left = vw - INSET - SIZE - CLEAR;
+      const top = vh - INSET - SIZE - CLEAR;
+      const right = vw - INSET + CLEAR;
+      const bottom = vh - INSET + CLEAR;
+      setOverFooter(!!text && text.right > left && text.left < right && text.bottom > top && text.top < bottom);
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [atPageEnd]);
+
+  // On touch screens the compositions run to within 20 px of the edges, so the corner can land on a line of
+  // a chapter's text (its composition or its body): there the button steps aside, and comes back once the
+  // corner has been clear for TEXT_CLEAR_MS. Checked on scroll, and every TEXT_POLL_MS while the chapter is
+  // on screen (the read pin's items fade in on the clock's spring, after the scroll has stopped).
+  useEffect(() => {
+    if (chrome === "film" || !section || !window.matchMedia("(pointer: coarse)").matches) return;
+    const root = document.querySelector(`[data-chapter="${section}"]`);
+    if (!root) return;
+    let raf = 0;
+    let clearTimer = 0;
+    const check = () => {
+      raf = 0;
+      if (textUnderButton(root)) {
+        window.clearTimeout(clearTimer);
+        clearTimer = 0;
+        setOverText(true);
+      } else if (!clearTimer) {
+        clearTimer = window.setTimeout(() => {
+          clearTimer = 0;
+          setOverText(false);
+        }, TEXT_CLEAR_MS);
+      }
+    };
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(check);
+    };
+    check();
+    const poll = window.setInterval(schedule, TEXT_POLL_MS);
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(clearTimer);
+      window.clearInterval(poll);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [chrome, section]);
+
+  // Stay out of the film: hidden while a camera move plays (the hero throughout, every chapter move and the
+  // exit); back over a chapter's composition, releases and bodies; never over the footer line, nor (touch
+  // screens) over any line of the chapter's text.
+  const show = past && chrome !== "film" && !(atPageEnd && overFooter) && !overText;
 
   const goTop = () => {
     window.scrollTo({ top: 0, behavior: reduced ? "auto" : "smooth" });
@@ -33,7 +131,8 @@ export function ScrollToTop() {
           aria-label="Scroll to top"
           initial={{ opacity: 0, y: 16, scale: 0.9 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 16, scale: 0.9 }}
+          // Out quickly: it steps aside the moment text arrives under it.
+          exit={{ opacity: 0, y: 16, scale: 0.9, transition: { duration: 0.12, ease: "easeOut" } }}
           whileHover={{ y: -2, scale: 1.03 }}
           whileTap={{ scale: 0.96 }}
           transition={{ type: "spring", stiffness: 450, damping: 28 }}

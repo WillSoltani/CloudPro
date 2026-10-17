@@ -58,7 +58,7 @@ Either fit the current dark site (`#070b16` base) or make a deliberate departure
   npx cdk deploy CloudPortfolioFilms --require-approval never --outputs-file cdk.out/films-outputs.json
   ```
   Expect 4–8 min (CloudFront). `deploy-infra-dev.yml` also deploys it on `infra/**` pushes (`CDK_STACKS`). Rollback is `cdk destroy`; the bucket is retained.
-- **Upload frames** — `scripts/films/sync-film.sh reel-01 --write-manifest` (then `reel-05`, `tower-03`, `tower-04`) (bucket and domain come from the outputs file, or `FILMS_BUCKET`/`FILMS_DOMAIN`). It syncs only `*.webp` with immutable caching and never `--delete`, refuses a name that already has a manifest in the bucket (`--force` to override), verifies the CDN (200, `image/webp`, `immutable`, ACAO `*`, http→https, direct S3 URL 403, object count and bytes match local), then rewrites only `base`/`poster` in `public/films/<film>/manifest.json`. `git status --short public/films` must show only the four manifests; re-run `scroll-qa` against the CDN before committing them. The `beacon*` films were never uploaded and are deleted.
+- **Upload frames** — `scripts/films/sync-film.sh rack-00 --write-manifest` (then `rack-01`…`rack-05`, `tower-01`, `tower-04`, each with its `-p` portrait variant, in page order: 16 films) (bucket and domain come from the outputs file, or `FILMS_BUCKET`/`FILMS_DOMAIN`). It syncs only `*.webp` with immutable caching and never `--delete`, refuses a name that already has a manifest in the bucket (`--force` to override), verifies the CDN (200, `image/webp`, `immutable`, ACAO `*`, http→https, direct S3 URL 403, object count and bytes match local), then rewrites only `base`/`poster` in `public/films/<film>/manifest.json`. `git status --short public/films` must show only those sixteen manifests; re-run `scroll-qa` against the CDN before committing them. The `beacon*` films were never uploaded and are deleted.
 - **Credits** — part one 534 (`films-src/beacon/ledger.md`), part two 360 (`films-src/beacon2/ledger.md`, superseded), part three 1,443 per Higgsfield transactions (`films-src/reel/ledger.md`).
 
 ### Part two — "Inside the cloud" (2026-10-10)
@@ -74,3 +74,67 @@ Will clarified that "cloud" means cloud computing and that the page must be one 
 ### Part three b — the act break (decided 2026-10-11)
 On the finished page Will found the hall footage less smooth and realistic than the tower film. The diagnosis (`films-src/qa/diag/`, storyboard "Post-mortem 2") cleared the pipeline and blamed the subject: the tower was a static plate with fog, light and cloud transformations, which FLUX crossfades cleanly, while the hall asks for a forward dolly through near, rigid, repeating geometry in the dark, which comes back as reshaping cabinets (44–98 % non-rigid motion in clips 04–05) and shimmering slats in the near-still creeps. A blind panel of three vision judges ranked the tower's clips 04 and 03 best and the hall's push-in 06 worst.
 **Decision: two acts, zero credits.** Act one, the work: `reel-01` (hero, now 5 viewports of scroll) and `reel-05`, holds under About–Skills and Projects. Act two, the place: the tower's clips 03 and 04 rebuilt as `tower-03` (city at dusk, the lights come on) above Experience and `tower-04` (crane up into cloud to the lamp) above Contact, 145 frames each at QUALITY 75, hold keys `public/images/reel/tower-K3.webp` / `tower-K4.webp` = their exact last frames. The act break is a slow dissolve: the Projects hold's K5 key fades out over the first 45 % of chapter 06's scroll (`FilmSegment dissolveIn`) and chapter 06's caption arrives at 0.40 (`FilmDivider captionFrom`); its label is "06 / Lights on" with the line "Designed and operated AWS-based systems with CI/CD and CloudWatch monitoring." so no "architecture" word sits over a skyline. Chapter 07 keeps "One light": the server's amber light and the tower's lamp are the same motif. `reel-06`, `reel-07`, K6 and K7 are retired. Ship: `sync-film.sh reel-01 --write-manifest`, then `reel-05`, `tower-03`, `tower-04`.
+
+
+### Part four — "Round Trip": one scripted 3D rack (decided 2026-10-11; in production)
+Will rejected the AI hall outright ("the numbers of racks and the cables keep changing"): independently generated
+keyframes can never agree on rigid geometry. Part four replaces it with **one 3D scene built by script in Blender 5.2
+and pre-rendered to frames** (`scripts/films/rack/scene.py` + `rack.config.json`, committed; renders under
+`films-src/rack/`, gitignored), scrubbed by the unchanged film layer. No AI image or video generation; **zero
+credits**. Concept **Round Trip**: the visitor's request, an amber point of light, travels through one rack; each
+section is a different machine that opens a different way (U40 switch → About, U38–37 security cartridges →
+Certifications, U34–31 storage drawer → Skills, U29–28 server → Projects, U4–2 battery unit → Experience, U42 fibre
+drawer → Contact), the camera looking straight down into each; the epilogue under the footer dissolves the reply's
+light onto the CN Tower's lamp (`tower-K4.webp`). Eight films `rack-00`…`rack-07`, 1,032 frames per camera at 96
+frames per viewport, a second portrait (1080×2340) camera chain for phones, hold keys = exact last frames, section
+titles as HTML plates mapped onto each machine's label well in perspective (`components/film/homography.ts`).
+Gates: G1 storyboard (approved 2026-10-11; `films-src/rack/storyboard.md`, `captions.json`) → G2 look-dev (48-frame
+drawer rehearsal + blind "photograph or render?" test) → G3 full render → G4 page. Rendering: EEVEE locally on the
+M2 (Will installs Blender via `brew install --cask blender`), Higgsfield's hosted 3D Jutsu (free) for blockout and
+previews. The act-break page (part three b) survives as a local checkpoint commit. Plan: the "Part four" section of
+`~/.claude/plans/proceed-with-all-the-sparkling-codd.md`.
+
+### Part five — "Round Trip, then up" (decided 2026-10-13; in production)
+Will scrubbed the part-four preview on localhost and kept the rack but not the page: he wanted the sections "integrated and
+somewhat merged with how the screen goes", smoother, and "the whole last part" to be the CN Tower. The survey found why:
+film and sections never shared the screen (the stage covers the viewport while the film plays, the hold panel enters only
+when it ends), so at 1440×900 the film moved for ≈ 45 % of the scroll and sat frozen for 55 % under generic cards, and the
+plate-to-heading hand-off the storyboard designed was never built.
+**Decisions:** every section is a *chapter* (`components/film/FilmChapter.tsx`) revealed by the film on one reel clock
+(`FilmBackdrop`): items arrive as each cartridge settles or drive row emerges, the title lifts off the machine's plate into
+the live heading, and at camera rest the composition stays pinned for a read beat while the picture breathes (rendered
+tail frames on the rack, a compositor push on the tower). **The tower takes the page after Projects:** `rack-05`, a Blender
+exit film (the reply climbs the riser, the camera rises into the haze), ends in fog with the point at (0.50, 0.35); a FLUX
+bridge clip rises out of it to a new landing key **T0**, the tower's lamp over a fog sea; a lights-on clip T0→K3 follows
+(the two build as `tower-01`, Experience); `tower-04` is reused for Contact and the footer. Credit ceiling **800** (planned
+232, worst case 384, strictly sequential). Pace 84 frames per viewport for chapters and tower, the hero unchanged. Machine
+labels shown (● SWITCH, SECURITY, STORAGE, SERVER); the closing line lives in Contact only; Projects shows two cards on the
+heat sinks; the blind "photograph or render?" test is retired for an expert critic.
+**Gates (Will):** A, one chapter (Certifications) scrubbed on localhost:3005 → B, the tower stills (X5, T0, K3, K4 with phone
+strip and metrics) before any clip is generated → C, the finished page (desktop, phone, reduced motion) with the QA table;
+deploy (`cdk diff`, deploy, `sync-film.sh` in page order, CDN QA) only on Will's go. **Agents:** Opus authors, designs and
+judges; Sonnet runs renders, builds and QA; no Fable subagents. Storyboards: `films-src/rack/storyboard.md` (with its G2'
+decisions) and `films-src/tower2/storyboard.md`; plan: the "Part five" section of `~/.claude/plans/proceed-with-all-the-sparkling-codd.md`.
+**Status (2026-10-14, before Gate C):** the rack act is final on both cameras from one frozen Blender snapshot
+(`films-src/rack/final/`: scene frames 0–810, 811 masters per camera, spot checks within one level): `rack-00` 217 frames,
+`rack-01` 169 (121 move + 48 breathing-tail frames), `rack-02` 145 (97 + 48), `rack-03` 169, `rack-04` 145, `rack-05` the exit
+163 (static tail f144–162), landscape tiers 768/1280/1920 and portrait `-p` tiers 432/720/1080 at QUALITY 75. Every join is
+byte-identical at every tier on both cameras (identity log `films-src/rack/qa/g3/identity.log`, 130 checks); each key
+`public/images/reel/rack-K0N(-p).webp` is its film's exact last frame, and for rack-01…04 the last tail frame is a hard link
+of the hold frame, so key = hold = last. `film-qa seq` flags only declared mechanism beats (`qa/g3/seq/SUMMARY.md`). The tower
+act is `tower-01` (bridge 145 + lights-on 144, clips mode) and `tower-04` (145) with centre-crop `-p` films; credits spent 286
+of the 800 ceiling (T0 stills 16, bridge 108, lights-on 162; the bridge is a zero-credit patch of take 1, lights-on take 3
+accepted by Will). Page: `TAILS_ON` on, the exit's portrait is `rack-05-p` with key `rack-K05-p` and no dissolve, the dissolves
+into `tower-01` and `tower-04` stay at 0.2. Bytes for the whole page: 768 7.5 MB, 1280 15.2 MB, 1920 27.5 MB; phones 432
+8.3 MB, 720 15.2 MB (racks at 720 + the tower crops at 499). Retired preview films live in `films-src/rack/preview/built/`; `reel-01`, `reel-05`, `tower-03`, `K4/K5`
+keys are still tracked and go with the ship commit. Masters are not yet archived (FFV1 after Gate C).
+**QA (2026-10-15):** four fix rounds after the full QA runs (`films-src/qa/part5/qa-run-2…4`, `qa-final`): the tails-on boot key is
+released on the first landed paint of whatever segment the clock targets; the hero poster is up only while segment 0 is targeted and
+unlanded; the smoothed clock is a monotone follower of the raw clock (never past it, never against its direction; re-seeded on a flip);
+Contact's dissolve from tower-K3 is 0.1 (the crane starts at f16); Experience's dissolve from the exit's key stays 0.2 (the lamp's core
+sits ≈ 10 px off the frozen disc either way: a rack-focus look, Will's call); layouts for laptop windows (`wide-short` ≤ 800 px tall:
+compact Skills head; `wide-small` ≤ 1563×879: Experience typography + box halos; `wide-tight` ≤ 760 px tall or aspect ≥ 1.85: Experience
+labels beside titles, Education inline; `lamp-low` = portrait ≤ 700 px tall or wide with aspect ≥ 1.85 / ≤ 600 px tall: the Contact footer
+in the two bottom corners and the closing band clear of the lamp to 0.045·fh; `phone-short` ≤ 700 px tall portrait: Contact halos);
+ScrollToTop hides over phone text and the footer; focus rings on the auth controls. Final pass: no blocker, no major; production LCP
+64–124 ms, contrast minimum 8.15 / 4.72 over 1708 block states at 15 sizes.

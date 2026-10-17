@@ -1,0 +1,944 @@
+{
+  "schema": 1,
+  "fps": 24,
+  "frames_per_vh": 96,
+  "frame_start": 0,
+  "frame_end": 810,
+  "films": [
+    {
+      "name": "rack-00",
+      "role": "hero",
+      "section": "hero",
+      "unit": null,
+      "range": [
+        0,
+        216
+      ],
+      "frames": 217,
+      "segment": 216,
+      "scrub_vh": 2.25,
+      "length": 3.25,
+      "hold_frame": 216,
+      "beats": [
+        {
+          "id": "glide",
+          "from": 0,
+          "to": 156,
+          "range": [
+            0,
+            156
+          ]
+        },
+        {
+          "id": "point_fades_up",
+          "from": 24,
+          "to": 30,
+          "range": [
+            24,
+            30
+          ]
+        },
+        {
+          "id": "point_runs",
+          "from": 30,
+          "to": 166,
+          "range": [
+            30,
+            166
+          ]
+        },
+        {
+          "id": "point_drops",
+          "from": 166,
+          "to": 176,
+          "range": [
+            166,
+            176
+          ]
+        },
+        {
+          "id": "crane_down",
+          "from": 156,
+          "to": 216,
+          "range": [
+            156,
+            216
+          ]
+        },
+        {
+          "id": "bay_light_up",
+          "from": 180,
+          "to": 212,
+          "range": [
+            180,
+            212
+          ]
+        },
+        {
+          "id": "u40_amber",
+          "from": 190,
+          "to": 190,
+          "range": [
+            190,
+            190
+          ]
+        },
+        {
+          "id": "haze_thins",
+          "from": 150,
+          "to": 216,
+          "range": [
+            150,
+            216
+          ]
+        }
+      ]
+    },
+    {
+      "name": "rack-01",
+      "role": "divider",
+      "section": "about",
+      "unit": "u40",
+      "range": [
+        216,
+        336
+      ],
+      "frames": 121,
+      "segment": 120,
+      "scrub_vh": 1.25,
+      "length": 2.25,
+      "hold_frame": 336,
+      "beats": [
+        {
+          "id": "door_open",
+          "from": 0,
+          "to": 30,
+          "range": [
+            216,
+            246
+          ]
+        },
+        {
+          "id": "switch_out",
+          "from": 40,
+          "to": 80,
+          "range": [
+            256,
+            296
+          ]
+        },
+        {
+          "id": "lid_back",
+          "from": 70,
+          "to": 74,
+          "range": [
+            286,
+            290
+          ]
+        },
+        {
+          "id": "lid_up",
+          "from": 74,
+          "to": 95,
+          "range": [
+            290,
+            311
+          ]
+        },
+        {
+          "id": "push_in",
+          "from": 0,
+          "to": 108,
+          "range": [
+            216,
+            324
+          ]
+        },
+        {
+          "id": "tilt_down",
+          "from": 70,
+          "to": 108,
+          "range": [
+            286,
+            324
+          ]
+        },
+        {
+          "id": "settle",
+          "from": 108,
+          "to": 120,
+          "range": [
+            324,
+            336
+          ]
+        }
+      ],
+      "tail": {
+        "frames": 48
+      },
+      "anchors": {
+        "landscape": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.1,
+            -0.013,
+            0.9,
+            0.9461
+          ],
+          "calm_box": [
+            0.12,
+            0.16,
+            0.88,
+            0.8
+          ],
+          "board": {
+            "rest": [
+              0.5,
+              0.5087
+            ]
+          }
+        },
+        "portrait": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.07,
+            0.3208,
+            0.93,
+            0.5885
+          ],
+          "calm_box": [
+            0.09,
+            0.36,
+            0.91,
+            0.54
+          ],
+          "board": {
+            "rest": [
+              0.5,
+              0.4664
+            ]
+          }
+        },
+        "beats": {}
+      }
+    },
+    {
+      "name": "rack-02",
+      "role": "divider",
+      "section": "certifications",
+      "unit": "u37",
+      "range": [
+        336,
+        432
+      ],
+      "frames": 97,
+      "segment": 96,
+      "scrub_vh": 1.0,
+      "length": 2.0,
+      "hold_frame": 432,
+      "beats": [
+        {
+          "id": "lid_down",
+          "from": 0,
+          "to": 12,
+          "range": [
+            336,
+            348
+          ]
+        },
+        {
+          "id": "switch_home",
+          "from": 8,
+          "to": 30,
+          "range": [
+            344,
+            366
+          ]
+        },
+        {
+          "id": "u37_amber",
+          "from": 26,
+          "to": 26,
+          "range": [
+            362,
+            362
+          ]
+        },
+        {
+          "id": "door_down",
+          "from": 32,
+          "to": 50,
+          "range": [
+            368,
+            386
+          ]
+        },
+        {
+          "id": "carrier_out",
+          "from": 46,
+          "to": 70,
+          "range": [
+            382,
+            406
+          ]
+        },
+        {
+          "id": "cartridges_tip",
+          "from": 56,
+          "to": 81,
+          "range": [
+            392,
+            417
+          ]
+        },
+        {
+          "id": "look_at_faces",
+          "from": 30,
+          "to": 60,
+          "range": [
+            366,
+            396
+          ]
+        },
+        {
+          "id": "straight_down",
+          "from": 60,
+          "to": 84,
+          "range": [
+            396,
+            420
+          ]
+        },
+        {
+          "id": "settle",
+          "from": 84,
+          "to": 96,
+          "range": [
+            420,
+            432
+          ]
+        }
+      ],
+      "tail": {
+        "frames": 48
+      },
+      "anchors": {
+        "landscape": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.1,
+            0.0152,
+            0.9,
+            0.8915
+          ],
+          "calm_box": [
+            0.12,
+            0.18,
+            0.88,
+            0.8
+          ],
+          "cartridge_0": {
+            "rest": [
+              0.206,
+              0.4551
+            ]
+          },
+          "cartridge_1": {
+            "rest": [
+              0.402,
+              0.4551
+            ]
+          },
+          "cartridge_2": {
+            "rest": [
+              0.598,
+              0.4551
+            ]
+          },
+          "cartridge_3": {
+            "rest": [
+              0.794,
+              0.4551
+            ]
+          }
+        },
+        "portrait": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.07,
+            0.3287,
+            0.93,
+            0.5732
+          ],
+          "calm_box": [
+            0.09,
+            0.37,
+            0.91,
+            0.57
+          ],
+          "cartridge_0": {
+            "rest": [
+              0.1859,
+              0.4514
+            ]
+          },
+          "cartridge_1": {
+            "rest": [
+              0.3953,
+              0.4514
+            ]
+          },
+          "cartridge_2": {
+            "rest": [
+              0.6047,
+              0.4514
+            ]
+          },
+          "cartridge_3": {
+            "rest": [
+              0.8141,
+              0.4514
+            ]
+          }
+        },
+        "beats": {
+          "cartridge_0_tip": 66,
+          "cartridge_1_tip": 71,
+          "cartridge_2_tip": 76,
+          "cartridge_3_tip": 81
+        }
+      }
+    },
+    {
+      "name": "rack-03",
+      "role": "divider",
+      "section": "skills",
+      "unit": "u31",
+      "range": [
+        432,
+        552
+      ],
+      "frames": 121,
+      "segment": 120,
+      "scrub_vh": 1.25,
+      "length": 2.25,
+      "hold_frame": 552,
+      "beats": [
+        {
+          "id": "cartridges_back",
+          "from": 0,
+          "to": 20,
+          "range": [
+            432,
+            452
+          ]
+        },
+        {
+          "id": "carrier_in",
+          "from": 9,
+          "to": 29,
+          "range": [
+            441,
+            461
+          ]
+        },
+        {
+          "id": "door_up",
+          "from": 25,
+          "to": 40,
+          "range": [
+            457,
+            472
+          ]
+        },
+        {
+          "id": "u31_amber",
+          "from": 42,
+          "to": 42,
+          "range": [
+            474,
+            474
+          ]
+        },
+        {
+          "id": "drawer_out",
+          "from": 45,
+          "to": 109,
+          "range": [
+            477,
+            541
+          ]
+        },
+        {
+          "id": "back_out",
+          "from": 0,
+          "to": 40,
+          "range": [
+            432,
+            472
+          ]
+        },
+        {
+          "id": "follow_drawer",
+          "from": 40,
+          "to": 95,
+          "range": [
+            472,
+            527
+          ]
+        },
+        {
+          "id": "settle",
+          "from": 108,
+          "to": 120,
+          "range": [
+            540,
+            552
+          ]
+        }
+      ],
+      "tail": {
+        "frames": 48
+      },
+      "anchors": {
+        "landscape": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.1,
+            -0.9722,
+            0.9,
+            1.9384
+          ],
+          "calm_box": [
+            0.12,
+            0.08,
+            0.88,
+            0.92
+          ],
+          "row_0": {
+            "rest": [
+              0.5,
+              1.8061
+            ]
+          },
+          "row_1": {
+            "rest": [
+              0.5,
+              1.2603
+            ]
+          },
+          "row_2": {
+            "rest": [
+              0.5,
+              0.7146
+            ]
+          },
+          "row_3": {
+            "rest": [
+              0.5,
+              0.1689
+            ]
+          },
+          "row_4": {
+            "rest": [
+              0.5,
+              -0.3769
+            ]
+          }
+        },
+        "portrait": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.07,
+            0.0531,
+            0.93,
+            0.8654
+          ],
+          "calm_box": [
+            0.09,
+            0.1,
+            0.91,
+            0.8
+          ],
+          "row_0": {
+            "rest": [
+              0.5,
+              0.8285
+            ]
+          },
+          "row_1": {
+            "rest": [
+              0.5,
+              0.6762
+            ]
+          },
+          "row_2": {
+            "rest": [
+              0.5,
+              0.5238
+            ]
+          },
+          "row_3": {
+            "rest": [
+              0.5,
+              0.3715
+            ]
+          },
+          "row_4": {
+            "rest": [
+              0.5,
+              0.2192
+            ]
+          }
+        },
+        "beats": {
+          "row_0": 67,
+          "row_1": 75,
+          "row_2": 81,
+          "row_3": 89,
+          "row_4": 109
+        }
+      }
+    },
+    {
+      "name": "rack-04",
+      "role": "divider",
+      "section": "projects",
+      "unit": "u28",
+      "range": [
+        552,
+        648
+      ],
+      "frames": 97,
+      "segment": 96,
+      "scrub_vh": 1.0,
+      "length": 2.0,
+      "hold_frame": 648,
+      "beats": [
+        {
+          "id": "drawer_home",
+          "from": 0,
+          "to": 40,
+          "range": [
+            552,
+            592
+          ]
+        },
+        {
+          "id": "u28_amber",
+          "from": 32,
+          "to": 32,
+          "range": [
+            584,
+            584
+          ]
+        },
+        {
+          "id": "server_out",
+          "from": 36,
+          "to": 66,
+          "range": [
+            588,
+            618
+          ]
+        },
+        {
+          "id": "lid_up",
+          "from": 60,
+          "to": 76,
+          "range": [
+            612,
+            628
+          ]
+        },
+        {
+          "id": "aircover_to_lid",
+          "from": 72,
+          "to": 86,
+          "range": [
+            624,
+            638
+          ]
+        },
+        {
+          "id": "rise",
+          "from": 0,
+          "to": 40,
+          "range": [
+            552,
+            592
+          ]
+        },
+        {
+          "id": "drop",
+          "from": 40,
+          "to": 72,
+          "range": [
+            592,
+            624
+          ]
+        },
+        {
+          "id": "settle",
+          "from": 84,
+          "to": 96,
+          "range": [
+            636,
+            648
+          ]
+        }
+      ],
+      "tail": {
+        "frames": 48
+      },
+      "anchors": {
+        "landscape": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.07,
+            -0.3144,
+            0.93,
+            1.7478
+          ],
+          "calm_box": [
+            0.12,
+            0.16,
+            0.88,
+            0.8
+          ],
+          "heatsink_0": {
+            "rest": [
+              0.3389,
+              0.45
+            ]
+          },
+          "heatsink_1": {
+            "rest": [
+              0.6611,
+              0.45
+            ]
+          }
+        },
+        "portrait": {
+          "centre": [
+            0.5,
+            0.45
+          ],
+          "unit_rect": [
+            0.045,
+            0.24,
+            0.955,
+            0.8065
+          ],
+          "calm_box": [
+            0.09,
+            0.28,
+            0.91,
+            0.62
+          ],
+          "heatsink_0": {
+            "rest": [
+              0.323,
+              0.45
+            ]
+          },
+          "heatsink_1": {
+            "rest": [
+              0.677,
+              0.45
+            ]
+          }
+        },
+        "beats": {}
+      }
+    },
+    {
+      "name": "rack-05",
+      "role": "exit",
+      "section": null,
+      "unit": null,
+      "range": [
+        648,
+        810
+      ],
+      "frames": 163,
+      "segment": 162,
+      "scrub_vh": 1.6875,
+      "length": 2.6875,
+      "hold_frame": 810,
+      "beats": [
+        {
+          "id": "projects_hold",
+          "from": 0,
+          "to": 0,
+          "range": [
+            648,
+            648
+          ]
+        },
+        {
+          "id": "aircover_lid_close",
+          "from": 8,
+          "to": 34,
+          "range": [
+            656,
+            682
+          ]
+        },
+        {
+          "id": "server_home",
+          "from": 34,
+          "to": 50,
+          "range": [
+            682,
+            698
+          ]
+        },
+        {
+          "id": "door_shut",
+          "from": 50,
+          "to": 78,
+          "range": [
+            698,
+            726
+          ]
+        },
+        {
+          "id": "haze_returns",
+          "from": 50,
+          "to": 80,
+          "range": [
+            698,
+            728
+          ]
+        },
+        {
+          "id": "fog_gathers",
+          "from": 60,
+          "to": 100,
+          "range": [
+            708,
+            748
+          ]
+        },
+        {
+          "id": "bay_light_out",
+          "from": 74,
+          "to": 94,
+          "range": [
+            722,
+            742
+          ]
+        },
+        {
+          "id": "door_view",
+          "from": 80,
+          "to": 92,
+          "range": [
+            728,
+            740
+          ]
+        },
+        {
+          "id": "reply_fades_up",
+          "from": 86,
+          "to": 92,
+          "range": [
+            734,
+            740
+          ]
+        },
+        {
+          "id": "reply_climbs",
+          "from": 92,
+          "to": 140,
+          "range": [
+            740,
+            788
+          ]
+        },
+        {
+          "id": "rise",
+          "from": 92,
+          "to": 144,
+          "range": [
+            740,
+            792
+          ]
+        },
+        {
+          "id": "into_fog",
+          "from": 110,
+          "to": 132,
+          "range": [
+            758,
+            780
+          ]
+        },
+        {
+          "id": "fog_only",
+          "from": 132,
+          "to": 162,
+          "range": [
+            780,
+            810
+          ]
+        },
+        {
+          "id": "static_tail",
+          "from": 144,
+          "to": 162,
+          "range": [
+            792,
+            810
+          ]
+        }
+      ]
+    }
+  ],
+  "amber": {
+    "u40": 190,
+    "u37": 362,
+    "u31": 474,
+    "u28": 584
+  },
+  "cameras": {
+    "landscape": {
+      "res": [
+        1920,
+        1080
+      ],
+      "lens_mm": 35,
+      "sensor_mm": 36.0
+    },
+    "portrait": {
+      "res": [
+        1080,
+        2340
+      ],
+      "lens_mm": 35,
+      "sensor_mm": 39.288
+    }
+  }
+}

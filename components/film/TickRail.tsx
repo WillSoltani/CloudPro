@@ -2,17 +2,15 @@
 
 import { motion, useTransform, type MotionValue } from "framer-motion";
 import { useFilmProgress } from "@/components/film/filmProgress";
+import { HERO_BEATS } from "@/components/film/heroBeats";
 
 const LAMP = "#f0a63c";
 const SLATE = "#64748b";
 
-/** Beat windows, matching BeaconCaptions. The tick sits at each window's start. */
-const TICKS = [
-  { n: "01", from: 0.08, to: 0.27 },
-  { n: "02", from: 0.29, to: 0.5 },
-  { n: "03", from: 0.53, to: 0.75 },
-  { n: "04", from: 0.78, to: 1 },
-] as const;
+/** The numbered caption windows of the hero (heroBeats.ts, shared with BeaconCaptions); a tick at each start. */
+const TICKS = HERO_BEATS.flatMap((b) =>
+  b.kind === "caption" && b.n ? [{ n: b.n, from: b.from, to: b.to }] : [],
+);
 
 function Tick({
   progress,
@@ -44,7 +42,8 @@ function Tick({
 
 /**
  * The lighthouse's progress: a hairline on the right that fills in amber as the film plays,
- * a 7 px lamp riding the fill, and one tick per beat. Desktop only; leaves with the film.
+ * a 7 px lamp riding the fill, and one tick per numbered beat (none for the rack hero). Desktop only;
+ * leaves with the film.
  */
 export function TickRail() {
   const progress = useFilmProgress();

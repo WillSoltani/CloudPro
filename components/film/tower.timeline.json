@@ -1,0 +1,25 @@
+{
+ "fps": 24,
+ "index_base": 0,
+ "source": "tower-clips-measure.py beats, run clips-e: lamp_lit = film-qa lamp steady_from on the bridge frames; lights_1/lights_2 = the warm top-hat luma of the waterfront band reaching 25 % / 60 % of its rise; rest = the trailing rest of clips/01.mp4; tower-04: lamp_settle = lamp centroid within 0.004 of its last position, rest likewise",
+ "films": [
+  {
+   "name": "tower-01",
+   "count": 289,
+   "beats": {
+    "lamp_lit": 123,
+    "lights_1": 236,
+    "lights_2": 251,
+    "rest": 283
+   }
+  },
+  {
+   "name": "tower-04",
+   "count": 145,
+   "beats": {
+    "lamp_settle": 112,
+    "rest": 125
+   }
+  }
+ ]
+}

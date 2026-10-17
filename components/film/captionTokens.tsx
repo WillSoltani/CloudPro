@@ -1,6 +1,5 @@
 /**
- * Caption typography shared by the hero (BeaconCaptions) and the chapter dividers (FilmDivider),
- * per films-src/beacon/storyboard.md §3.
+ * Caption typography for the hero's captions (BeaconCaptions), per films-src/beacon/storyboard.md §3.
  *
  * Phone (default): a full-width block in the bottom third, over the scrim, clear of the lamp.
  * Desktop (`wide:`): the quiet left quarter of the frame, vertically centred, x 5–30 %.

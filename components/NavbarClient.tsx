@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ExternalLink, Github, LayoutDashboard, Linkedin, Menu, X } from "lucide-react";
 import Link from "next/link";
 
 import { LoginButton } from "@/components/auth/LoginButton";
 import { LogoutButton } from "@/components/auth/LogoutButton";
+import { FOCUS_RING } from "@/components/focusRing";
 import { useAuthStatus } from "@/components/auth/useAuthStatus";
+import { HERO_INTRO_END } from "@/components/film/heroBeats";
 import { HERO_FILM_SELECTOR, useFilmInView } from "@/components/film/useFilmInView";
+import { useReelChrome } from "@/components/film/useReelChrome";
 import { social, type SocialId } from "@/content/social";
 
 const links = [
@@ -21,9 +24,6 @@ const links = [
 ] as const;
 
 const socialIcons: Record<SocialId, typeof Github> = { github: Github, linkedin: Linkedin };
-
-const FOCUS_RING =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night";
 
 const panelVariants = {
   hidden: { opacity: 0, y: -10, scale: 0.98 },
@@ -51,21 +51,17 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     ? (initialLoggedIn ?? false)
     : loggedIn === true;
 
-  const [active, setActive] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [nearTop, setNearTop] = useState(true);
-  // The hero film's sticky stage has been released: the section's bottom edge is at or above the
-  // viewport's, so the scene-4 caption and CTA are riding up under the header.
-  const [released, setReleased] = useState(false);
   const [open, setOpen] = useState(false);
-  // `inView`: the hero extends below the header's bottom edge. `overFilm`: any film segment (hero or
-  // chapter divider) has reached the header's bottom edge and is still pinned.
-  const film = useFilmInView("-80px 0px 0px 0px", 80);
+  // `inView`: the hero extends below the header's bottom edge (the brand hides there).
+  const film = useFilmInView("-80px 0px 0px 0px");
+  // The reel clock (FilmBackdrop): `section` is the chapter whose unit has lit (the active pill, in step
+  // with the film rather than a scroll-spy band); `chrome` is what lies under the header.
+  const { chrome, section } = useReelChrome();
+  const active: string | null = section || null;
 
-  const linkIds = useMemo(() => links.map((l) => l.id), []);
-
-  const handleNavClick = (id: string) => {
-    setActive(id);
+  const handleNavClick = () => {
     setOpen(false);
   };
 
@@ -73,11 +69,11 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     const onScroll = () => {
       setScrolled(window.scrollY > 8);
       const f = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
-      // The hero's opening caption is gone by 10 % of the film's scrub, so the name returns there
-      // (a fixed half screen would leave it missing for a few hundred px on the long hero).
+      // The hero's opening caption is gone at the end of its intro window (heroBeats HERO_INTRO_END, 10 %
+      // of the film's scrub today), so the name returns there (a fixed half screen would leave it missing
+      // for a few hundred px on the long hero).
       const range = f ? f.offsetHeight - window.innerHeight : 0;
-      setNearTop(window.scrollY < (range > 0 ? 0.1 * range : 0.55 * window.innerHeight));
-      setReleased(!!f && f.getBoundingClientRect().bottom <= window.innerHeight);
+      setNearTop(window.scrollY < (range > 0 ? HERO_INTRO_END * range : 0.55 * window.innerHeight));
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -89,33 +85,6 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   }, []);
 
   useEffect(() => {
-    const els = linkIds
-      .map((id) => document.getElementById(id))
-      .filter(Boolean) as HTMLElement[];
-
-    if (els.length === 0) return;
-
-    // Scroll-spy band: the upper 10–30 % of the viewport. The section furthest down the page
-    // that touches the band is current; none (over the film, between sections) clears the pill.
-    const intersecting = new Set<string>();
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) intersecting.add(e.target.id);
-          else intersecting.delete(e.target.id);
-        }
-        let current: string | null = null;
-        for (const id of linkIds) if (intersecting.has(id)) current = id;
-        setActive(current);
-      },
-      { threshold: 0, rootMargin: "-10% 0px -70% 0px" }
-    );
-
-    els.forEach((el) => obs.observe(el));
-    return () => obs.disconnect();
-  }, [linkIds]);
-
-  useEffect(() => {
     const onResize = () => {
       if (window.innerWidth >= 768) setOpen(false);
     };
@@ -123,13 +92,12 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Over the film the header stays glass-clear, over the hero and every chapter divider alike, so the
-  // reel reads as one piece; the blurred bar begins as soon as a stage has been released (its caption
-  // scrolls up under the header) and stays over the hold panels.
-  const overFilm = film.overFilm || (film.inView && !released);
-  const blurred = scrolled && !overFilm;
+  // Over the film the header stays glass-clear (camera moves, the hero, a chapter's pinned composition),
+  // so the reel reads as one piece; the blurred bar comes only over bodies: hold panels, a chapter's
+  // release and anything that scrolls over the film as a block.
+  const blurred = scrolled && chrome === "body";
   // The film's hero already says the name: hide the brand while its opening caption is on screen, i.e.
-  // until the first 10 % of the hero's scrub (nearTop; half a screen if there is no hero). Before the
+  // until the end of the hero's intro window (nearTop; half a screen if there is no hero). Before the
   // observer reports, assume the film (this navbar is homepage-only).
   const brandHidden = nearTop && (film.inView || !film.present);
 
@@ -169,7 +137,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                 <a
                   key={l.id}
                   href={`#${l.id}`}
-                  onClick={() => handleNavClick(l.id)}
+                  onClick={handleNavClick}
                   aria-current={isActive ? "location" : undefined}
                   className={`relative rounded-full px-3 py-1.5 hover:text-slate-100 ${FOCUS_RING}`}
                 >
@@ -209,7 +177,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
           {showLoggedIn ? (
             <Link
               href="/dashboard"
-              className="hidden md:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 text-sm text-slate-100 shadow-[0_0_0_0_rgba(56,189,248,0.0)] transition hover:bg-white/15 hover:shadow-[0_0_28px_rgba(56,189,248,0.22)]"
+              className={`hidden md:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3.5 py-2 text-sm text-slate-100 shadow-[0_0_0_0_rgba(56,189,248,0.0)] transition hover:bg-white/15 hover:shadow-[0_0_28px_rgba(56,189,248,0.22)] ${FOCUS_RING}`}
             >
               <LayoutDashboard className="h-4 w-4 text-sky-200" />
               Dashboard
@@ -256,7 +224,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                     <Link
                       href="/dashboard"
                       onClick={() => setOpen(false)}
-                      className="flex items-center justify-between rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-slate-100 transition hover:bg-white/10"
+                      className={`flex items-center justify-between rounded-xl border border-white/10 bg-white/8 px-4 py-3 text-sm text-slate-100 transition hover:bg-white/10 ${FOCUS_RING}`}
                     >
                       <span className="flex items-center gap-2">
                         <LayoutDashboard className="h-4 w-4 text-sky-200" />
@@ -285,7 +253,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                           ? "bg-white/10 text-slate-100"
                           : "text-slate-300 hover:bg-white/10 hover:text-slate-100",
                       ].join(" ")}
-                      onClick={() => handleNavClick(l.id)}
+                      onClick={handleNavClick}
                     >
                       <span>{l.label}</span>
                       {isActive ? (

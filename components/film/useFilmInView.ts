@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useReelChrome } from "@/components/film/useReelChrome";
 
 /** The homepage opener's section. The brand-name hiding keys off this film only. */
 export const HERO_FILM_SELECTOR = "#hero[data-film]";
-/** Every film segment of the reel (hero and chapter dividers). */
+/** Every film segment of the reel (hero, chapter dividers and chapters). */
 export const FILM_SEGMENT_SELECTOR = "[data-film-segment]";
 
 type FilmInView = {
@@ -13,60 +14,34 @@ type FilmInView = {
   /** The hero film intersects the viewport (shrunk by `rootMargin`). */
   inView: boolean;
   /**
-   * A film segment (hero or divider) is playing under the chrome: its top has reached `inset` px from
-   * the viewport top and its stage has not been released yet (bottom still below the viewport bottom).
+   * The chrome is over the film: a camera move, the hero's bare-film tail or a chapter's pinned
+   * composition (useReelChrome `chrome !== "body"`, published by FilmBackdrop from the raw clock).
    */
   overFilm: boolean;
 };
 
-const INITIAL: FilmInView = { present: false, inView: false, overFilm: false };
-
 /**
- * Tracks the film under the page chrome (navbar, scroll-to-top), so the chrome can stay out of the
- * picture while any segment plays and come back over the hold panels. `inView` stays hero-only (the
- * hero already says the name, so the navbar hides its brand there). State changes only inside the
- * observer, scroll/resize listeners and a frame callback.
+ * Tracks the film under the page chrome (navbar, scroll-to-top). `overFilm` comes from the reel clock
+ * (useReelChrome); `inView` stays hero-only (the hero already says the name, so the navbar hides its
+ * brand there), from an IntersectionObserver.
  */
-export function useFilmInView(rootMargin = "0px", inset = 0): FilmInView {
-  const [state, setState] = useState<FilmInView>(INITIAL);
+export function useFilmInView(rootMargin = "0px"): FilmInView {
+  const { chrome } = useReelChrome();
+  const [hero, setHero] = useState({ present: false, inView: false });
 
   useEffect(() => {
-    const hero = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
-    const segments = [...document.querySelectorAll<HTMLElement>(FILM_SEGMENT_SELECTOR)];
-    if (!hero && !segments.length) return;
-    let heroIn = false;
-    let present = false;
-    const publish = () => {
-      const h = window.innerHeight;
-      const overFilm = segments.some((s) => {
-        const r = s.getBoundingClientRect();
-        return r.top <= inset && r.bottom > h;
-      });
-      setState((prev) =>
-        prev.present === present && prev.inView === heroIn && prev.overFilm === overFilm
-          ? prev
-          : { present, inView: heroIn, overFilm },
-      );
-    };
+    const el = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
+    if (!el) return;
     const io = new IntersectionObserver(
       (entries) => {
-        heroIn = entries[entries.length - 1].isIntersecting;
-        present = true;
-        publish();
+        const inView = entries[entries.length - 1].isIntersecting;
+        setHero((prev) => (prev.present && prev.inView === inView ? prev : { present: true, inView }));
       },
       { rootMargin },
     );
-    if (hero) io.observe(hero);
-    const raf = requestAnimationFrame(publish);
-    window.addEventListener("scroll", publish, { passive: true });
-    window.addEventListener("resize", publish);
-    return () => {
-      io.disconnect();
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", publish);
-      window.removeEventListener("resize", publish);
-    };
-  }, [rootMargin, inset]);
+    io.observe(el);
+    return () => io.disconnect();
+  }, [rootMargin]);
 
-  return state;
+  return { ...hero, overFilm: chrome !== "body" };
 }
