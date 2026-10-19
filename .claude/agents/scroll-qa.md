@@ -183,7 +183,7 @@ and 390×844 DPR 3 touch, sized from disk; keys (`/images/reel/`) and posters re
 Dissolves (exit → tower-01) and the tower-K3 → tower-04 hand-over: screenshots at 0, 25,
 50, 75, 100, 125 % of the dissolve: no step > 3× the median step (pop), no full-width flat band (a 40 px row band with σ < 1.5 that
 is not in either film), no double image (judge the 50 % shot at 200 %).
-**C21 Regression.** `/projects/<slug>` keeps the particle canvas, smooth scroll, no `[data-film-segment]`, no Fraunces; client
+**C21 Regression.** `/projects/<slug>` keeps the particle canvas, smooth scroll, no `[data-film-segment]`; Fraunces is loaded only where used (the homepage and the case-study pages), never on /book; client
 navigation back to `/` shows the reel with zero errors; ChapterFlow surfaces (`app/book/**`, ChapterFlow hosts) unchanged.
 
 ## Footage status
