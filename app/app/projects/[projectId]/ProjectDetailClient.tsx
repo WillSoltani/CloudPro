@@ -107,6 +107,21 @@ export default function ProjectDetailClient({ projectId, initialFiles, guestMode
     server.setDropSignedUrl(signed.dropSignedUrl);
   }, [server, signed.dropSignedUrl]);
 
+  // The guest demo's sample: a bundled 1200×800 PNG, staged like a picked file, with WebP preselected.
+  const tryDemoSample = useCallback(async () => {
+    try {
+      const res = await fetch("/demo/sample.png");
+      if (!res.ok) throw new Error(String(res.status));
+      const file = new File([await res.blob()], "sample.png", { type: "image/png" });
+      const list = new DataTransfer();
+      list.items.add(file);
+      staged.onPickFiles(list.files);
+      setGlobalFormat("WebP");
+    } catch {
+      setError("The sample could not be loaded. Try again, or pick a file of your own.");
+    }
+  }, [staged]);
+
   const getSettings = useCallback(
     (fileId: string): ItemSettings =>
       itemSettings[fileId] ?? { ...DEFAULT_SETTINGS },
@@ -302,6 +317,10 @@ export default function ProjectDetailClient({ projectId, initialFiles, guestMode
 
       const toLabel =
         f.outputFormat ?? (filename.includes(".") ? filename.split(".").pop()!.toUpperCase() : "?");
+      // The guest demo ties a finished job back to the case study: its row is written when the job starts and
+      // updated by the worker when it is done, so the two timestamps bracket the run.
+      const ran = (Date.parse(f.updatedAt) - Date.parse(f.createdAt)) / 1000;
+      const pipelineSeconds = guestMode && status === "done" && Number.isFinite(ran) && ran > 0 ? ran : undefined;
 
       return {
         id: f.fileId,
@@ -319,9 +338,10 @@ export default function ProjectDetailClient({ projectId, initialFiles, guestMode
         packaging: f.packaging,
         pageCount: f.pageCount,
         outputCount: f.outputCount,
+        pipelineSeconds,
       };
     });
-  }, [server.outputFiles, filesById, signed.signedUrls]);
+  }, [server.outputFiles, filesById, signed.signedUrls, guestMode]);
 
   const filledPdfView: LocalConvertedFile[] = useMemo(() => {
     return server.filledPdfFiles.map((f) => {
@@ -602,6 +622,7 @@ export default function ProjectDetailClient({ projectId, initialFiles, guestMode
           <DropzoneCard
             pendingCount={staged.staged.length}
             onPickFiles={staged.onPickFiles}
+            onTrySample={guestMode ? () => void tryDemoSample() : undefined}
             onUploadClick={onUploadClick}
             uploadDisabled={uploadBusy || staged.uploadDisabled}
             stagedItems={staged.stagedItems}

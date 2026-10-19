@@ -194,7 +194,8 @@ export function InteractiveBackground() {
   }, []);
 
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+    // Decoration only: out of the accessibility tree (it sat outside every landmark).
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
       {/* base */}
       <div className="absolute inset-0 bg-[#070b16]" />
 

@@ -55,6 +55,8 @@ export type LocalConvertedFile = {
   packaging?: "single" | "zip";
   pageCount?: number;
   outputCount?: number;
+  /** The guest demo: seconds from the job's start to its result (the output row's createdAt → updatedAt). */
+  pipelineSeconds?: number;
 };
 
 // Valid output formats per source format label.

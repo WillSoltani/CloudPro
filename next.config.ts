@@ -19,10 +19,23 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
+      // The mark and the link previews never change at a URL (their links carry a content hash, or a new
+      // file name): cache them for a year.
+      ...["/icon.svg", "/apple-icon.png", "/favicon.ico", "/og/:path*"].map((source) => ({
+        source,
+        has: [{ type: "host" as const, value: "soltani.org" }],
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      })),
     ];
   },
   async redirects() {
     return [
+      // The ChapterFlow case study's old slug.
+      {
+        source: "/projects/book-accelerator",
+        destination: "/projects/chapterflow",
+        permanent: true,
+      },
       {
         source: "/book/home",
         destination: "/book/workspace",

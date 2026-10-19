@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Fraunces } from "next/font/google";
+import { fraunces } from "@/app/_lib/fraunces";
 import { preconnect, preload } from "react-dom";
 import { WIDE_QUERY } from "@/components/film/filmBase";
 import { HERO_FILM, HOLD_KEYS, HOLD_REVEALS_KEY, HOLD_SECTIONS, HOLD_STORAGE_KEY } from "@/components/film/reel";
@@ -14,15 +14,6 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
 
-// Page-scoped so ChapterFlow routes never preload it; exposed to the film captions as `font-serif`.
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: "variable",
-  style: "normal",
-  axes: ["opsz"],
-  display: "swap",
-  variable: "--font-fraunces",
-});
 
 const json = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
 

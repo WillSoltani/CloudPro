@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { Fraunces } from "next/font/google";
 import {
   isChapterFlowAppHost,
   isChapterFlowAuthHost,
@@ -9,14 +8,6 @@ import {
 } from "@/app/_lib/chapterflow-brand";
 import { TEXT_LINK } from "@/components/film/sectionTokens";
 
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  weight: "variable",
-  style: "normal",
-  axes: ["opsz"],
-  display: "swap",
-  variable: "--font-fraunces",
-});
 
 async function onChapterFlowHost(): Promise<boolean> {
   const h = await headers();
@@ -50,10 +41,14 @@ export default async function NotFound() {
     );
   }
   return (
-    <main
-      className={`${fraunces.variable} mx-auto flex min-h-svh max-w-xl flex-col justify-center px-6 py-24`}
-    >
-      <h1 className="font-serif text-4xl font-normal leading-tight text-slate-50 sm:text-5xl">
+    // No next/font here: the root 404 sits in every route's tree, so a font stylesheet imported by it was
+    // preloaded on every page, ChapterFlow's included. Its line is set in the serif stack's fallback (Iowan
+    // Old Style, Georgia), named directly: `font-serif` alone needs the Fraunces variable.
+    <main className="mx-auto flex min-h-svh max-w-xl flex-col justify-center px-6 py-24">
+      <h1
+        className="text-4xl font-normal leading-tight text-slate-50 sm:text-5xl"
+        style={{ fontFamily: '"Iowan Old Style", Georgia, serif' }}
+      >
         Nothing at this address.
       </h1>
       <p className="mt-4 text-base leading-relaxed text-slate-300">

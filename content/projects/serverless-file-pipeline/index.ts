@@ -15,7 +15,7 @@ export const serverlessFilePipeline: Project = {
   demoLabel: "Try the live demo",
   githubUrl: "https://github.com/WillSoltani/CloudPro",
   byline: "Built and run by me. Live on this site, and open to try without an account.",
-  nextStep: { label: "Try the live app", href: "/test" },
+  nextStep: { label: "Try the live demo", href: "/test" },
 
   caseStudy: {
     overview:

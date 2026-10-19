@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import ProjectDetailClient from "./ProjectDetailClient";
 import type { FileRow } from "../_lib/types";
@@ -85,10 +86,33 @@ async function fetchProjectFiles(projectId: string): Promise<FileRow[]> {
   return data.files ?? [];
 }
 
+/** The guest demo without its cookie, straight after /test set one: cookies are blocked or were cleared. */
+function GuestNeedsCookie() {
+  return (
+    <main className="mx-auto flex min-h-[60svh] max-w-xl flex-col justify-center px-6 py-24">
+      <p className="text-lg leading-relaxed text-slate-200">
+        The demo needs a cookie to keep your files to yourself. Allow cookies for soltani.org and try again.
+      </p>
+      <p className="mt-6">
+        <Link
+          href="/test"
+          rel="nofollow"
+          prefetch={false}
+          className="rounded-sm text-slate-50 underline decoration-white/30 underline-offset-4 hover:text-amber-200 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070b16]"
+        >
+          Try again
+        </Link>
+      </p>
+    </main>
+  );
+}
+
 export default async function AppProjectDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ projectId: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { projectId } = await params;
   const jar = await cookies();
@@ -96,7 +120,10 @@ export default async function AppProjectDetailPage({
   const isGuestProject = projectId === GUEST_PROJECT_ID;
 
   if (isGuestProject) {
-    if (!hasGuestSession) redirect("/test");
+    if (!hasGuestSession) {
+      if ((await searchParams).from === "test") return <GuestNeedsCookie />;
+      redirect("/test");
+    }
     const initialFiles = await fetchProjectFiles(projectId);
     return (
       <ProjectDetailClient

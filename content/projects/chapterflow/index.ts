@@ -1,7 +1,7 @@
 import type { Project } from "@/types/project";
 
-export const bookAccelerator: Project = {
-  slug: "book-accelerator",
+export const chapterflow: Project = {
+  slug: "chapterflow",
   title: "ChapterFlow",
   description:
     "Guided reading for non-fiction: over 130 books in 12-minute chapters, each a summary, examples and a quiz, then spaced review. Free and Pro plans on Stripe.",

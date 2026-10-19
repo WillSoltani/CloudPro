@@ -13,7 +13,7 @@ export const soltaniOrg: Project = {
   status: "Live",
   githubUrl: "https://github.com/WillSoltani/CloudPro",
   byline: "Built by me with Claude Code agents. Live at soltani.org.",
-  nextStep: { label: "Read the source on GitHub", href: "https://github.com/WillSoltani/CloudPro" },
+  nextStep: { label: "See the page", href: "/" },
 
   caseStudy: {
     overview:
