@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
 import { motion, useMotionValue, useTransform } from "framer-motion";
 import { useReducedMotionSafe, type FilmEntry } from "@/components/film/filmCore";
 import { WIDE_QUERY } from "@/components/film/filmBase";
@@ -233,21 +233,58 @@ export function FilmChapter({
     };
   }, [overflow, viewH]);
 
-  // Tab into the chapter before its heading has arrived: land on the revealed hold instead.
+  // Keyboard focus always lands in view, between the header's clearance and FIT_EDGE above the bottom:
+  // - into the composition before its heading has arrived, or onto an item out of view: the revealed hold
+  //   (the anchor); stacked, an item the bottom feather would cover at rest goes on to the end of the lift;
+  // - onto the body (it enters on release, below the pinned composition): scrolled to the nearest edge.
   const focusRaf = useRef(0);
+  const focusTarget = useRef<HTMLElement | null>(null);
   useEffect(() => () => cancelAnimationFrame(focusRaf.current), []);
-  const onFocusCapture = () => {
+  const onFocusCapture = (e: FocusEvent<HTMLElement>) => {
+    focusTarget.current = e.target instanceof HTMLElement ? e.target : null;
     if (focusRaf.current) return;
     // After the browser's own focus scroll, so the position read is the one the viewer will see.
     focusRaf.current = requestAnimationFrame(() => {
       focusRaf.current = 0;
       const el = sectionRef.current;
       const anchor = anchorRef.current;
-      if (!el || !anchor) return;
+      const target = focusTarget.current;
+      if (!el || !anchor || !target) return;
+      const top = ANCHOR_PADDING;
+      const bottom = () => window.innerHeight - FIT_EDGE;
+      // Where the target sits once the stacked lift is complete (0 framed).
+      const liftLeft = () => overflow.get() + liftY.get();
+      if (target.closest("[data-body]")) {
+        // Scroll by the difference until it is in view: a pinned composition does not move with the scroll,
+        // so the first steps may only use up the read pin before the body starts to rise.
+        for (let k = 0; k < 24; k++) {
+          const r = target.getBoundingClientRect();
+          const t = r.top - liftLeft();
+          const b = r.bottom - liftLeft();
+          const d = t < top ? t - top : b > bottom() ? Math.min(b - bottom(), t - top) : 0;
+          const before = window.scrollY;
+          if (Math.abs(d) < 1) break;
+          window.scrollBy({ top: d, behavior: "instant" });
+          if (window.scrollY === before) break;
+        }
+        return;
+      }
       const m = anchor.offsetTop - ANCHOR_OFFSET;
       const y = -el.getBoundingClientRect().top;
       const raw = m > 0 ? Math.min(1, Math.max(0, y / m)) * end : end;
-      if (y < 0 || raw < choreo.headAt) anchor.scrollIntoView({ block: "start", behavior: "instant" });
+      const r = target.getBoundingClientRect();
+      if (!(y < 0 || raw < choreo.headAt || r.top < top || r.bottom > bottom())) return;
+      anchor.scrollIntoView({ block: "start", behavior: "instant" });
+      // Stacked: at rest the bottom feather would cover it, so on to the end of the lift (the read pin's
+      // LIFT_BY; the svh from the move: m = moveVh·100svh).
+      if (overflow.get() > 0 && moveVh > 0) {
+        const atRest = target.getBoundingClientRect().bottom - liftY.get();
+        if (atRest > window.innerHeight - FEATHER_PX) {
+          const rest = el.getBoundingClientRect().top + window.scrollY + m;
+          const readPx = choreo.readVh * (m / moveVh);
+          window.scrollTo({ top: Math.round(rest + LIFT_BY * readPx), behavior: "instant" });
+        }
+      }
     });
   };
 
