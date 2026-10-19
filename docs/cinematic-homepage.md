@@ -144,4 +144,11 @@ ScrollToTop hides over phone text and the footer; focus rings on the auth contro
 **2026-10-16, after the merge:** Will removed the Experience/Education section and asked for a services tone (the site offers AWS
 work to companies, founders and teams; nothing reads as job-seeking). tower-01 now plays as a wordless passage (`#bridge`,
 FilmSegment, pace 120 ≈ 2.4 vh, dissolveIn 0.2 from the exit's key), Contact is chapter 05 and carries the offer; hero badge
-\"Available for new engagements.\"; copy rewritten in content/about.ts, the hero line, Contact and the Projects lede.
+"Available for new engagements."; copy rewritten in content/about.ts, the hero line, Contact and the Projects lede.
+**2026-10-18, expert range + flawless pass:** Skills are five areas on the five drive rows (Cloud & Serverless, Web & Product,
+AI & Automation, Software Engineering, 3D & Real-time Graphics; evidence-based, no game engines named); the hero reads
+"Software engineer · AWS · web · mobile · AI"; the homepage header is transparent everywhere; the case-study pages lost their
+placeholders; the project cards describe the real pipeline (Cognito, presigned S3, Step Functions, a container Lambda, DynamoDB)
+and ChapterFlow as a live product; Contact's email is the obvious action; back-to-top is a veiled jump; phone compositions lift
+into view during the read pin; the exit runs at pace 110 and the bridge at 160; rack chapters shade with a neutral night. Source:
+a three-lens Opus design critique of the live page (`films-src/qa/part5/critique-1/`).

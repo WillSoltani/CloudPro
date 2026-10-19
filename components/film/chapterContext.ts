@@ -25,6 +25,8 @@ export type ChapterContextValue = {
   head: HeadWindows;
   reduced: boolean;
   platesOn: boolean;
+  /** The composition is stacked (phones; a framed layout that would not fit): Reveal `stackedPin` applies. */
+  stacked: boolean;
   sectionRef: RefObject<HTMLElement | null>;
   composeRef: RefObject<HTMLDivElement | null>;
   /** The raw (unsmoothed) move frame from the scroll position (0 before the chapter, M from camera rest). */

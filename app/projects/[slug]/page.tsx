@@ -53,7 +53,7 @@ export async function generateMetadata({
   if (!project) return { title: "Project not found" };
 
   return {
-    title: `${project.title} | Case Study`,
+    title: `${project.title} · Case study · Will Soltani`,
     description: project.description,
   };
 }
@@ -125,9 +125,6 @@ function ServiceTile(props: { name: string }) {
         <span className="inline-flex items-center rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-sm text-amber-200">
           {props.name}
         </span>
-        <span className="text-xs text-slate-500 opacity-0 transition group-hover:opacity-100">
-          Included
-        </span>
       </div>
     </div>
   );
@@ -168,7 +165,7 @@ export default async function ProjectPage({
             className="inline-flex items-center gap-2 text-sm text-slate-300 hover:text-slate-100"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Portfolio
+            Back to soltani.org
           </Link>
         </div>
       </div>
@@ -195,15 +192,6 @@ export default async function ProjectPage({
             {project.featured ? (
               <Badge className="bg-sky-500/10 text-sky-200 hover:bg-sky-500/15">
                 Featured
-              </Badge>
-            ) : null}
-
-            {project.status ? (
-              <Badge
-                variant="outline"
-                className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
-              >
-                {project.status}
               </Badge>
             ) : null}
 
@@ -269,7 +257,7 @@ export default async function ProjectPage({
                 asChild
                 className="bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.3)] hover:bg-sky-500"
               >
-                <Link href="/test">Test</Link>
+                <Link href="/test">Try the live app →</Link>
               </Button>
             ) : null}
           </div>
@@ -279,36 +267,28 @@ export default async function ProjectPage({
             BODY
         -------------------------------------------------- */}
         <div className="mt-10 space-y-12">
-          {/* Architecture Diagram */}
-          <SoftCard className="p-4 sm:p-6">
-            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                {cs?.diagram?.src ? (
+          {/* Architecture Diagram (only when the project has a legible one) */}
+          {cs?.diagram?.src ? (
+            <SoftCard className="p-4 sm:p-6">
+              <div className="relative overflow-hidden rounded-xl border border-white/10 bg-white/5">
                 <div className="relative w-full">
-                    <Image
+                  <Image
                     src={cs.diagram.src}
                     alt={cs.diagram.alt ?? `${project.title} architecture diagram`}
                     width={1400}
                     height={800}
                     className="h-auto w-full"
                     priority
-                    />
-                    {cs.diagram.caption ? (
+                  />
+                  {cs.diagram.caption ? (
                     <p className="border-t border-white/10 px-4 py-3 text-xs text-slate-400">
-                        {cs.diagram.caption}
+                      {cs.diagram.caption}
                     </p>
-                    ) : null}
+                  ) : null}
                 </div>
-                ) : (
-                <div className="flex h-60 items-center justify-center">
-                    <p className="text-sm text-slate-400">
-                    Diagram will render here (add <span className="text-slate-300">caseStudy.diagram</span>)
-                    </p>
-                </div>
-                )}
-                
-            </div>
+              </div>
             </SoftCard>
-
+          ) : null}
 
           {/* Problem Statement */}
           <section className="space-y-4">
@@ -325,26 +305,25 @@ export default async function ProjectPage({
             </SoftCard>
           </section>
 
-          {/* Solution */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<Lightbulb className="h-5 w-5 text-yellow-300" />}
-              title="Solution"
-              subtitle="How the system works end-to-end."
-            />
-            <SoftCard className="p-5 sm:p-6">
-              <p className="text-sm leading-relaxed text-slate-300">
-                {cs?.overview ??
-                  "Explain the approach at a high level: event flow, storage, processing, and how you ensure reliability and security."}
-              </p>
-            </SoftCard>
-          </section>
+          {/* Solution (only when it differs from the overview above) */}
+          {cs?.solution && cs.solution !== cs.overview ? (
+            <section className="space-y-4">
+              <SectionHeader
+                icon={<Lightbulb className="h-5 w-5 text-yellow-300" />}
+                title="Solution"
+                subtitle="How the system works end-to-end."
+              />
+              <SoftCard className="p-5 sm:p-6">
+                <p className="text-sm leading-relaxed text-slate-300">{cs.solution}</p>
+              </SoftCard>
+            </section>
+          ) : null}
 
-          {/* AWS Services Used */}
+          {/* Stack */}
           <section className="space-y-4">
             <SectionHeader
               icon={<Cloud className="h-5 w-5 text-amber-300" />}
-              title="AWS Services Used"
+              title="Stack"
               subtitle="Core services and why they are in the design."
             />
 

@@ -40,9 +40,10 @@ const TAGS = { div: motion.div, li: motion.li, p: motion.p, span: motion.span } 
  *   content checks (revealed items take pointer events) do not count it.
  */
 export function Reveal({
-  at,
+  at: atFrames,
   tail,
-  pin,
+  pin: pinWindow,
+  stackedPin,
   y = 10,
   passive = false,
   as = "div",
@@ -54,6 +55,8 @@ export function Reveal({
   at?: FrameWindow;
   tail?: FrameWindow;
   pin?: FrameWindow;
+  /** On a stacked composition (phones), this read-pin window replaces `at` and `pin` (choreo `stacked`). */
+  stackedPin?: FrameWindow;
   /** Rise in px (0 for the h2, whose box is the plate's landing target). */
   y?: number;
   /** Never take pointer events (a tone layer). */
@@ -65,6 +68,9 @@ export function Reveal({
 } & { "aria-hidden"?: "true" } & Record<`data-${string}`, string | undefined>) {
   const ch = useChapter();
   const { end, reduced } = ch;
+  const restack = ch.stacked && !!stackedPin;
+  const at = restack ? undefined : atFrames;
+  const pin = restack ? stackedPin : pinWindow;
   // Reduced motion keys every element to the end still; otherwise frames (`at`), the tail (`tail`) or
   // the read pin (`pin`, scaled by τ_read).
   const source = reduced || at ? ch.frame : ch.tau;

@@ -19,7 +19,7 @@ const FINALE = [
 ].join(" ");
 
 const FINALE_LINE =
-  "mt-3 font-serif text-3xl leading-[1.08] text-balance text-slate-50 wide:text-[clamp(1.75rem,2.1vw,2.5rem)] wide:leading-[1.12] wide:text-pretty";
+  "mt-3 font-serif text-3xl leading-[1.08] text-balance text-slate-50 wide:text-[clamp(1.75rem,2.1vw,2.5rem)] wide:leading-[1.12] wide:max-w-[20ch] wide:text-balance";
 
 /** The hero block: the page's h1 lives here and never leaves the accessibility tree. */
 function Intro({ from, to }: { from: number; to: number }) {
@@ -39,9 +39,9 @@ function Intro({ from, to }: { from: number; to: number }) {
         {HERO_COPY.name}
       </h1>
       <p className="mt-3 font-serif text-lg leading-snug text-slate-200 wide:text-[1.375rem]">
-        {HERO_COPY.title[0]} <span className="text-slate-500">|</span>{" "}
-        {/* Keep the second title whole so a wrap can only fall after the pipe, never orphan "Architect". */}
-        <span className="whitespace-nowrap">{HERO_COPY.title[1]}</span>
+        {/* Two clean lines, never a pipe left hanging at the column's edge. */}
+        <span className="block">{HERO_COPY.title[0]}</span>
+        <span className="block">{HERO_COPY.title[1]}</span>
       </p>
       <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-300/80">
         {HERO_COPY.location}

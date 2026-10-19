@@ -59,12 +59,16 @@ const rackKey = (n: number, portrait = false) =>
   `/images/reel/rack-K0${n}${portrait ? "-p" : ""}.webp`;
 
 /**
- * Chapter pace (part five §2h, Will 2026-10-13): 84 film frames per viewport for the chapters, the exit
- * and the tower; the hero keeps the timeline's 96.
+ * Chapter pace (part five §2h, Will 2026-10-13): 84 film frames per viewport for the chapters and the
+ * tower; the hero keeps the timeline's 96.
  */
 const CHAPTER_PACE = 84;
-/** The bridge carries no text since Experience left the page (2026-10-16): a quicker passage, ≈ 2.4 vh. */
-const BRIDGE_PACE = 120;
+/**
+ * The two wordless passages are quicker (critique 2026-10-17): the exit at 110 (1.47 vh, was 1.93) and the
+ * bridge, which carries no text since Experience left the page, at 160 (1.8 vh, was 2.4).
+ */
+const EXIT_PACE = 110;
+const BRIDGE_PACE = 160;
 
 /**
  * The hold key's breath wherever no rendered tail frames play (§2a, §2e): a push of
@@ -141,7 +145,7 @@ export const REEL: readonly FilmEntry[] = [
     portrait: rack05p,
     key: rackKey(5),
     portraitKey: rackKey(5, true),
-    pace: CHAPTER_PACE,
+    pace: EXIT_PACE,
   }),
   film(tower01, {
     portrait: tower01p,

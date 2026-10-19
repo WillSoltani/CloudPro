@@ -70,7 +70,12 @@ export default function Home() {
   // portrait hero film each poster is preloaded only where the hero's <picture> will pick it.
   const { landscape, portrait } = HERO_FILM;
   for (const film of portrait ? [landscape, portrait] : [landscape]) {
-    if (/^https?:\/\//.test(film.base)) preconnect(new URL(film.base).origin);
+    if (!/^https?:\/\//.test(film.base)) continue;
+    const origin = new URL(film.base).origin;
+    // The poster is a plain <img> (a credentialed connection); the backdrop fetches frames in CORS mode,
+    // which cannot reuse it, so warm an anonymous connection as well.
+    preconnect(origin);
+    preconnect(origin, { crossOrigin: "anonymous" });
   }
   if (portrait) {
     preload(landscape.poster, { as: "image", fetchPriority: "high", media: WIDE_QUERY });
