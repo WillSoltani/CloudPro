@@ -40,6 +40,7 @@ const CARD_WIDTH =
   (HEATSINKS[1] - HEATSINKS[0] - 0.3) * NARROWEST_FRAME_PX >= CARD_GAP_MIN_PX ? 0.3 : 0.28;
 
 const FEATURED = projects.filter((p) => p.featured).slice(0, HEATSINKS.length);
+const PROJECT_EMAIL = "mailto:will@soltani.org?subject=Project%20enquiry";
 const MORE = projects.filter((p) => !FEATURED.includes(p));
 
 /** A card's links: Geist Sans 14 px, underlined, so they read as links rather than as one more row of tags. */
@@ -94,28 +95,58 @@ function ProjectItem({ p, at, stackedPin }: { p: Project; at: FrameWindow; stack
         <Link href={`/projects/${p.slug}`} className={CARD_LINK} aria-label={`Case study: ${p.title}`}>
           Case study <span aria-hidden>→</span>
         </Link>
-        {p.demoUrl ? external(p.demoUrl, new URL(p.demoUrl).host, p.title) : null}
+        {p.demoUrl ? (
+          /^https?:\/\//.test(p.demoUrl) ? (
+            external(p.demoUrl, new URL(p.demoUrl).host, p.title)
+          ) : (
+            // An internal demo (the guest converter): same tab, no arrow, not for crawlers.
+            <Link
+              href={p.demoUrl}
+              rel="nofollow"
+              prefetch={false}
+              aria-label={`${p.demoLabel ?? "Live demo"}: ${p.title}`}
+              className={CARD_LINK}
+            >
+              {p.demoLabel ?? "Live demo"}
+            </Link>
+          )
+        ) : null}
         {p.githubUrl ? external(p.githubUrl, "GitHub", p.title) : null}
       </p>
     </Reveal>
   );
 }
 
-/** Non-featured projects as a plain list after the cards (none today, so no body). */
-function MoreProjects() {
+/**
+ * The chapter's body, on release after the cards: non-featured projects as a plain list (soltani.org), then
+ * one closing line with the email, so it is on screen as the cards leave and before the wordless passage.
+ */
+function ProjectsBody() {
   return (
     <div className="mx-auto max-w-6xl px-5 sm:px-6 lg:px-8">
-      <h3 className={MONO_LABEL}>More projects</h3>
-      <ul className="mt-4 space-y-4">
-        {MORE.map((p) => (
-          <FlowReveal as="li" key={p.slug}>
-            <Link href={`/projects/${p.slug}`} className={`${FILM_LINK} normal-case`}>
-              {p.title} <span aria-hidden>→</span>
-            </Link>
-            <p className={`mt-1 ${BODY_TEXT}`}>{p.description}</p>
-          </FlowReveal>
-        ))}
-      </ul>
+      {MORE.length ? (
+        <>
+          <h3 className={MONO_LABEL}>More projects</h3>
+          <ul className="mt-4 space-y-4">
+            {MORE.map((p) => (
+              <FlowReveal as="li" key={p.slug}>
+                <Link href={`/projects/${p.slug}`} className={`${FILM_LINK} normal-case`}>
+                  {p.title} <span aria-hidden>→</span>
+                </Link>
+                <p className={`mt-1 max-w-[44rem] ${BODY_TEXT}`}>{p.description}</p>
+              </FlowReveal>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      <FlowReveal>
+        <p className="mt-12 font-serif text-lg leading-snug text-slate-200 wide:text-[clamp(1.05rem,1.25vw,1.3rem)]">
+          Building something like this?{" "}
+          <a href={PROJECT_EMAIL} aria-label="Email will@soltani.org" className={TEXT_LINK}>
+            will@soltani.org
+          </a>
+        </p>
+      </FlowReveal>
     </div>
   );
 }
@@ -124,8 +155,8 @@ function MoreProjects() {
  * 04 Projects (§2f): rack-04 opens the server; plate 04 at f32 (nav → Projects), lifting at f37 for the long
  * flight to the heading at f80 while the server slides out and the air cover clears the heat sinks
  * (f72–86); the h2, "● SERVER" and the lede; then the two featured projects, one on each heat sink. No filter
- * chips and no duplicate list (a "More projects" list returns as the body when a non-featured project
- * exists).
+ * chips and no duplicate list; the body (on release) lists the non-featured projects under "More projects"
+ * and closes with the email.
  *
  * Desktop: head x 0.18 from max(96 px, frame y 0.14); its band is drawn to 0.26 but the head (h2, support
  * line, a two-line lede) is taller, so it ends at ≈ frame y 0.29–0.31 (to 0.36 on the shortest laptop windows;
@@ -145,7 +176,7 @@ export function ProjectsBlock() {
       breath={breathOf(FILM)}
       tail={tailOf(FILM)}
       plate={<RackPlate index={REEL_INDEX.projects} n={PLATE.n} name={PLATE.headingText} handoff />}
-      body={MORE.length ? <MoreProjects /> : undefined}
+      body={<ProjectsBody />}
     >
       <BlockTone top={0.54} />
       {/* The head starts on the first card's left edge (heat sink 0 less half a card). */}

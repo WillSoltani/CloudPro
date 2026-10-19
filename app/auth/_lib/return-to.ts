@@ -35,8 +35,9 @@ export function sanitizeReturnTo(
   const raw = String(value ?? "").trim();
   if (!raw) return fallback;
 
+  // A same-site path; "//host" and "/\\host" are protocol-relative URLs to another site, never paths.
   if (raw.startsWith("/")) {
-    return raw;
+    return raw.startsWith("//") || raw.startsWith("/\\") ? fallback : raw;
   }
 
   try {

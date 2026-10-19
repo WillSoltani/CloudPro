@@ -81,7 +81,15 @@ export function SkillsSection() {
                 stackedPin={C.stacked?.items?.[k] ?? undefined}
                 data-halo=""
               >
-                <h3 className={GROUP_TITLE}>{g.title}</h3>
+                <div>
+                  <h3 className={GROUP_TITLE}>{g.title}</h3>
+                  {/* The row's proof, under its title where the rows are framed (desktop). */}
+                  {g.claim ? (
+                    <p className="mt-1 hidden text-[13px] leading-snug text-pretty text-slate-300 wide:block">
+                      {g.claim}
+                    </p>
+                  ) : null}
+                </div>
                 <ul className={`mt-1.5 ${SEP_LIST} wide:mt-0`}>
                   {g.items.map((it, i) => (
                     <li key={it} className={`${ITEM_META} ${SEP_ITEM} text-slate-200`}>

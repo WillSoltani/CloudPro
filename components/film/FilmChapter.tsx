@@ -242,6 +242,9 @@ export function FilmChapter({
   useEffect(() => () => cancelAnimationFrame(focusRaf.current), []);
   const onFocusCapture = (e: FocusEvent<HTMLElement>) => {
     focusTarget.current = e.target instanceof HTMLElement ? e.target : null;
+    // A heading focused from script (tabindex -1, e.g. by back-to-top) is a focus move, not a Tab stop: no
+    // scroll correction.
+    if (focusTarget.current?.getAttribute("tabindex") === "-1") return;
     if (focusRaf.current) return;
     // After the browser's own focus scroll, so the position read is the one the viewer will see.
     focusRaf.current = requestAnimationFrame(() => {

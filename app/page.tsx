@@ -1,9 +1,18 @@
+import type { Metadata } from "next";
 import { Fraunces } from "next/font/google";
 import { preconnect, preload } from "react-dom";
 import { WIDE_QUERY } from "@/components/film/filmBase";
 import { HERO_FILM, HOLD_KEYS, HOLD_REVEALS_KEY, HOLD_SECTIONS, HOLD_STORAGE_KEY } from "@/components/film/reel";
 import { PageShell } from "@/components/PageShell";
 import { HomeClient } from "@/components/HomeClient";
+import JSON_LD from "@/app/jsonld.json";
+
+// The homepage only: the large link-preview card and the canonical URL (the layout's defaults apply
+// everywhere, including /book, so neither lives there).
+export const metadata: Metadata = {
+  twitter: { card: "summary_large_image" },
+  alternates: { canonical: "/" },
+};
 
 // Page-scoped so ChapterFlow routes never preload it; exposed to the film captions as `font-serif`.
 const fraunces = Fraunces({
@@ -86,6 +95,8 @@ export default function Home() {
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: HOLD_BOOT }} />
+      {/* WebSite, Person and ProfessionalService (copy pack §4: verified fields only). */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: json(JSON_LD) }} />
       <PageShell className={fraunces.variable}>
         <HomeClient />
       </PageShell>

@@ -27,6 +27,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/Chip";
+import { FOCUS_RING } from "@/components/focusRing";
 
 /* -------------------------------------------------
    Data lookup
@@ -50,11 +51,26 @@ export async function generateMetadata({
   const { slug } = await params;
   const project = getProjectBySlug(slug);
 
-  if (!project) return { title: "Project not found" };
+  if (!project) return { title: "Not found · Will Soltani" };
 
+  // Each case study unfurls as itself, with its own preview image (public/og/case-<slug>.png; soltani.org
+  // uses the homepage's).
+  const title = `${project.title} · Case study`;
+  const image = slug === "soltani-org" ? "/og/soltani-og.png" : `/og/case-${slug}.png`;
   return {
-    title: `${project.title} · Case study · Will Soltani`,
+    title: `${title} · Will Soltani`,
     description: project.description,
+    alternates: { canonical: `/projects/${slug}` },
+    openGraph: {
+      title,
+      description: project.description,
+      type: "article",
+      url: `/projects/${slug}`,
+      siteName: "Will Soltani",
+      locale: "en_CA",
+      images: [{ url: image, width: 1200, height: 630, alt: `${project.title}, a case study on soltani.org` }],
+    },
+    twitter: { card: "summary_large_image" },
   };
 }
 
@@ -162,7 +178,7 @@ export default async function ProjectPage({
         <div className="mx-auto max-w-6xl px-4 py-3 sm:px-6">
           <Link
             href="/#projects"
-            className="inline-flex items-center gap-2 text-sm text-slate-300 hover:text-slate-100"
+            className={`inline-flex items-center gap-2 rounded-sm text-sm text-slate-300 hover:text-slate-100 ${FOCUS_RING}`}
           >
             <ArrowLeft className="h-4 w-4" />
             Back to soltani.org
@@ -171,7 +187,7 @@ export default async function ProjectPage({
       </div>
 
       {/* background wash */}
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(900px_circle_at_40%_-10%,rgba(56,189,248,0.10),transparent_55%),radial-gradient(900px_circle_at_80%_0%,rgba(168,85,247,0.08),transparent_55%)]" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(900px_circle_at_40%_-10%,rgba(56,189,248,0.10),transparent_55%),radial-gradient(900px_circle_at_80%_0%,rgba(168,85,247,0.08),transparent_55%)]" />
 
       <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
         {/* -------------------------------------------------
@@ -226,7 +242,7 @@ export default async function ProjectPage({
               <Button
                 asChild
                 variant="outline"
-                className="border-white/15 bg-white/5 text-slate-100 hover:bg-white/10"
+                className={`border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 ${FOCUS_RING}`}
               >
                 <a href={project.githubUrl} target="_blank" rel="noreferrer">
                   <span className="inline-flex items-center gap-2">
@@ -237,11 +253,12 @@ export default async function ProjectPage({
               </Button>
             ) : null}
 
-            {project.demoUrl ? (
+            {/* An internal demo (/test) has its own same-tab button below, not a second, new-tab one. */}
+            {project.demoUrl && /^https?:\/\//.test(project.demoUrl) ? (
               <Button
                 asChild
                 variant="outline"
-                className="border-white/15 bg-white/5 text-slate-100 hover:bg-white/10"
+                className={`border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 ${FOCUS_RING}`}
               >
                 <a href={project.demoUrl} target="_blank" rel="noreferrer">
                   <span className="inline-flex items-center gap-2">
@@ -255,9 +272,11 @@ export default async function ProjectPage({
             {canRunGuestTest ? (
               <Button
                 asChild
-                className="bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.3)] hover:bg-sky-500"
+                className={`bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.3)] hover:bg-sky-500 ${FOCUS_RING}`}
               >
-                <Link href="/test">Try the live app →</Link>
+                <Link href="/test" rel="nofollow" prefetch={false}>
+                  Try the live app →
+                </Link>
               </Button>
             ) : null}
           </div>

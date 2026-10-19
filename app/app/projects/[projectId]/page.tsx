@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import ProjectDetailClient from "./ProjectDetailClient";
@@ -8,6 +9,8 @@ import {
   GUEST_SESSION_COOKIE,
 } from "@/app/app/api/_lib/guest-session";
 import { isDevAuthBypassEnabled } from "@/app/app/_lib/dev-auth-bypass";
+
+export const metadata: Metadata = { title: "Try the converter · Will Soltani" };
 
 type ProjectRow = {
   projectId: string;

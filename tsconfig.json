@@ -41,6 +41,7 @@
   "exclude": [
     "node_modules",
     "infra/**",
-    "cdk.out/**"
+    "cdk.out/**",
+    "films-src"
   ]
 }

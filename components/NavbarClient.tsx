@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FocusEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ExternalLink, Github, LayoutDashboard, Linkedin, Menu, X } from "lucide-react";
 import Link from "next/link";
@@ -52,6 +52,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
 
   const [nearTop, setNearTop] = useState(true);
   const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   // `inView`: the hero extends below the header's bottom edge (the brand hides there).
   const film = useFilmInView("-80px 0px 0px 0px");
   // The reel clock (FilmBackdrop): `section` is the chapter whose unit has lit (the active pill, in step
@@ -82,6 +83,23 @@ export function NavbarClient({ initialLoggedIn }: Props) {
       window.removeEventListener("resize", onScroll);
     };
   }, []);
+
+  // The phone menu: Escape closes it and puts focus back on the toggle.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+  // Tabbing out of the panel (to anything but its toggle) closes it, so it never sits open behind focus.
+  const onPanelBlur = (e: FocusEvent<HTMLDivElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && !e.currentTarget.contains(next) && next !== toggleRef.current) setOpen(false);
+  };
 
   useEffect(() => {
     const onResize = () => {
@@ -183,11 +201,13 @@ export function NavbarClient({ initialLoggedIn }: Props) {
           ) : null}
 
           <button
+            ref={toggleRef}
             type="button"
-            className={`inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden ${FOCUS_RING}`}
+            className={`inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 md:hidden ${FOCUS_RING}`}
             onClick={() => setOpen((v) => !v)}
             aria-label="Toggle menu"
             aria-expanded={open}
+            aria-controls="mobile-nav"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -203,7 +223,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
             exit="exit"
             className="md:hidden"
           >
-            <div className="px-4 pb-4 sm:px-6">
+            <div id="mobile-nav" className="px-4 pb-4 sm:px-6" onBlur={onPanelBlur}>
               <nav
                 aria-label="Primary"
                 className="rounded-2xl border border-white/10 bg-[#070b16]/80 p-2 backdrop-blur"

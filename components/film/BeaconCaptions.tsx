@@ -9,6 +9,7 @@ import {
   CaptionLabel,
 } from "@/components/film/captionTokens";
 import { HERO_BEATS, HERO_COPY, type HeroBeat } from "@/components/film/heroBeats";
+import { FILM_LINK } from "@/components/film/sectionTokens";
 
 // Every caption shares the caption column on desktop (captionTokens.CAPTION_COLUMN); a caption with a
 // CTA (the finale) keeps clear of the centre of the frame too. On phones the finale is the centred bottom
@@ -34,6 +35,8 @@ function Intro({ from, to }: { from: number; to: number }) {
       </span>
       <h1
         id="hero-title"
+        // Focusable from script only: back-to-top puts focus here after the jump.
+        tabIndex={-1}
         className="mt-5 font-serif text-[2.5rem] font-medium leading-[0.95] tracking-[-0.02em] text-white sm:text-5xl wide:text-[clamp(3rem,4.2vw,4.75rem)]"
       >
         {HERO_COPY.name}
@@ -52,7 +55,7 @@ function Intro({ from, to }: { from: number; to: number }) {
 
 /** One caption window: the visible copy is aria-hidden (read from the sr-only text below); the CTA is real. */
 function Caption({ beat }: { beat: HeroBeat }) {
-  const { n, label, line, support, cta } = beat;
+  const { n, label, line, support, cta, secondary } = beat;
   return (
     <FilmCaption from={beat.from} to={beat.to} className={cta ? FINALE : CAPTION_COLUMN}>
       <div aria-hidden>
@@ -68,6 +71,19 @@ function Caption({ beat }: { beat: HeroBeat }) {
           {cta.label}
           <ArrowRight aria-hidden className="h-4 w-4 text-lamp" />
         </a>
+      ) : null}
+      {secondary ? (
+        // One line under the button: the lead in mono, the address as the film's text link (not capitalised).
+        <p className="mt-3 whitespace-nowrap font-mono text-[11px] tracking-[0.12em] text-slate-300 wide:mt-4 wide:text-xs">
+          <span aria-hidden>{secondary.lead} </span>
+          <a
+            href={secondary.href}
+            aria-label={`Email ${secondary.label}`}
+            className={`pointer-events-auto ${FILM_LINK.replace("uppercase ", "")} tracking-[0.12em]`}
+          >
+            {secondary.label}
+          </a>
+        </p>
       ) : null}
     </FilmCaption>
   );

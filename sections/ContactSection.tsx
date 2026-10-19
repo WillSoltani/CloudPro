@@ -36,7 +36,7 @@ const TEXT_HALO = {
 } as CSSProperties;
 /** The email: the column's action, a Fraunces link on its own line (≥ 44 px tall to tap, as the mono links). */
 const EMAIL_LINK =
-  "inline-flex pointer-coarse:min-h-11 items-center rounded-sm font-serif text-[1.3rem] leading-snug text-slate-50 underline decoration-white/40 underline-offset-[6px] transition-colors hover:text-lamp focus-visible:text-lamp focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night";
+  "inline-flex pointer-coarse:min-h-11 items-center rounded-sm font-serif text-[1.3rem] leading-snug text-slate-50 underline decoration-white/40 underline-offset-[6px] transition-colors hover:text-lamp focus-visible:text-lamp focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night";
 
 /**
  * 05 Contact and the footer, the page's last chapter (§2f) on tower-04, joined to the bridge: the camera
@@ -94,8 +94,8 @@ export function ContactSection() {
                 at={EXTRA.paragraph}
                 className={`mx-auto mt-4 max-w-[32rem] ${BODY_TEXT} text-balance wide-tight:mt-2`}
               >
-                I work with companies, founders and teams on AWS architecture, web and mobile products, AI
-                features, and systems already in production.
+                I work with companies, founders and teams on new products and on systems already in production. I
+                reply within one business day.
               </Reveal>
             ) : null}
             <Reveal as="p" at={C.items[0]} className="mt-4 wide-tight:mt-1">
@@ -111,7 +111,7 @@ export function ContactSection() {
                     target="_blank"
                     rel="noopener noreferrer"
                     aria-label={`${l.label} (opens in a new tab)`}
-                    className={`${FILM_LINK} pointer-coarse:min-h-11 normal-case tracking-[0.12em]`}
+                    className={`${FILM_LINK} normal-case tracking-[0.12em]`}
                   >
                     {l.label}
                     <span aria-hidden>↗</span>

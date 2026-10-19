@@ -41,8 +41,11 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* No default outline in normal mode (each control draws the lamp ring), but a transparent one stays, so
+   forced-colors modes (Windows contrast themes) paint it as a visible ring. */
 :focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
 @custom-variant dark (&:is(.dark *));

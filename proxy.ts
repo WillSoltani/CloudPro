@@ -91,7 +91,9 @@ export async function proxy(req: NextRequest) {
   if (!token || !(await isValidToken(token, authConfig))) {
     const currentTarget = req.nextUrl.clone();
     const loginUrl = new URL("/auth/login", currentTarget.origin);
-    loginUrl.searchParams.set("returnTo", currentTarget.toString());
+    // A path, not a URL: behind App Runner req.nextUrl carries the container's origin (https://localhost:3000),
+    // which sanitizeReturnTo rejects, so the deep link was lost after sign-in.
+    loginUrl.searchParams.set("returnTo", `${req.nextUrl.pathname}${req.nextUrl.search}`);
     const res = NextResponse.redirect(loginUrl);
 
     res.cookies.set("id_token", "", {

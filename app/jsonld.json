@@ -1,0 +1,114 @@
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://soltani.org/#website",
+      "url": "https://soltani.org/",
+      "name": "Will Soltani",
+      "description": "Will Soltani designs, builds and runs production software for founders and teams: AWS back ends, web and mobile products, AI features.",
+      "publisher": {
+        "@id": "https://soltani.org/#person"
+      }
+    },
+    {
+      "@type": "Person",
+      "@id": "https://soltani.org/#person",
+      "name": "Will Soltani",
+      "url": "https://soltani.org/",
+      "email": "will@soltani.org",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "addressCountry": "CA"
+      },
+      "sameAs": [
+        "https://github.com/WillSoltani",
+        "https://www.linkedin.com/in/will-soltani"
+      ],
+      "hasCredential": [
+        {
+          "@type": "EducationalOccupationalCredential",
+          "name": "AWS Certified Solutions Architect – Associate",
+          "credentialCategory": "certification",
+          "recognizedBy": {
+            "@type": "Organization",
+            "name": "Amazon Web Services"
+          },
+          "url": "https://www.credly.com/badges/c813d91b-bd80-495d-8ccf-a8268af05f8b/public_url"
+        },
+        {
+          "@type": "EducationalOccupationalCredential",
+          "name": "AWS Certified Developer – Associate",
+          "credentialCategory": "certification",
+          "recognizedBy": {
+            "@type": "Organization",
+            "name": "Amazon Web Services"
+          },
+          "url": "https://www.credly.com/badges/72cedd8b-f92b-4dfb-ad19-da8ed5197641/public_url"
+        },
+        {
+          "@type": "EducationalOccupationalCredential",
+          "name": "AWS Certified Cloud Practitioner",
+          "credentialCategory": "certification",
+          "recognizedBy": {
+            "@type": "Organization",
+            "name": "Amazon Web Services"
+          },
+          "url": "https://www.credly.com/badges/e9667c91-543f-463d-9ed5-39fedca92cdf/public_url"
+        }
+      ]
+    },
+    {
+      "@type": "ProfessionalService",
+      "@id": "https://soltani.org/#service",
+      "name": "Will Soltani",
+      "url": "https://soltani.org/",
+      "email": "will@soltani.org",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Toronto",
+        "addressRegion": "ON",
+        "addressCountry": "CA"
+      },
+      "founder": {
+        "@id": "https://soltani.org/#person"
+      },
+      "makesOffer": [
+        {
+          "@type": "Offer",
+          "itemOffered": {
+            "@type": "Service",
+            "name": "Architecture review",
+            "description": "A written review of your AWS setup: security, cost and reliability, with fixes ranked."
+          }
+        },
+        {
+          "@type": "Offer",
+          "itemOffered": {
+            "@type": "Service",
+            "name": "Build a product",
+            "description": "From first sketch to a live web or mobile product on AWS, with sign-in and payments."
+          }
+        },
+        {
+          "@type": "Offer",
+          "itemOffered": {
+            "@type": "Service",
+            "name": "Fix or scale a system",
+            "description": "Find out why a system is slow, costly or fragile, fix it, and leave alarms behind."
+          }
+        },
+        {
+          "@type": "Offer",
+          "itemOffered": {
+            "@type": "Service",
+            "name": "Add AI features",
+            "description": "LLM features inside your product, with checks on what the model sends back."
+          }
+        }
+      ]
+    }
+  ]
+}

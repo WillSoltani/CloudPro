@@ -55,7 +55,7 @@ export function ToolCard({ tool }: { tool: DashboardTool }) {
         "transition-all duration-200 ease-out",
         "hover:-translate-y-1.5 hover:shadow-[0_30px_90px_rgba(2,6,23,0.56)]",
         "active:translate-y-0.5",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-0",
+        "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-0",
         accent.border,
         accent.ring,
       ].join(" ")}

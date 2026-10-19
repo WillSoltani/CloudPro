@@ -78,6 +78,8 @@ export function ChapterHead({
     >
       <h2
         id={`${id}-title`}
+        // Focusable from script only (back-to-top hands focus here when it hides); never a Tab stop.
+        tabIndex={-1}
         className={`${
           plateTarget
             ? `${CHAPTER_H2} ${CHAPTER_H2_PLATE} ${CHAPTER_H2_CLIP}`
@@ -92,14 +94,15 @@ export function ChapterHead({
             data-plate-target={plateTarget ? "" : undefined}
             className={plateTarget ? PLATE_TARGET : PLAIN_TARGET}
           >
-            {number}
+            {/* The space keeps the heading's text "01 About" for crawlers; the flex box drops it from layout. */}
+            {number}{" "}
             {name}
           </Reveal>
         ) : (
           <span className={PLAIN_TARGET}>
             <Reveal as="span" at={head.number} y={0}>
               {number}
-            </Reveal>
+            </Reveal>{" "}
             <Reveal as="span" at={head.h2} y={6}>
               {name}
             </Reveal>
@@ -107,7 +110,13 @@ export function ChapterHead({
         )}
       </h2>
       {support && head.support ? (
-        <Reveal as="p" at={head.support} className={compact ? `${SUPPORT_LINE} ${COMPACT.support}` : SUPPORT_LINE}>
+        // The machine's label ("● Security" under Certifications) is part of the picture, not a claim: not read.
+        <Reveal
+          as="p"
+          at={head.support}
+          aria-hidden="true"
+          className={compact ? `${SUPPORT_LINE} ${COMPACT.support}` : SUPPORT_LINE}
+        >
           <span aria-hidden className={SUPPORT_DOT}>
             ●
           </span>

@@ -3,8 +3,8 @@
 Goal: turn the soltani.org homepage into a scroll-scrubbed cinematic film in the spirit of pear.no, while it stays a fast, skimmable portfolio. Technique, workflow, and budgets: `.claude/skills/cinematic-scroll/SKILL.md`.
 
 ## Who it's for
-- **Will Soltani** — cloud engineer in Toronto, ON (moved from Halifax, NS in 2026); AWS-certified (Solutions Architect Associate, Developer Associate, Cloud Practitioner); co-founder at Silicon X; builds ChapterFlow; UBC Computer Science.
-- **Audience** — hiring managers and engineers evaluating him for remote cloud roles in Canada. They skim. The film earns attention; the facts must still be findable in seconds.
+- **Will Soltani** — designs, builds and runs production software for founders and teams: AWS back ends, web and mobile products, AI features. Toronto, ON, working remotely. AWS-certified (Solutions Architect Associate, Developer Associate, Cloud Practitioner). Built and runs ChapterFlow (chapterflow.ca) and the file converter on this site.
+- **Audience** — founders, CTOs and teams with an AWS, web, mobile or AI project; most arrive by referral and skim. The film earns attention; the offer, the proof and the email must still be findable in seconds. The page offers services; it never asks for a job.
 
 ## Keep
 About, Certifications (with Credly links), Skills, Projects and case studies, Contact. Source of truth is `content/*.ts`. All of it stays real HTML; invent nothing.

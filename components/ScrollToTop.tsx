@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowUp } from "lucide-react";
 import { useReelChrome } from "@/components/film/useReelChrome";
@@ -51,8 +51,15 @@ export function ScrollToTop() {
   // The section whose corner has been checked for text at least once: the button never shows before that.
   const [checked, setChecked] = useState<string | null>(null);
   const [veil, setVeil] = useState(false);
+  // Focus never drops to <body>: after a jump it goes to the hero's h1; when the button hides while it has
+  // focus, to the heading of the chapter on screen (the last one, over the wordless passages).
+  const buttonFocused = useRef(false);
+  const lastSection = useRef("");
   const { chrome, section } = useReelChrome();
   const reduced = useReducedMotion();
+  useEffect(() => {
+    if (section) lastSection.current = section;
+  }, [section]);
 
   useEffect(() => {
     const onScroll = () => setPast(window.scrollY > 500);
@@ -131,14 +138,28 @@ export function ScrollToTop() {
   const show =
     past && chrome !== "film" && checked === section && !(atPageEnd && overFooter) && !overText && !veil;
 
+  useEffect(() => {
+    if (show || veil || !buttonFocused.current) return;
+    buttonFocused.current = false;
+    const id = section || lastSection.current;
+    const heading = id ? document.getElementById(`${id}-title`) : null;
+    (heading ?? document.getElementById("hero-title"))?.focus({ preventScroll: true });
+  }, [show, veil, section]);
+
+  const focusHero = () => document.getElementById("hero-title")?.focus({ preventScroll: true });
+
   // Within the first viewport: the browser's smooth scroll. Further down, a smooth scroll would rewind the
   // whole film (every chapter's text over every other's), so the page veils in night, jumps, waits for the
   // hero's first frame and lifts the veil. Reduced motion: the jump alone.
   const goTop = () => {
+    // The jump hands focus to the hero's h1 itself (the button unmounts without a blur event).
+    buttonFocused.current = false;
     if (window.scrollY < window.innerHeight) {
       window.scrollTo({ top: 0, behavior: reduced ? "instant" : "smooth" });
+      focusHero();
     } else if (reduced) {
       window.scrollTo({ top: 0, behavior: "instant" });
+      focusHero();
     } else {
       setVeil(true);
     }
@@ -152,8 +173,10 @@ export function ScrollToTop() {
       frames++;
       // rack-00 on the landscape camera, rack-00-p on the portrait one.
       const atStart = !canvas || (!!canvas.dataset.segment?.startsWith("rack-00") && canvas.dataset.frame === "0");
-      if ((frames >= 2 && atStart) || performance.now() - t0 > VEIL_WAIT_MS) setVeil(false);
-      else requestAnimationFrame(wait);
+      if ((frames >= 2 && atStart) || performance.now() - t0 > VEIL_WAIT_MS) {
+        setVeil(false);
+        focusHero();
+      } else requestAnimationFrame(wait);
     };
     requestAnimationFrame(wait);
   };
@@ -179,6 +202,8 @@ export function ScrollToTop() {
           <motion.button
             type="button"
             onClick={goTop}
+            onFocus={() => (buttonFocused.current = true)}
+            onBlur={() => (buttonFocused.current = false)}
             aria-label="Scroll to top"
             initial={{ opacity: 0, y: 16, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -187,7 +212,7 @@ export function ScrollToTop() {
             whileHover={{ y: -2, scale: 1.03 }}
             whileTap={{ scale: 0.96 }}
             transition={{ type: "spring", stiffness: 450, damping: 28 }}
-            className="fixed bottom-6 right-6 z-50 inline-flex items-center justify-center rounded-full bg-white/10 p-3 text-slate-100 backdrop-blur hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night"
+            className="fixed bottom-6 right-6 z-50 inline-flex items-center justify-center rounded-full bg-white/10 p-3 text-slate-100 backdrop-blur hover:bg-white/15 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night"
           >
             <ArrowUp className="h-5 w-5" />
           </motion.button>

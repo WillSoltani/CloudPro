@@ -9,7 +9,8 @@ import { RACK_CAPTIONS } from "@/components/film/rackCaptions";
  *   accessibility tree, present from the first paint when it starts at 0.
  * - `caption`: an optional numbered label (`n` + `label`, which also gets a tick on the rail and a row in
  *   the sr-only "How I work" list), an optional serif `line` and mono `support`, and an optional `cta`
- *   button; a caption with a CTA uses the finale layout (bottom-centred block on phones).
+ *   button with an optional `secondary` link under it ("or email …": a mailto, never an anchor jump); a
+ *   caption with a CTA uses the finale layout (bottom-centred block on phones).
  */
 export type HeroBeat = {
   kind: "intro" | "caption";
@@ -20,6 +21,7 @@ export type HeroBeat = {
   line?: string;
   support?: string;
   cta?: { label: string; href: string };
+  secondary?: { lead: string; label: string; href: string };
 };
 
 /** The hero block's strings (verbatim; the rack's captions.json quotes the same ones). */
@@ -40,7 +42,15 @@ export const RACK_HERO_BEATS: readonly HeroBeat[] = [
   { kind: "intro", from: 0, to: 0.4 },
   // The offer line follows the intro after ≈ 0.35 vh (not 0.75 vh of empty ceiling), and leaves before the
   // hero hands over (≈ f210 of 216), so it never rides up over About's plate, the brand or the menu.
-  { kind: "caption", line: RACK_CAPTIONS.hero.line, cta: HERO_COPY.cta, from: 0.56, to: 0.98 },
+  {
+    kind: "caption",
+    line: RACK_CAPTIONS.hero.line,
+    cta: HERO_COPY.cta,
+    // The email within one tap of the first screens (copy pack §2).
+    secondary: { lead: "or email", label: "will@soltani.org", href: "mailto:will@soltani.org?subject=Project%20enquiry" },
+    from: 0.56,
+    to: 0.98,
+  },
 ];
 
 /** The beats the page plays: the rack-00 hero. */

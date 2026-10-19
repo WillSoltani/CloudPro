@@ -560,9 +560,34 @@ export default function ProjectDetailClient({ projectId, initialFiles, guestMode
               {quota.exhausted ? (
                 <p className="mt-1 text-xs text-amber-200/90">
                   You&apos;ve reached your conversion limit.{" "}
-                  {quota.scope === "guest"
-                    ? "Sign in to get 10 conversions."
-                    : "Contact an admin to request a higher limit."}
+                  {quota.scope === "guest" ? (
+                    <>
+                      <a href="/auth/login?returnTo=/app/projects" className="underline underline-offset-2 hover:text-amber-100">
+                        Sign in
+                      </a>{" "}
+                      to get 10 conversions. Building something like this? Email{" "}
+                      <a
+                        href="mailto:will@soltani.org?subject=Project%20enquiry"
+                        aria-label="Email will@soltani.org"
+                        className="underline underline-offset-2 hover:text-amber-100"
+                      >
+                        will@soltani.org
+                      </a>
+                      .
+                    </>
+                  ) : (
+                    <>
+                      Email{" "}
+                      <a
+                        href="mailto:will@soltani.org"
+                        aria-label="Email will@soltani.org"
+                        className="underline underline-offset-2 hover:text-amber-100"
+                      >
+                        will@soltani.org
+                      </a>{" "}
+                      for a higher limit.
+                    </>
+                  )}
                 </p>
               ) : null}
               {!quota.exhausted && selectedExceedsQuota ? (
