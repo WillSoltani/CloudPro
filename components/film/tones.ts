@@ -3,8 +3,12 @@
 // and the side and column tones the chapters use. No borders, no box-shadows, no blur: a tone is only ever
 // a feathered gradient of the page's night.
 
-/** --color-night #070b16 as an "r g b" triplet for `rgb(… / a)`. */
+/** --color-night #070b16 as an "r g b" triplet for `rgb(… / a)`: the page and the tower's navy sky. */
 export const NIGHT = "7 11 22";
+/** The rack's tones: a neutral near-black, so the washes over the grey hardware never read blue. */
+export const RACK_NIGHT = "9 10 12";
+/** The tones' colour for a reel film: RACK_NIGHT on the rack (rack-*), NIGHT on the tower. */
+export const toneOf = (film: string) => (film.startsWith("rack-") ? RACK_NIGHT : NIGHT);
 
 /**
  * The feather, as (px from the edge, share of the way from the edge's alpha to the panel's). Eased
@@ -34,7 +38,10 @@ export function edge(from: number, to: number, side: "top" | "bottom", color = N
  * app/globals.css from `--halo`, so it fades with the block's own Reveal.
  */
 export const HALO_ALPHA = 0.58;
-export const HALO = `radial-gradient(closest-side, rgb(${NIGHT} / ${HALO_ALPHA}), rgb(${NIGHT} / ${+(HALO_ALPHA * 0.62).toFixed(3)}) 55%, rgb(${NIGHT} / 0) 100%)`;
+export function halo(color = NIGHT): string {
+  return `radial-gradient(closest-side, rgb(${color} / ${HALO_ALPHA}), rgb(${color} / ${+(HALO_ALPHA * 0.62).toFixed(3)}) 55%, rgb(${color} / 0) 100%)`;
+}
+export const HALO = halo();
 
 /**
  * A soft box halo for a small-text block over bright sky (part five §2c "a halo arrives with each small-text
@@ -64,13 +71,13 @@ export function boxHalo(
 export const BLOCK_ALPHA = 0.85;
 const BLOCK_FEATHER_PX = 112;
 const BLOCK_LEAD_PX = 8;
-export function blockTone(top: string, alpha = BLOCK_ALPHA): string {
+export function blockTone(top: string, alpha = BLOCK_ALPHA, color = NIGHT): string {
   const span = FEATHER[FEATHER.length - 1][0];
   const stops = FEATHER.map(([px, k]) => {
     const at = BLOCK_LEAD_PX + BLOCK_FEATHER_PX - (px * BLOCK_FEATHER_PX) / span;
-    return `rgb(${NIGHT} / ${+(alpha * k).toFixed(4)}) calc(${top} - ${+at.toFixed(2)}px)`;
+    return `rgb(${color} / ${+(alpha * k).toFixed(4)}) calc(${top} - ${+at.toFixed(2)}px)`;
   });
-  return `linear-gradient(to bottom, rgb(${NIGHT} / 0) 0, ${stops.join(", ")}, rgb(${NIGHT} / ${alpha}) 100%)`;
+  return `linear-gradient(to bottom, rgb(${color} / 0) 0, ${stops.join(", ")}, rgb(${color} / ${alpha}) 100%)`;
 }
 
 /**
@@ -80,8 +87,8 @@ export function blockTone(top: string, alpha = BLOCK_ALPHA): string {
  * applied where the framed layout is, app/globals.css), so the body arrives as shade, not a panel edge.
  */
 export const BODY_ALPHA = 0.8;
-export function bodyTone(alpha = BODY_ALPHA, edge = 0.42): string {
-  return `linear-gradient(to right, rgb(${NIGHT} / ${edge}) 0, rgb(${NIGHT} / ${alpha}) calc(50% - 38rem), rgb(${NIGHT} / ${alpha}) calc(50% + 38rem), rgb(${NIGHT} / ${edge}) 100%)`;
+export function bodyTone(alpha = BODY_ALPHA, edge = 0.42, color = NIGHT): string {
+  return `linear-gradient(to right, rgb(${color} / ${edge}) 0, rgb(${color} / ${alpha}) calc(50% - 38rem), rgb(${color} / ${alpha}) calc(50% + 38rem), rgb(${color} / ${edge}) 100%)`;
 }
 export const BODY_MASK = `linear-gradient(to bottom, ${[...edge(0, 1, "top", "0 0 0"), ...edge(0, 1, "bottom", "0 0 0").reverse()].join(", ")})`;
 /** Phones: the body continues the block tone above it, so only its bottom eases out. */

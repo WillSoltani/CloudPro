@@ -45,8 +45,8 @@ export const RACK_CAPTIONS = {
   hero: {
     badge: "Available for new engagements.",
     name: "Will Soltani",
-    title: ["Cloud Engineer", "AWS Solutions Architect"],
-    location: "Toronto, ON · Remote-friendly",
+    title: ["Software engineer", "AWS · web · mobile · AI"],
+    location: "Toronto, ON · Working remotely",
     line: "I build production software end to end: AWS back ends, web and mobile apps, AI features.",
     cta: { label: "View Projects & Case Studies", href: "#projects" },
   },
@@ -58,9 +58,9 @@ export const RACK_CAPTIONS = {
     { n: "05", section: "contact", label: "05 / Contact", headingText: "Contact", machine: "Fibre", labelAlt: "05 / Fibre" },
   ],
   contact: {
-    line: "Have an AWS system to design, build or fix? Tell me about it.",
+    line: "Have a product to build or a system to fix? Tell me about it.",
     links: [
-      { id: "email", label: "will@soltani.org", href: "mailto:will@soltani.org" },
+      { id: "email", label: "will@soltani.org", href: "mailto:will@soltani.org?subject=Project%20enquiry" },
       { id: "github", label: "GitHub", href: "https://github.com/WillSoltani" },
       { id: "linkedin", label: "LinkedIn", href: "https://www.linkedin.com/in/will-soltani" },
     ],

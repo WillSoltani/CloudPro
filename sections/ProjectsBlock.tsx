@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import Link from "next/link";
 import { FilmChapter } from "@/components/film/FilmChapter";
 import { ChapterHead } from "@/components/film/ChapterHead";
@@ -9,7 +10,17 @@ import { RackPlate } from "@/components/film/RackPlate";
 import { ANCHORS, CHOREO, type FrameWindow } from "@/components/film/choreo";
 import { RACK_CAPTIONS } from "@/components/film/rackCaptions";
 import { REEL, REEL_INDEX, breathOf, moveVhOf, tailOf } from "@/components/film/reel";
-import { BODY_TEXT, FILM_LINK, ITEM_META, ITEM_NAME, MONO_LABEL } from "@/components/film/sectionTokens";
+import {
+  BODY_TEXT,
+  FILM_LINK,
+  ITEM_META,
+  ITEM_NAME,
+  MONO_LABEL,
+  SEP_DOT,
+  SEP_ITEM,
+  SEP_LIST,
+  TEXT_LINK,
+} from "@/components/film/sectionTokens";
 import { projects } from "@/content/projects";
 import type { Project } from "@/types/project";
 
@@ -31,33 +42,46 @@ const CARD_WIDTH =
 const FEATURED = projects.filter((p) => p.featured).slice(0, HEATSINKS.length);
 const MORE = projects.filter((p) => !FEATURED.includes(p));
 
+/** A card's links: Geist Sans 14 px, underlined, so they read as links rather than as one more row of tags. */
+const CARD_LINK = `${TEXT_LINK} text-sm`;
+
 function external(href: string, label: string, name: string) {
   return (
     <a
       href={href}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
       aria-label={`${label}: ${name} (opens in a new tab)`}
-      className={FILM_LINK}
+      className={CARD_LINK}
     >
       {label} <span aria-hidden>↗</span>
     </a>
   );
 }
 
-function ProjectItem({ p, at }: { p: Project; at: FrameWindow }) {
-  const meta = [p.type, p.stack].filter(Boolean).join(" · ");
+function ProjectItem({ p, at, stackedPin }: { p: Project; at: FrameWindow; stackedPin?: FrameWindow }) {
+  // Type · stack, each stack item kept whole (a line never breaks inside "Lambda (container)").
+  const meta = [p.type, ...(p.stack ? p.stack.split(", ") : [])].filter(Boolean);
   return (
-    <Reveal at={at} data-halo="">
+    <Reveal at={at} stackedPin={stackedPin} data-halo="">
       <h3 className={ITEM_NAME.replace("mt-2 ", "")}>{p.title}</h3>
-      {meta ? <p className={`mt-2 ${ITEM_META}`}>{meta}</p> : null}
+      {meta.length ? (
+        <p className={`mt-2 ${ITEM_META}`}>
+          {meta.map((m, i) => (
+            <Fragment key={m}>
+              {i === 0 ? null : i === 1 && p.type ? " · " : ", "}
+              <span className="whitespace-nowrap">{m}</span>
+            </Fragment>
+          ))}
+        </p>
+      ) : null}
       <p className={`mt-3 ${BODY_TEXT}`}>{p.description}</p>
       {p.tags?.length ? (
-        <ul aria-label="Tags" className="mt-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+        <ul aria-label="Tags" className={`mt-3 ${SEP_LIST}`}>
           {p.tags.map((t, i) => (
-            <li key={t} className={`${ITEM_META} flex items-baseline gap-x-2.5`}>
+            <li key={t} className={`${ITEM_META} ${SEP_ITEM}`}>
               {i > 0 ? (
-                <span aria-hidden className="text-slate-500">
+                <span aria-hidden className={SEP_DOT}>
                   ·
                 </span>
               ) : null}
@@ -67,11 +91,11 @@ function ProjectItem({ p, at }: { p: Project; at: FrameWindow }) {
         </ul>
       ) : null}
       <p className="mt-4 flex flex-wrap items-baseline gap-x-5 gap-y-2">
-        <Link href={`/projects/${p.slug}`} className={FILM_LINK} aria-label={`Case study: ${p.title}`}>
+        <Link href={`/projects/${p.slug}`} className={CARD_LINK} aria-label={`Case study: ${p.title}`}>
           Case study <span aria-hidden>→</span>
         </Link>
+        {p.demoUrl ? external(p.demoUrl, new URL(p.demoUrl).host, p.title) : null}
         {p.githubUrl ? external(p.githubUrl, "GitHub", p.title) : null}
-        {p.demoUrl ? external(p.demoUrl, "Live demo", p.title) : null}
       </p>
     </Reveal>
   );
@@ -124,12 +148,13 @@ export function ProjectsBlock() {
       body={MORE.length ? <MoreProjects /> : undefined}
     >
       <BlockTone top={0.54} />
-      <FrameBand from={0.14} to={0.26} x={0.18} right={0.74} stackedTop={0.54}>
+      {/* The head starts on the first card's left edge (heat sink 0 less half a card). */}
+      <FrameBand from={0.14} to={0.26} x={HEATSINKS[0] - CARD_WIDTH / 2} right={0.74} stackedTop={0.54}>
         <ChapterHead
           n={PLATE.n}
           title={PLATE.headingText}
           support={PLATE.machine}
-          lede="Production-grade builds with real security, reliability, and observability. Click into a case study for architecture + tradeoffs."
+          lede="Two products I built and run. Each case study covers the architecture and the tradeoffs."
         />
       </FrameBand>
       <FrameBand from={0.3} to={0.8} after={0.26}>
@@ -138,7 +163,13 @@ export function ProjectsBlock() {
           width={CARD_WIDTH}
           items={FEATURED.map((p, k) => ({
             key: p.slug,
-            node: <ProjectItem p={p} at={C.items[Math.min(k, C.items.length - 1)]} />,
+            node: (
+              <ProjectItem
+                p={p}
+                at={C.items[Math.min(k, C.items.length - 1)]}
+                stackedPin={C.stacked?.items?.[k] ?? undefined}
+              />
+            ),
           }))}
         />
       </FrameBand>

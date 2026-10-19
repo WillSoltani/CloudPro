@@ -6,6 +6,8 @@ export const about = {
       "I pick tradeoffs on latency, cost and ops burden, and write down why.",
     ],
     closing:
-      "Have an AWS system to design, build or fix? Tell me about it.",
+      "Have a product to build or a system to fix? Tell me about it.",
+    /** About's references line (its body), linked to LinkedIn. */
+    references: "Work history and references",
   };
   

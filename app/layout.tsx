@@ -14,12 +14,12 @@ import {
 import { PortfolioBackground } from "@/components/PortfolioBackground";
 
 export const metadata: Metadata = {
-  title: "Will Soltani | Cloud Portfolio",
+  title: "Will Soltani · AWS, web, mobile and AI engineering",
   description:
     "Will Soltani designs, builds and runs production software: AWS back ends, web and mobile products, AI features and real-time graphics.",
   metadataBase: new URL(getSiteUrl()),
   openGraph: {
-    title: "Will Soltani | Cloud Portfolio",
+    title: "Will Soltani · AWS, web, mobile and AI engineering",
     description:
       "AWS back ends, web and mobile products, AI features and real-time graphics, with case studies.",
     url: getSiteUrl(),

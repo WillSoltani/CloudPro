@@ -256,7 +256,7 @@ body {
   [data-halo]::before {
     content: "";
     position: absolute;
-    inset: -18px -36px;
+    inset: var(--halo-inset, -18px -36px);
     z-index: -1;
     pointer-events: none;
     background: var(--halo);
@@ -296,7 +296,7 @@ body {
    eased 160 px top where the composition is framed. */
 @layer components {
   [data-body] {
-    background-color: rgb(7 11 22 / 0.85);
+    background-color: var(--body-flat, rgb(7 11 22 / 0.85));
     mask-image: var(--body-mask-bottom);
   }
   @media (min-width: 64rem) and (orientation: landscape) {
@@ -358,7 +358,7 @@ body {
      deeper radial); without them it is the plain halo. */
   [data-halo]::before {
     @variant phone-short {
-      inset: var(--halo-inset-s, -18px -36px);
+      inset: var(--halo-inset-s, var(--halo-inset, -18px -36px));
       background: var(--halo-s, var(--halo));
       mask-image: var(--halo-mask-s, none);
     }

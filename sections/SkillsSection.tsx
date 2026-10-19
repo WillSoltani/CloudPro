@@ -9,7 +9,7 @@ import { CHOREO } from "@/components/film/choreo";
 import { fwOf } from "@/components/film/frameBox";
 import { RACK_CAPTIONS } from "@/components/film/rackCaptions";
 import { REEL, REEL_INDEX, breathOf, moveVhOf, tailOf } from "@/components/film/reel";
-import { GROUP_TITLE, ITEM_META } from "@/components/film/sectionTokens";
+import { GROUP_TITLE, ITEM_META, SEP_DOT, SEP_ITEM, SEP_LIST } from "@/components/film/sectionTokens";
 import { skillCategories } from "@/content/skills";
 
 const FILM = REEL[REEL_INDEX.skills];
@@ -76,13 +76,17 @@ export function SkillsSection() {
           items={skillCategories.map((g, k) => ({
             key: g.title,
             node: (
-              <Reveal at={C.items[Math.min(k, C.items.length - 1)]} data-halo="">
+              <Reveal
+                at={C.items[Math.min(k, C.items.length - 1)]}
+                stackedPin={C.stacked?.items?.[k] ?? undefined}
+                data-halo=""
+              >
                 <h3 className={GROUP_TITLE}>{g.title}</h3>
-                <ul className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 wide:mt-0">
+                <ul className={`mt-1.5 ${SEP_LIST} wide:mt-0`}>
                   {g.items.map((it, i) => (
-                    <li key={it} className={`${ITEM_META} flex items-baseline gap-x-2.5 text-slate-200`}>
+                    <li key={it} className={`${ITEM_META} ${SEP_ITEM} text-slate-200`}>
                       {i > 0 ? (
-                        <span aria-hidden className="text-slate-500">
+                        <span aria-hidden className={SEP_DOT}>
                           ·
                         </span>
                       ) : null}

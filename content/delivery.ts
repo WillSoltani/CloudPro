@@ -1,7 +1,7 @@
 export const delivery = [
     {
       title: "Hosting",
-      body: "S3 + CloudFront, HTTPS via ACM, domain via Route 53",
+      body: "Next.js on AWS App Runner; film frames on S3 + CloudFront",
     },
     {
       title: "IaC",

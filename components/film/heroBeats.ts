@@ -33,12 +33,14 @@ export const HERO_COPY = {
 
 /**
  * The part-four hero (rack-00, films-src/rack/storyboard.md §5): the intro block for the first 40 %, then
- * the serif line and the button from 74 % through the stage's exit. No numbered beats, so no ticks and
- * no "How I work" list (retired at G1).
+ * the serif line and the button from 56 % to 98 % (gone before About's plate arrives). No numbered beats,
+ * so no ticks and no "How I work" list (retired at G1).
  */
 export const RACK_HERO_BEATS: readonly HeroBeat[] = [
   { kind: "intro", from: 0, to: 0.4 },
-  { kind: "caption", line: RACK_CAPTIONS.hero.line, cta: HERO_COPY.cta, from: 0.74, to: 1 },
+  // The offer line follows the intro after ≈ 0.35 vh (not 0.75 vh of empty ceiling), and leaves before the
+  // hero hands over (≈ f210 of 216), so it never rides up over About's plate, the brand or the menu.
+  { kind: "caption", line: RACK_CAPTIONS.hero.line, cta: HERO_COPY.cta, from: 0.56, to: 0.98 },
 ];
 
 /** The beats the page plays: the rack-00 hero. */

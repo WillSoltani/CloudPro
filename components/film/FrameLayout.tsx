@@ -2,7 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { columnTracks, fhOf, fx, fy } from "@/components/film/frameBox";
-import { blockTone } from "@/components/film/tones";
+import { blockTone, toneOf } from "@/components/film/tones";
 import { Reveal } from "@/components/film/Reveal";
 import { useChapter } from "@/components/film/chapterContext";
 import type { FrameWindow } from "@/components/film/choreo";
@@ -112,7 +112,7 @@ export function BlockTone({
   /** The tone's flat alpha (default tones.ts BLOCK_ALPHA 0.85; Skills 0.75). */
   alpha?: number;
 }) {
-  const { head } = useChapter();
+  const { head, choreo } = useChapter();
   return (
     <Reveal
       at={at ?? [head.h2[0] - 4, head.h2[0]]}
@@ -120,7 +120,7 @@ export function BlockTone({
       passive
       aria-hidden="true"
       data-block-tone=""
-      style={{ backgroundImage: blockTone(`max(${HEADER_CLEAR}, ${fy(top)})`, alpha) }}
+      style={{ backgroundImage: blockTone(`max(${HEADER_CLEAR}, ${fy(top)})`, alpha, toneOf(choreo.film)) }}
     />
   );
 }

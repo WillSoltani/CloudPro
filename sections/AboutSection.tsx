@@ -8,7 +8,7 @@ import { RackPlate } from "@/components/film/RackPlate";
 import { CHOREO } from "@/components/film/choreo";
 import { RACK_CAPTIONS } from "@/components/film/rackCaptions";
 import { REEL, REEL_INDEX, breathOf, moveVhOf, tailOf } from "@/components/film/reel";
-import { BODY_TEXT, ITEM_META, MONO_LABEL } from "@/components/film/sectionTokens";
+import { BODY_TEXT, ITEM_META, MONO_LABEL, TEXT_LINK } from "@/components/film/sectionTokens";
 import { about } from "@/content/about";
 import { delivery } from "@/content/delivery";
 
@@ -17,19 +17,39 @@ const C = CHOREO.about;
 const PLATE = RACK_CAPTIONS.plates[0];
 
 /** The ProofStrip's four tokens (folded into About: they arrive on the read pin, one line above the ports). */
-const PROOF = ["AWS Certified x3", "Web, mobile and AI", "Security-first", "IaC: CDK/CloudFormation"];
+const PROOF = ["AWS Certified ×3", "Web, mobile and AI", "Least-privilege IAM, KMS", "Alarms and runbooks"];
+const LINKEDIN = RACK_CAPTIONS.contact.links.find((l) => l.id === "linkedin")!;
 
-/** DeliveryStrip, folded into About as its body: how the site itself ships. */
+/** About's body: the references line, then DeliveryStrip (how the site itself ships). */
 function DeliveryBody() {
   return (
-    <ul className="mx-auto grid max-w-6xl gap-x-10 gap-y-8 px-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
-      {delivery.map((d) => (
-        <FlowReveal as="li" key={d.title}>
-          <p className={MONO_LABEL}>{d.title}</p>
-          <p className={`mt-2 ${BODY_TEXT}`}>{d.body}</p>
-        </FlowReveal>
-      ))}
-    </ul>
+    <div className="mx-auto max-w-6xl px-5 sm:px-6 lg:px-8">
+      <FlowReveal>
+        <p className={BODY_TEXT}>
+          {about.references}:{" "}
+          <a
+            href={LINKEDIN.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`${about.references}: LinkedIn (opens in a new tab)`}
+            className={TEXT_LINK}
+          >
+            LinkedIn <span aria-hidden>↗</span>
+          </a>
+        </p>
+      </FlowReveal>
+      <FlowReveal>
+        <h3 className={`mt-12 ${MONO_LABEL} text-slate-300`}>How this site ships</h3>
+      </FlowReveal>
+      <ul className="mt-6 grid gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+        {delivery.map((d) => (
+          <FlowReveal as="li" key={d.title}>
+            <p className={MONO_LABEL}>{d.title}</p>
+            <p className={`mt-2 ${BODY_TEXT}`}>{d.body}</p>
+          </FlowReveal>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -78,7 +98,13 @@ export function AboutSection() {
       <FrameBand from={0.7} to={0.76} after={0.66} x={0.18} right={0.86}>
         <ul aria-label="At a glance" className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
           {PROOF.map((t, k) => (
-            <Reveal as="li" key={t} pin={C.pins?.[k]} className={`${ITEM_META} flex items-baseline gap-x-3`}>
+            <Reveal
+              as="li"
+              key={t}
+              pin={C.pins?.[k]}
+              stackedPin={C.stacked?.pins?.[k]}
+              className={`${ITEM_META} flex items-baseline gap-x-3`}
+            >
               {k > 0 ? (
                 <span aria-hidden className="text-slate-500">
                   ·
