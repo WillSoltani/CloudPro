@@ -29,13 +29,20 @@ export type ChapterChoreo = {
   items: readonly FrameWindow[];
   /**
    * Windows in fractions of the read pin (Reveal `pin`: 0 = camera rest, 1 = the pin's end), for what
-   * arrives while the picture breathes (About's ProofStrip tokens, Experience's bullets, the footer).
+   * arrives while the picture breathes (About's ProofStrip tokens, the footer).
    */
   pins?: readonly FrameWindow[];
   /** The read pin after camera rest, in viewport heights. */
   readVh: number;
   /** The nav switch (raw move frame); default `amber`. */
   activeFrom?: number;
+  /**
+   * Stacked layouts (phones): read-pin windows for what sits below the fold at camera rest, so it arrives as
+   * the read pin's lift (FilmChapter) brings it into view (Reveal `stackedPin`). `items` by item index (null:
+   * the frame window stands), `pins` in place of `pins`. Set from the 390×844 layout, where the lift reaches
+   * each item's first lines at ≈ these fractions of the pin.
+   */
+  stacked?: { items?: readonly (FrameWindow | null)[]; pins?: readonly FrameWindow[] };
 };
 
 /**
@@ -149,6 +156,7 @@ function certifications(): ChapterChoreo {
       return [settle - 2, settle + 4];
     }),
     readVh: 0.5,
+    stacked: { items: [null, [0.04, 0.19], [0.2, 0.35], [0.34, 0.49]] },
   };
 }
 
@@ -156,9 +164,10 @@ function certifications(): ChapterChoreo {
  * About on rack-01, joined to the hero (§2f): f0–30 the door opens while the hero line and CTA ride out ·
  * f20 plate 01 (nav → About) · the plate lifts at the end of its opaque run (f75) and flies while the lid
  * rises (`lid_up` f74–95), landing at f96 · h2 f96–100 · "● SWITCH" f100–104 · lede f102–108 · bullets
- * [106, 112] [110, 116] [114, 120] · the read pin carries the four ProofStrip tokens (τ .02/.06/.10/.14 of a
- * 0.26 pin, i.e. 8 %, 23 %, 38 %, 54 % of the pin, 15 % each) · release; DeliveryStrip is the body. Without
- * a plate (phones) the heading arrives at f40, clear of the hero's CTA riding out.
+ * [106, 112] [110, 116] [114, 120] · the read pin carries the four ProofStrip tokens (from 2 %, 8 %, 14 %,
+ * 20 % of the pin, 10 % each: the last is in by 30 %, so the finished chapter holds for the rest of the pin) ·
+ * release; DeliveryStrip is the body. Without a plate (phones) the heading arrives at f40, clear of the
+ * hero's CTA riding out; stacked, the tokens wait for the lift to bring them into view (18–48 %).
  */
 function about(): ChapterChoreo {
   const name = "rack-01";
@@ -173,11 +182,9 @@ function about(): ChapterChoreo {
     headAt: land,
     head: { plate: h(land), noPlate: h(40) },
     items: [0, 1, 2].map((k): FrameWindow => [land + 10 + 4 * k, land + 16 + 4 * k]),
-    pins: [0, 1, 2, 3].map((k): FrameWindow => {
-      const a = (0.02 + 0.04 * k) / 0.26;
-      return [a, a + 0.04 / 0.26];
-    }),
+    pins: [0, 1, 2, 3].map((k): FrameWindow => [0.02 + 0.06 * k, 0.12 + 0.06 * k]),
     readVh: 0.5,
+    stacked: { pins: [0, 1, 2, 3].map((k): FrameWindow => [0.18 + 0.06 * k, 0.3 + 0.06 * k]) },
   };
 }
 
@@ -206,6 +213,7 @@ function skills(): ChapterChoreo {
       return [r - 2, r + 4];
     }),
     readVh: 0.5,
+    stacked: { items: [null, null, [0.08, 0.23], [0.22, 0.37], [0.34, 0.49]] },
   };
 }
 
@@ -232,6 +240,7 @@ function projects(): ChapterChoreo {
     },
     items: [0, 1].map((k): FrameWindow => [86 + 4 * k, 92 + 4 * k]),
     readVh: 0.5,
+    stacked: { items: [null, [0.22, 0.37]] },
   };
 }
 
@@ -254,9 +263,9 @@ function towerBeat(name: string, id: string): number {
 
 /**
  * Contact + footer on tower-04, the page's last chapter (it ends inside the read pin): lamp_settle S (112) ·
- * "05" [S−12, S−8], name [S−10, S−4] · "Let's Connect" [S−4, S+2] · the closing line [S, S+6] · paragraph
- * [S+2, S+8] · link k at [S+4+3k, S+8+3k] · the footer over the first fifth of the pin (τ [0, .2]) · read
- * pin 0.6 vh.
+ * nav → Contact at f40 (the crane starts rising) · "05" [S−12, S−8], name [S−10, S−4] · "Start a project"
+ * [S−4, S+2] · the offer line [S, S+6] · paragraph [S+2, S+8] · email, GitHub, LinkedIn at [S+4+3k, S+8+3k] ·
+ * the footer over the first fifth of the pin (τ [0, .2]) · read pin 0.6 vh.
  */
 function contact(): ChapterChoreo {
   const name = "tower-04";
@@ -276,6 +285,8 @@ function contact(): ChapterChoreo {
     items: [0, 1, 2].map((k): FrameWindow => [S + 4 + 3 * k, S + 8 + 3 * k]),
     pins: [[0, 0.2]],
     readVh: 0.6,
+    // The nav switches to Contact as the crane starts rising out of the bridge, not at the lamp (S − 12).
+    activeFrom: 40,
   };
 }
 

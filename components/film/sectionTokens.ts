@@ -7,13 +7,14 @@
  */
 
 /**
- * The chapter heading: Fraunces, clamp(2.5rem, 2.9vw, 3.25rem); the plate lands in it. Line height comes
+ * The chapter heading: Fraunces, clamp(2.5rem, 2.9vw, 3.25rem) (phones: 2.5rem, easing to 2rem below 381 px
+ * wide, so "02 Certifications" fits a 320 px screen even with WCAG text spacing); the plate lands in it. Line height comes
  * with the target: CHAPTER_H2_PLATE (`leading-none`, the plate box's em metrics hold the glyphs) or
  * CHAPTER_H2_PLAIN (1.25, so Fraunces' 1.23 em glyph box stays inside the line and the text never rises
  * above its band's 96 px header clearance).
  */
 export const CHAPTER_H2 =
-  "font-serif text-[2.5rem] font-normal text-slate-50 wide:text-[clamp(2.5rem,2.9vw,3.25rem)]";
+  "font-serif text-[clamp(2rem,10.5vw,2.5rem)] font-normal text-slate-50 wide:text-[clamp(2.5rem,2.9vw,3.25rem)]";
 export const CHAPTER_H2_PLATE = "leading-none";
 export const CHAPTER_H2_PLAIN = "leading-[1.25]";
 
@@ -56,11 +57,28 @@ export const ITEM_META =
 export const ITEM_NAME =
   "mt-2 font-serif text-lg font-normal leading-snug text-balance text-slate-50 wide:text-[clamp(1.05rem,1.3vw,1.4rem)]";
 
-/** A text link over the film: mono caps, amber only on hover and focus. */
+/** A text link over the film: mono caps, amber only on hover and focus; 44 px tall to tap on touch screens. */
 export const FILM_LINK = [
-  "inline-flex items-center gap-1.5 rounded-sm font-mono text-[11px] uppercase tracking-[0.18em] text-slate-200 underline-offset-4 transition-colors wide:text-xs",
-  "hover:text-lamp hover:underline focus-visible:text-lamp focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night",
+  "inline-flex pointer-coarse:min-h-11 items-center gap-1.5 rounded-sm font-mono text-[11px] uppercase tracking-[0.18em] text-slate-200 underline-offset-4 transition-colors wide:text-xs",
+  "hover:text-lamp hover:underline focus-visible:text-lamp focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night",
 ].join(" ");
+
+/**
+ * A link set in the text around it (Geist Sans, underlined) rather than as one more row of mono caps: the
+ * project cards' links, the email lines. Amber on hover and focus, as FILM_LINK; on touch screens it becomes
+ * a 44 px tall inline box, so it is a full-size tap target.
+ */
+export const TEXT_LINK =
+  "pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center rounded-sm text-slate-50 underline decoration-white/30 underline-offset-4 transition-colors hover:text-lamp focus-visible:text-lamp focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night";
+
+/**
+ * A wrapping list with clipped separators (Skills' items, Projects' tags): each item after the first carries
+ * a "·" (SEP_DOT, aria-hidden) centred in the 24 px gap before it; the list reaches 24 px left of its column
+ * and clips that strip, so the dot of an item that opens a line is cut off and no line starts with a dot.
+ */
+export const SEP_LIST = "-ml-6 flex flex-wrap items-baseline gap-y-1 [clip-path:inset(-4px_-4px_-4px_1.5rem)]";
+export const SEP_ITEM = "relative ml-6";
+export const SEP_DOT = "absolute -left-3 -translate-x-1/2 text-slate-500";
 
 /** A mono caps label inside a composition (ProofStrip tokens, group titles' meta, the footer). */
 export const MONO_LABEL = "font-mono text-[11px] uppercase leading-snug tracking-[0.18em] text-slate-200 wide:text-xs";
@@ -68,5 +86,5 @@ export const MONO_LABEL = "font-mono text-[11px] uppercase leading-snug tracking
 /** Body copy over film or a tone: Geist Sans 15–16 px, slate-200. */
 export const BODY_TEXT = "text-[15px] leading-relaxed text-pretty text-slate-200 wide:text-base";
 
-/** A group or entry title (Skills' groups, Experience's roles): Fraunces, slate-50. */
+/** A group or entry title (Skills' groups, Certifications' and Projects' entries): Fraunces, slate-50. */
 export const GROUP_TITLE = "font-serif text-lg font-normal leading-snug text-slate-50 wide:text-[clamp(1.1rem,1.35vw,1.45rem)]";

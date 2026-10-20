@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { ProjectLayoutShell } from "./ProjectLayoutShell";
 import { getServerOrigin } from "@/app/app/_lib/server-origin";
 import {
@@ -69,7 +68,9 @@ export default async function ProjectLayout({
   const isGuestProject = projectId === GUEST_PROJECT_ID;
   const hasGuestSession = Boolean(jar.get(GUEST_SESSION_COOKIE)?.value);
 
-  if (isGuestProject && !hasGuestSession) redirect("/test");
+  // A guest without the session cookie gets no workspace shell: the page sends them to /test for one, or,
+  // straight after /test (cookies blocked), says why there is no demo.
+  if (isGuestProject && !hasGuestSession) return children;
 
   const [projectName, fileCount] = isGuestProject
     ? await Promise.all([Promise.resolve("Guest Conversion Test"), fetchFileCount(projectId)])

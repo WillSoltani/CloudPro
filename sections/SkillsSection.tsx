@@ -9,7 +9,7 @@ import { CHOREO } from "@/components/film/choreo";
 import { fwOf } from "@/components/film/frameBox";
 import { RACK_CAPTIONS } from "@/components/film/rackCaptions";
 import { REEL, REEL_INDEX, breathOf, moveVhOf, tailOf } from "@/components/film/reel";
-import { GROUP_TITLE, ITEM_META } from "@/components/film/sectionTokens";
+import { GROUP_TITLE, ITEM_META, SEP_DOT, SEP_ITEM, SEP_LIST } from "@/components/film/sectionTokens";
 import { skillCategories } from "@/content/skills";
 
 const FILM = REEL[REEL_INDEX.skills];
@@ -43,7 +43,7 @@ const COLS = { title: fwOf(0.22), gap: fwOf(0.02) };
  *
  * Desktop: head x 0.13, y 0.10–0.255 · five rows over the drives, y 0.27–0.87 (0.12 each): the group's
  * title at x 0.13–0.35 (Fraunces), its items at x 0.37–0.87 as one inline mono list. Phones: one block from
- * y 0.52 over a 0.75 tone; groups 1–2 in the block, 3–5 flow.
+ * y 0.54 (clear of the drawer at 0.52) over a 0.75 tone; groups 1–2 in the block, 3–5 flow.
  */
 export function SkillsSection() {
   return (
@@ -57,14 +57,14 @@ export function SkillsSection() {
       tail={tailOf(FILM)}
       plate={<RackPlate index={REEL_INDEX.skills} n={PLATE.n} name={PLATE.headingText} handoff />}
     >
-      <BlockTone top={0.52} alpha={0.75} />
-      <FrameBand from={0.1} to={HEAD_TO} x={0.13} right={0.87} stackedTop={0.52}>
+      <BlockTone top={0.54} alpha={0.75} />
+      <FrameBand from={0.1} to={HEAD_TO} x={0.13} right={0.87} stackedTop={0.54}>
         <ChapterHead
           compact={{ cols: `${COLS.title} minmax(0, 1fr)`, gap: COLS.gap }}
           n={PLATE.n}
           title={PLATE.headingText}
           support={PLATE.machine}
-          lede="A curated stack for building reliable, secure, and production-ready cloud systems."
+          lede="Five areas I work across, from the cloud bill to the pixel."
         />
       </FrameBand>
       <FrameBand from={ROWS_FROM} to={ROWS_TO} after={HEAD_TO} x={0.13} right={0.87}>
@@ -76,13 +76,25 @@ export function SkillsSection() {
           items={skillCategories.map((g, k) => ({
             key: g.title,
             node: (
-              <Reveal at={C.items[Math.min(k, C.items.length - 1)]} data-halo="">
-                <h3 className={GROUP_TITLE}>{g.title}</h3>
-                <ul className="mt-1.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1 wide:mt-0">
+              <Reveal
+                at={C.items[Math.min(k, C.items.length - 1)]}
+                stackedPin={C.stacked?.items?.[k] ?? undefined}
+                data-halo=""
+              >
+                <div>
+                  <h3 className={GROUP_TITLE}>{g.title}</h3>
+                  {/* The row's proof, under its title where the rows are framed (desktop). */}
+                  {g.claim ? (
+                    <p className="mt-1 hidden text-[13px] leading-snug text-pretty text-slate-300 wide:block">
+                      {g.claim}
+                    </p>
+                  ) : null}
+                </div>
+                <ul className={`mt-1.5 ${SEP_LIST} wide:mt-0`}>
                   {g.items.map((it, i) => (
-                    <li key={it} className={`${ITEM_META} flex items-baseline gap-x-2.5 text-slate-200`}>
+                    <li key={it} className={`${ITEM_META.replace("text-slate-300", "text-slate-200")} ${SEP_ITEM}`}>
                       {i > 0 ? (
-                        <span aria-hidden className="text-slate-500">
+                        <span aria-hidden className={SEP_DOT}>
                           ·
                         </span>
                       ) : null}

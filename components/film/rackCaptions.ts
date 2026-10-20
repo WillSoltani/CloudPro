@@ -12,9 +12,9 @@
  * - hero.line: content/about.ts bullets[0], contiguous, leading "I build " dropped
  * - plates.headingText: the `title` of sections/AboutSection.tsx (content/about.ts headline),
  *   CertificationsSection, SkillsSection, ProjectsBlock, ContactSection
- * - contact.line: content/about.ts closing; contact.links: sections/ContactSection.tsx ContactCTA email,
- *   content/social.ts github / linkedin
- * - alternates.heroLine: content/about.ts bullets[1], the clause after "but"
+ * - contact.line: once content/about.ts closing (retired); contact.links: sections/ContactSection.tsx ContactCTA
+ *   email, content/social.ts github / linkedin
+ * The copy pack of 2026-10-19 (perfect-1) edits hero.title, hero.cta.label and the email's mailto here too.
  */
 
 export type RackCaptions = {
@@ -38,17 +38,16 @@ export type RackCaptions = {
     line: string;
     links: readonly { id: "email" | "github" | "linkedin"; label: string; href: string }[];
   };
-  alternates: { heroLine: string };
 };
 
 export const RACK_CAPTIONS = {
   hero: {
     badge: "Available for new engagements.",
     name: "Will Soltani",
-    title: ["Cloud Engineer", "AWS Solutions Architect"],
-    location: "Toronto, ON · Remote-friendly",
-    line: "I design, build and run AWS systems for teams that need them to work in production.",
-    cta: { label: "View Projects & Case Studies", href: "#projects" },
+    title: ["Products built and run on AWS", "for founders and teams"],
+    location: "Toronto, ON · Working remotely",
+    line: "I build production software end to end: AWS back ends, web and mobile apps, AI features.",
+    cta: { label: "View projects and case studies", href: "#projects" },
   },
   plates: [
     { n: "01", section: "about", label: "01 / About", headingText: "About", machine: "Switch", labelAlt: "01 / Switch" },
@@ -58,14 +57,15 @@ export const RACK_CAPTIONS = {
     { n: "05", section: "contact", label: "05 / Contact", headingText: "Contact", machine: "Fibre", labelAlt: "05 / Fibre" },
   ],
   contact: {
-    line: "Have an AWS system to design, build or fix? Tell me about it.",
+    line: "Have a product to build or a system to fix? Tell me about it.",
     links: [
-      { id: "email", label: "will@soltani.org", href: "mailto:will@soltani.org" },
+      {
+        id: "email",
+        label: "will@soltani.org",
+        href: "mailto:will@soltani.org?subject=Project%20enquiry&body=What%20you%27re%20building%3A%0D%0AWhere%20it%20runs%20today%3A%0D%0ATimeline%3A%0D%0A",
+      },
       { id: "github", label: "GitHub", href: "https://github.com/WillSoltani" },
       { id: "linkedin", label: "LinkedIn", href: "https://www.linkedin.com/in/will-soltani" },
     ],
-  },
-  alternates: {
-    heroLine: "I pick tradeoffs based on latency, cost, and ops burden.",
   },
 } as const satisfies RackCaptions;

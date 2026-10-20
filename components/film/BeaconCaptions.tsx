@@ -9,23 +9,27 @@ import {
   CaptionLabel,
 } from "@/components/film/captionTokens";
 import { HERO_BEATS, HERO_COPY, type HeroBeat } from "@/components/film/heroBeats";
+import { FILM_LINK } from "@/components/film/sectionTokens";
 
 // Every caption shares the caption column on desktop (captionTokens.CAPTION_COLUMN); a caption with a
 // CTA (the finale) keeps clear of the centre of the frame too. On phones the finale is the centred bottom
-// block, a touch taller (40svh) for the CTA.
+// block, sized to its content (a height cap only ever squashed the CTA: the block grows upward from the
+// bottom, clear of the intro, which has left by then), its email line ≥ 16 px above the edge while it drifts in.
 const FINALE = [
-  "absolute inset-x-0 bottom-0 flex max-h-[40svh] flex-col items-center justify-end px-5 pb-[max(1.75rem,env(safe-area-inset-bottom))] text-center",
-  "wide:inset-x-auto wide:top-1/2 wide:bottom-auto wide:left-[5vw] wide:w-[25vw] wide:max-w-[34rem] wide:min-w-[20rem] wide:max-h-none wide:-translate-y-1/2 wide:items-start wide:justify-start wide:px-0 wide:pb-0 wide:text-left",
+  "absolute inset-x-0 bottom-0 flex flex-col items-center justify-end px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-center",
+  "wide:inset-x-auto wide:top-1/2 wide:bottom-auto wide:left-[5vw] wide:w-[25vw] wide:max-w-[34rem] wide:min-w-[20rem] wide:-translate-y-1/2 wide:items-start wide:justify-start wide:px-0 wide:pb-0 wide:text-left",
 ].join(" ");
 
 const FINALE_LINE =
-  "mt-3 font-serif text-3xl leading-[1.08] text-balance text-slate-50 wide:text-[clamp(1.75rem,2.1vw,2.5rem)] wide:leading-[1.12] wide:text-pretty";
+  "mt-3 font-serif text-3xl leading-[1.08] text-balance text-slate-50 wide:text-[clamp(1.75rem,2.1vw,2.5rem)] wide:leading-[1.12] wide:max-w-[20ch] wide:text-balance";
 
 /** The hero block: the page's h1 lives here and never leaves the accessibility tree. */
 function Intro({ from, to }: { from: number; to: number }) {
   return (
     <FilmCaption from={from} to={to} persistent className={CAPTION_COLUMN}>
-      <span className="inline-flex w-fit max-w-full items-center gap-2.5 rounded-full border border-lamp/40 bg-lamp/10 px-3.5 py-1.5 text-[11px] leading-snug text-slate-200 backdrop-blur-sm sm:text-xs">
+      {/* Short phones (phone-short): a 20 % night wash over the pill's amber tint, where the ceiling behind
+          it is brightest (the badge text measured 4.48:1 on the slate-400 proxy at 320×568). */}
+      <span className="inline-flex w-fit max-w-full items-center gap-2.5 rounded-full border border-lamp/40 bg-lamp/10 px-3.5 py-1.5 text-[11px] leading-snug text-slate-200 backdrop-blur-sm sm:text-xs phone-short:bg-[linear-gradient(rgb(7_11_22/0.2),rgb(7_11_22/0.2))]">
         <span className="relative flex h-2 w-2 shrink-0">
           <span className="absolute inline-flex h-full w-full rounded-full bg-lamp/60 motion-safe:animate-ping" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-lamp" />
@@ -34,14 +38,16 @@ function Intro({ from, to }: { from: number; to: number }) {
       </span>
       <h1
         id="hero-title"
+        // Focusable from script only: back-to-top puts focus here after the jump.
+        tabIndex={-1}
         className="mt-5 font-serif text-[2.5rem] font-medium leading-[0.95] tracking-[-0.02em] text-white sm:text-5xl wide:text-[clamp(3rem,4.2vw,4.75rem)]"
       >
         {HERO_COPY.name}
       </h1>
       <p className="mt-3 font-serif text-lg leading-snug text-slate-200 wide:text-[1.375rem]">
-        {HERO_COPY.title[0]} <span className="text-slate-500">|</span>{" "}
-        {/* Keep the second title whole so a wrap can only fall after the pipe, never orphan "Architect". */}
-        <span className="whitespace-nowrap">{HERO_COPY.title[1]}</span>
+        {/* Two clean lines, never a pipe left hanging at the column's edge. */}
+        <span className="block">{HERO_COPY.title[0]}</span>
+        <span className="block">{HERO_COPY.title[1]}</span>
       </p>
       <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-300/80">
         {HERO_COPY.location}
@@ -52,7 +58,7 @@ function Intro({ from, to }: { from: number; to: number }) {
 
 /** One caption window: the visible copy is aria-hidden (read from the sr-only text below); the CTA is real. */
 function Caption({ beat }: { beat: HeroBeat }) {
-  const { n, label, line, support, cta } = beat;
+  const { n, label, line, support, cta, secondary } = beat;
   return (
     <FilmCaption from={beat.from} to={beat.to} className={cta ? FINALE : CAPTION_COLUMN}>
       <div aria-hidden>
@@ -63,11 +69,24 @@ function Caption({ beat }: { beat: HeroBeat }) {
       {cta ? (
         <a
           href={cta.href}
-          className="pointer-events-auto mt-6 inline-flex h-11 w-fit items-center gap-2 rounded-full border border-lamp/50 bg-lamp/10 px-6 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-100 transition-colors hover:bg-lamp/20 focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night wide:mt-8"
+          className="pointer-events-auto mt-6 inline-flex min-h-11 w-fit shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-lamp/50 bg-lamp/10 px-6 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-100 max-[379px]:px-4 max-[379px]:tracking-[0.1em] transition-colors hover:bg-lamp/20 focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night wide:mt-8"
         >
           {cta.label}
           <ArrowRight aria-hidden className="h-4 w-4 text-lamp" />
         </a>
+      ) : null}
+      {secondary ? (
+        // One line under the button: the lead in mono, the address as the film's text link (not capitalised).
+        <p className="mt-3 shrink-0 whitespace-nowrap font-mono text-[11px] tracking-[0.12em] text-slate-300 wide:mt-4 wide:text-xs">
+          <span aria-hidden>{secondary.lead} </span>
+          <a
+            href={secondary.href}
+            aria-label={`Email ${secondary.label}`}
+            className={`pointer-events-auto ${FILM_LINK.replace("uppercase ", "")} tracking-[0.12em]`}
+          >
+            {secondary.label}
+          </a>
+        </p>
       ) : null}
     </FilmCaption>
   );

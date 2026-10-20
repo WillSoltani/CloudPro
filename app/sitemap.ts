@@ -36,13 +36,14 @@ export default async function sitemap() {
 
   const base = getSiteUrl();
 
-  const projectUrls = projects.map((p) => ({
-    url: `${base}/projects/${p.slug}`,
-    lastModified: new Date(),
-  }));
+  // When each page's content last changed (update by hand with the page), not the time of the request.
+  const LAST_MODIFIED: Record<string, string> = {
+    "/": "2026-10-19",
+    "/projects/serverless-file-pipeline": "2026-10-19",
+    "/projects/chapterflow": "2026-10-19",
+    "/projects/soltani-org": "2026-10-19",
+  };
+  const page = (path: string) => ({ url: `${base}${path}`, lastModified: LAST_MODIFIED[path] ?? "2026-10-19" });
 
-  return [
-    { url: `${base}/`, lastModified: new Date() },
-    ...projectUrls,
-  ];
+  return [page("/"), ...projects.map((p) => page(`/projects/${p.slug}`))];
 }

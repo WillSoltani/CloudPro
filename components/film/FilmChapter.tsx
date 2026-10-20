@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
+import { motion, useMotionValue, useTransform } from "framer-motion";
 import { useReducedMotionSafe, type FilmEntry } from "@/components/film/filmCore";
 import { WIDE_QUERY } from "@/components/film/filmBase";
 import { REEL_FOCUS, type SegmentRegistration } from "@/components/film/FilmBackdrop";
@@ -9,7 +10,7 @@ import { useRackPlatesOn } from "@/components/film/RackPlate";
 import { ChapterContext, type ChapterContextValue } from "@/components/film/chapterContext";
 import type { ChapterChoreo } from "@/components/film/choreo";
 import { FILM_ASPECT, framePoint, frameVars } from "@/components/film/frameBox";
-import { BODY_MASK, BODY_MASK_BOTTOM, bodyTone, HALO } from "@/components/film/tones";
+import { BODY_MASK, BODY_MASK_BOTTOM, bodyTone, halo, toneOf } from "@/components/film/tones";
 
 /**
  * The deep-link anchor sits this far below the move's end: html's scroll-padding-top (app/globals.css),
@@ -21,8 +22,16 @@ const ANCHOR_OFFSET = ANCHOR_PADDING + 1;
 const FIT_EDGE = 24;
 /** A row (FrameRows) further than this share of the frame height from its band fails the fit guard. */
 const ROW_DRIFT = 0.02;
+/**
+ * Stacked compositions taller than the viewport: during the read pin the composition lifts by its overflow
+ * (smoothstep over the first LIFT_BY of the pin), so its last line ends LIFT_CLEAR px above the bottom
+ * edge; until then a FEATHER_PX feather at the bottom edge fades any line the edge would cut.
+ */
+const LIFT_BY = 0.6;
+const LIFT_CLEAR = 32;
+const FEATHER_PX = 72;
 
-const COMPOSE_STYLE = { ...frameVars(REEL_FOCUS), "--halo": HALO } as CSSProperties;
+const COMPOSE_STYLE = frameVars(REEL_FOCUS) as CSSProperties;
 
 /**
  * One section of the homepage as a chapter of the film (part five §2b): the element that carries its film's
@@ -100,6 +109,9 @@ export function FilmChapter({
   const reduced = useReducedMotionSafe();
   const platesOn = useRackPlatesOn();
   const lastFrame = film.landscape.count - 1;
+  // The tones' colour: RACK_NIGHT on the rack, NIGHT on the tower (tones.ts).
+  const tone = toneOf(choreo.film);
+  const haloStyle = { "--halo": halo(tone) } as CSSProperties;
   const seg = useSegmentRegistration(film, sectionRef, {
     reducedSteps,
     moveVh,
@@ -115,6 +127,24 @@ export function FilmChapter({
   const end = tail ? tail.from : seg.manifest.count - 1;
   const { index, frame, progress, tau, tauRead } = seg;
 
+  // The stacked lift (LIFT_BY): the composition's overflow and the viewport height, from the fit guard.
+  const [stacked, setStacked] = useState(false);
+  const overflow = useMotionValue(0);
+  const viewH = useMotionValue(0);
+  const lift = useTransform([tau, tauRead, overflow], ([t, r, o]: number[]) => {
+    if (!o || reduced) return 0;
+    const x = Math.min(1, Math.max(0, r > 0 ? t / r / LIFT_BY : 1));
+    return x * x * (3 - 2 * x);
+  });
+  const liftY = useTransform([lift, overflow], ([s, o]: number[]) => -o * s);
+  // The feather rides at the viewport's bottom edge while the composition lifts, and leaves below it as the
+  // lift completes (by then the last line is LIFT_CLEAR px above the edge).
+  const feather = useTransform([lift, overflow, viewH], ([s, o, vh]: number[]) => {
+    if (!o || s >= 1) return "none";
+    const end = vh + (o + FEATHER_PX) * s;
+    return `linear-gradient(to bottom, #000 ${(end - FEATHER_PX).toFixed(1)}px, transparent ${end.toFixed(1)}px)`;
+  });
+
   const ctx = useMemo<ChapterContextValue>(
     () => ({
       id,
@@ -128,6 +158,7 @@ export function FilmChapter({
       head: platesOn ? choreo.head.plate : choreo.head.noPlate,
       reduced,
       platesOn,
+      stacked,
       sectionRef,
       composeRef,
       // The raw (unsmoothed) move frame, from the DOM: what the plate snaps to on a jump.
@@ -140,7 +171,7 @@ export function FilmChapter({
         return m > 0 ? Math.min(1, Math.max(0, y / m)) * end : end;
       },
     }),
-    [id, index, frame, progress, tau, tauRead, end, choreo, platesOn, reduced],
+    [id, index, frame, progress, tau, tauRead, end, choreo, platesOn, reduced, stacked],
   );
 
   // The fit guard (framed layout only exists where the `wide` rule holds).
@@ -148,12 +179,23 @@ export function FilmChapter({
     const el = composeRef.current;
     if (!el) return;
     const wide = window.matchMedia(WIDE_QUERY);
+    const area = el.querySelector<HTMLElement>("[data-frame-area]") ?? el;
+    // Stacked: how far the composition's last band runs past the viewport's bottom edge (less LIFT_CLEAR).
+    const measureLift = () => {
+      const isStacked = !wide.matches || el.dataset.composeMode === "stacked";
+      const bands = area.querySelectorAll(":scope > [data-band]");
+      const last = bands[bands.length - 1];
+      const vh = window.innerHeight;
+      const bottom = last ? last.getBoundingClientRect().bottom - area.getBoundingClientRect().top : 0;
+      setStacked(isStacked);
+      viewH.set(vh);
+      overflow.set(isStacked ? Math.max(0, Math.round(bottom - (vh - LIFT_CLEAR))) : 0);
+    };
     const check = () => {
       el.dataset.composeMode = "auto";
-      if (!wide.matches) return;
+      if (!wide.matches) return measureLift();
       const vw = el.clientWidth;
       // The framed part must fit the viewport (a body below it is meant to overflow).
-      const area = el.querySelector<HTMLElement>("[data-frame-area]") ?? el;
       let fits = area.scrollHeight <= window.innerHeight + 1;
       if (fits) {
         const vh = window.innerHeight;
@@ -177,6 +219,7 @@ export function FilmChapter({
         }
       }
       if (!fits) el.dataset.composeMode = "stacked";
+      measureLift();
     };
     check();
     const ro = new ResizeObserver(check);
@@ -188,23 +231,63 @@ export function FilmChapter({
       wide.removeEventListener("change", check);
       window.removeEventListener("resize", check);
     };
-  }, []);
+  }, [overflow, viewH]);
 
-  // Tab into the chapter before its heading has arrived: land on the revealed hold instead.
+  // Keyboard focus always lands in view, between the header's clearance and FIT_EDGE above the bottom:
+  // - into the composition before its heading has arrived, or onto an item out of view: the revealed hold
+  //   (the anchor); stacked, an item the bottom feather would cover at rest goes on to the end of the lift;
+  // - onto the body (it enters on release, below the pinned composition): scrolled to the nearest edge.
   const focusRaf = useRef(0);
+  const focusTarget = useRef<HTMLElement | null>(null);
   useEffect(() => () => cancelAnimationFrame(focusRaf.current), []);
-  const onFocusCapture = () => {
+  const onFocusCapture = (e: FocusEvent<HTMLElement>) => {
+    focusTarget.current = e.target instanceof HTMLElement ? e.target : null;
+    // A heading focused from script (tabindex -1, e.g. by back-to-top) is a focus move, not a Tab stop: no
+    // scroll correction.
+    if (focusTarget.current?.getAttribute("tabindex") === "-1") return;
     if (focusRaf.current) return;
     // After the browser's own focus scroll, so the position read is the one the viewer will see.
     focusRaf.current = requestAnimationFrame(() => {
       focusRaf.current = 0;
       const el = sectionRef.current;
       const anchor = anchorRef.current;
-      if (!el || !anchor) return;
+      const target = focusTarget.current;
+      if (!el || !anchor || !target) return;
+      const top = ANCHOR_PADDING;
+      const bottom = () => window.innerHeight - FIT_EDGE;
+      // Where the target sits once the stacked lift is complete (0 framed).
+      const liftLeft = () => overflow.get() + liftY.get();
+      if (target.closest("[data-body]")) {
+        // Scroll by the difference until it is in view: a pinned composition does not move with the scroll,
+        // so the first steps may only use up the read pin before the body starts to rise.
+        for (let k = 0; k < 24; k++) {
+          const r = target.getBoundingClientRect();
+          const t = r.top - liftLeft();
+          const b = r.bottom - liftLeft();
+          const d = t < top ? t - top : b > bottom() ? Math.min(b - bottom(), t - top) : 0;
+          const before = window.scrollY;
+          if (Math.abs(d) < 1) break;
+          window.scrollBy({ top: d, behavior: "instant" });
+          if (window.scrollY === before) break;
+        }
+        return;
+      }
       const m = anchor.offsetTop - ANCHOR_OFFSET;
       const y = -el.getBoundingClientRect().top;
       const raw = m > 0 ? Math.min(1, Math.max(0, y / m)) * end : end;
-      if (y < 0 || raw < choreo.headAt) anchor.scrollIntoView({ block: "start", behavior: "instant" });
+      const r = target.getBoundingClientRect();
+      if (!(y < 0 || raw < choreo.headAt || r.top < top || r.bottom > bottom())) return;
+      anchor.scrollIntoView({ block: "start", behavior: "instant" });
+      // Stacked: at rest the bottom feather would cover it, so on to the end of the lift (the read pin's
+      // LIFT_BY; the svh from the move: m = moveVh·100svh).
+      if (overflow.get() > 0 && moveVh > 0) {
+        const atRest = target.getBoundingClientRect().bottom - liftY.get();
+        if (atRest > window.innerHeight - FEATHER_PX) {
+          const rest = el.getBoundingClientRect().top + window.scrollY + m;
+          const readPx = choreo.readVh * (m / moveVh);
+          window.scrollTo({ top: Math.round(rest + LIFT_BY * readPx), behavior: "instant" });
+        }
+      }
     });
   };
 
@@ -234,23 +317,24 @@ export function FilmChapter({
             className="pointer-events-none absolute left-0 h-px w-px"
             style={{ top: `calc(${+(moveVh * 100).toFixed(4)}svh + ${ANCHOR_OFFSET}px)` }}
           />
-          <div
+          <motion.div
             ref={composeRef}
             data-compose=""
             data-compose-mode="auto"
             className="pointer-events-none sticky top-0 min-h-svh w-full [container-type:inline-size]"
-            style={COMPOSE_STYLE}
+            style={{ ...COMPOSE_STYLE, ...haloStyle, y: liftY }}
           >
-            <div data-frame-area="" className="relative flow-root min-h-svh">
+            <motion.div data-frame-area="" className="relative flow-root min-h-svh" style={{ maskImage: feather }}>
               {children}
-            </div>
+            </motion.div>
             {body ? (
               <div
                 data-body=""
                 className="pointer-events-auto relative pt-24 pb-40 wide:pt-40"
                 style={
                   {
-                    "--body-tone": bodyTone(),
+                    "--body-tone": bodyTone(undefined, undefined, tone),
+                    "--body-flat": `rgb(${tone} / 0.85)`,
                     "--body-mask": BODY_MASK,
                     "--body-mask-bottom": BODY_MASK_BOTTOM,
                   } as CSSProperties
@@ -259,7 +343,7 @@ export function FilmChapter({
                 {body}
               </div>
             ) : null}
-          </div>
+          </motion.div>
           <div aria-hidden style={{ height: `${+((moveVh + choreo.readVh) * 100).toFixed(4)}svh` }} />
         </section>
       </div>

@@ -16,6 +16,11 @@ export function PageShell({ children, className }: Props) {
       >
         Skip to content
       </a>
+      {/* The banner landmark before <main> in reading order; it is position: fixed, so where it sits in the DOM
+          does not move it (and its z-50 still clears everything in <main>). Same surface, so the same tap flash. */}
+      <div data-surface="portfolio">
+        <Navbar />
+      </div>
       {/* overflow-x-clip, not -hidden: a hidden overflow would make <main> the scroll container and break the film's sticky stage. */}
       <main
         data-surface="portfolio"
@@ -23,10 +28,7 @@ export function PageShell({ children, className }: Props) {
           .filter(Boolean)
           .join(" ")}
       >
-        <div className="relative z-10">
-          <Navbar />
-          {children}
-        </div>
+        <div className="relative z-10">{children}</div>
       </main>
     </>
   );

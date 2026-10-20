@@ -7,6 +7,7 @@ import { QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { ddbDoc, getTableName, s3, mustEnv } from "@/app/app/api/_lib/aws";
 import { requireActorForProject } from "@/app/app/api/_lib/actor";
 import { isGuestProjectId } from "@/app/app/api/_lib/guest-session";
+import { rawKeyPrefix } from "@/app/app/api/_lib/raw-key";
 
 export const runtime = "nodejs";
 
@@ -167,7 +168,7 @@ function buildRawKey(args: {
 
   // ✅ Stable across renames because projectSlug is immutable once set.
   // Desired shape: project-name first, then id
-  return `private/${userSub}/${userSlug}/projects/${projectSlug}--${projectId}/raw/${fileId}/${filename}`;
+  return `${rawKeyPrefix(userSub)}${userSlug}/projects/${projectSlug}--${projectId}/raw/${fileId}/${filename}`;
 }
 
 export async function POST(

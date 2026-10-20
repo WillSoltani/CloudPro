@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FocusEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ExternalLink, Github, LayoutDashboard, Linkedin, Menu, X } from "lucide-react";
 import Link from "next/link";
 
-import { LoginButton } from "@/components/auth/LoginButton";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { FOCUS_RING } from "@/components/focusRing";
 import { useAuthStatus } from "@/components/auth/useAuthStatus";
@@ -42,7 +41,8 @@ const itemVariants = {
 type Props = { initialLoggedIn?: boolean };
 
 export function NavbarClient({ initialLoggedIn }: Props) {
-  const { loggedIn, loading } = useAuthStatus();
+  // Probe the session only when the server saw the cookie: a signed-out visitor gets no request at all.
+  const { loggedIn, loading } = useAuthStatus(initialLoggedIn === true);
 
   // Use SSR-provided value while the client-side fetch is still in flight,
   // then switch to the live hook result once it resolves.
@@ -50,14 +50,15 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     ? (initialLoggedIn ?? false)
     : loggedIn === true;
 
-  const [scrolled, setScrolled] = useState(false);
   const [nearTop, setNearTop] = useState(true);
   const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   // `inView`: the hero extends below the header's bottom edge (the brand hides there).
   const film = useFilmInView("-80px 0px 0px 0px");
   // The reel clock (FilmBackdrop): `section` is the chapter whose unit has lit (the active pill, in step
-  // with the film rather than a scroll-spy band); `chrome` is what lies under the header.
-  const { chrome, section } = useReelChrome();
+  // with the film rather than a scroll-spy band).
+  const { section } = useReelChrome();
   const active: string | null = section || null;
 
   const handleNavClick = () => {
@@ -66,13 +67,14 @@ export function NavbarClient({ initialLoggedIn }: Props) {
 
   useEffect(() => {
     const onScroll = () => {
-      setScrolled(window.scrollY > 8);
       const f = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
-      // The hero's opening caption is gone at the end of its intro window (heroBeats HERO_INTRO_END, 10 %
-      // of the film's scrub today), so the name returns there (a fixed half screen would leave it missing
-      // for a few hundred px on the long hero).
+      // The hero's opening caption is gone at the end of its intro window (heroBeats HERO_INTRO_END), so the
+      // name returns there (a fixed half screen would leave it missing for a few hundred px on the long
+      // hero). On phones it waits for the whole hero: the data hall's ceiling panels would put it white on
+      // white.
       const range = f ? f.offsetHeight - window.innerHeight : 0;
-      setNearTop(window.scrollY < (range > 0 ? HERO_INTRO_END * range : 0.55 * window.innerHeight));
+      const until = window.innerWidth < 768 ? 1 : HERO_INTRO_END;
+      setNearTop(window.scrollY < (range > 0 ? until * range : 0.55 * window.innerHeight));
     };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -83,6 +85,28 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     };
   }, []);
 
+  // The phone menu: Escape closes it and puts focus back on the toggle.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      toggleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+  // Tabbing out of the panel (to anything but its toggle) closes it, so it never sits open behind focus.
+  const onPanelBlur = (e: FocusEvent<HTMLDivElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && !e.currentTarget.contains(next) && next !== toggleRef.current) setOpen(false);
+  };
+  // And from the toggle itself (Shift+Tab back past it while the panel is open).
+  const onToggleBlur = (e: FocusEvent<HTMLButtonElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (open && next && !panelRef.current?.contains(next)) setOpen(false);
+  };
+
   useEffect(() => {
     const onResize = () => {
       if (window.innerWidth >= 768) setOpen(false);
@@ -91,27 +115,20 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Over the film the header stays glass-clear (camera moves, the hero, a chapter's pinned composition),
-  // so the reel reads as one piece; the blurred bar comes only over bodies: hold panels, a chapter's
-  // release and anything that scrolls over the film as a block.
-  const blurred = scrolled && chrome === "body";
   // The film's hero already says the name: hide the brand while its opening caption is on screen, i.e.
   // until the end of the hero's intro window (nearTop; half a screen if there is no hero). Before the
   // observer reports, assume the film (this navbar is homepage-only).
   const brandHidden = nearTop && (film.inView || !film.present);
 
   return (
-    <header
-      className={[
-        "fixed top-0 left-0 right-0 z-50 border-b transition-colors duration-300",
-        blurred
-          ? "border-white/10 bg-[#070b16]/70 backdrop-blur"
-          : "border-transparent bg-transparent",
-      ].join(" ")}
-    >
+    // The header stays clear at every scroll position (no fill, blur or hairline), so the reel reads as one
+    // piece; the nav pill keeps its own 5 % fill.
+    <header className="fixed top-0 left-0 right-0 z-50 bg-transparent">
       <div className="flex items-center justify-between px-4 py-4 sm:px-6">
+        {/* The current route: nothing to prefetch (it only produced aborted `/?_rsc=` requests). */}
         <Link
           href="/#about"
+          prefetch={false}
           className={[
             "shrink-0 rounded-sm text-lg font-semibold transition-opacity duration-300",
             FOCUS_RING,
@@ -182,16 +199,22 @@ export function NavbarClient({ initialLoggedIn }: Props) {
               Dashboard
             </Link>
           ) : null}
-          <div className="hidden md:block">
-            {showLoggedIn ? <LogoutButton /> : <LoginButton />}
-          </div>
+          {/* No "Log in" on the homepage (the live app is reached from its case study); Log out when signed in. */}
+          {showLoggedIn ? (
+            <div className="hidden md:block">
+              <LogoutButton />
+            </div>
+          ) : null}
 
           <button
+            ref={toggleRef}
             type="button"
-            className={`inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10 md:hidden ${FOCUS_RING}`}
+            onBlur={onToggleBlur}
+            className={`inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 md:hidden ${FOCUS_RING}`}
             onClick={() => setOpen((v) => !v)}
             aria-label="Toggle menu"
             aria-expanded={open}
+            aria-controls="mobile-nav"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -207,7 +230,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
             exit="exit"
             className="md:hidden"
           >
-            <div className="px-4 pb-4 sm:px-6">
+            <div ref={panelRef} id="mobile-nav" className="px-4 pb-4 sm:px-6" onBlur={onPanelBlur}>
               <nav
                 aria-label="Primary"
                 className="rounded-2xl border border-white/10 bg-[#070b16]/80 p-2 backdrop-blur"
@@ -289,9 +312,11 @@ export function NavbarClient({ initialLoggedIn }: Props) {
                   })}
                 </div>
 
-                <div className="mt-2 border-t border-white/10 px-2 pb-1 pt-2">
-                  {showLoggedIn ? <LogoutButton /> : <LoginButton />}
-                </div>
+                {showLoggedIn ? (
+                  <div className="mt-2 border-t border-white/10 px-2 pb-1 pt-2">
+                    <LogoutButton />
+                  </div>
+                ) : null}
               </nav>
             </div>
           </motion.div>

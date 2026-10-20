@@ -10,47 +10,48 @@ import { CHOREO } from "@/components/film/choreo";
 import { RACK_CAPTIONS } from "@/components/film/rackCaptions";
 import { REEL, REEL_INDEX, breathOf, moveVhOf } from "@/components/film/reel";
 import { BODY_TEXT, FILM_LINK, LEDE } from "@/components/film/sectionTokens";
-import { NIGHT, boxHalo, closingBand } from "@/components/film/tones";
+import { boxHalo, closingBand } from "@/components/film/tones";
 
 const FILM = REEL[REEL_INDEX.contact];
 const C = CHOREO.contact;
 const PLATE = RACK_CAPTIONS.plates[4];
 const EXTRA = C.head.plate.extra ?? {};
-const LINKS = RACK_CAPTIONS.contact.links;
+const EMAIL = RACK_CAPTIONS.contact.links.find((l) => l.id === "email")!;
+const LINKS = RACK_CAPTIONS.contact.links.filter((l) => l.id !== "email");
 /** The lamp's distance from the bottom of the viewport (frame y 0.848; frameBox vars): the band's clear disc. */
 const LAMP_FROM_BOTTOM = "calc(100dvh - var(--fy0) - var(--fh) * 0.848)";
 /** One side of the split footer (`lamp-low`): never within 7svh of the lamp's x (the centre). */
 const FOOTER_SIDE = "lamp-low:block lamp-low:max-w-[calc(50%-7svh)] lamp-low:text-left";
 /**
- * Short phones (`phone-short`), where the paragraph and the links sit over brighter sky: the paragraph's halo
- * becomes a soft box and the links' halos deepen (app/globals.css reads these; elsewhere the plain halo).
+ * One halo under the column's small text (the offer line to the links), reaching 96 px below the links so it
+ * fades out over the fog instead of ending under them (app/globals.css `[data-halo]` reads --halo-inset).
+ * Short phones (`phone-short`), where that text sits over brighter sky: a soft box instead (the --halo-*-s).
  */
-const PARAGRAPH_BOX = boxHalo(0.7, [48, 80, 48, 80]);
-const PARAGRAPH_SHORT = {
-  "--halo-inset-s": PARAGRAPH_BOX["--box-inset"],
-  "--halo-s": PARAGRAPH_BOX["--box-bg"],
-  "--halo-mask-s": PARAGRAPH_BOX["--box-mask"],
+const TEXT_BOX = boxHalo(0.7, [48, 80, 48, 80]);
+const TEXT_HALO = {
+  "--halo-inset": "-24px -48px -96px",
+  "--halo-inset-s": TEXT_BOX["--box-inset"],
+  "--halo-s": TEXT_BOX["--box-bg"],
+  "--halo-mask-s": TEXT_BOX["--box-mask"],
 } as CSSProperties;
-const LINK_SHORT = {
-  // Its foot stops 10 px under the line: on the second row at 320×568 it would otherwise reach the lamp's halo.
-  "--halo-inset-s": "-10px -44px",
-  "--halo-s": `radial-gradient(closest-side, rgb(${NIGHT} / 0.9), rgb(${NIGHT} / 0.63) 55%, rgb(${NIGHT} / 0) 100%)`,
-} as CSSProperties;
+/** The email: the column's action, a Fraunces link on its own line (≥ 44 px tall to tap, as the mono links). */
+const EMAIL_LINK =
+  "inline-flex pointer-coarse:min-h-11 items-center rounded-sm font-serif text-[1.3rem] leading-snug text-slate-50 underline decoration-white/40 underline-offset-[6px] transition-colors hover:text-lamp focus-visible:text-lamp focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night";
 
 /**
  * 05 Contact and the footer, the page's last chapter (§2f) on tower-04, joined to the bridge: the camera
  * cranes up into the cloud to the lamp; as the lamp settles (S) "05" and the name arrive, then "Start a
- * project", the offer line, the paragraph and the three links one by one; at rest tower-K4 breathes about the lamp and the footer
- * arrives in the bottom band. The page ends inside this chapter's read pin (0.6 vh), so the composition is
- * still pinned at the bottom of the page.
+ * project", the offer line, the paragraph, the email and the two links one by one; at rest tower-K4 breathes
+ * about the lamp and the footer arrives in the bottom band. The page ends inside this chapter's read pin
+ * (0.6 vh), so the composition is still pinned at the bottom of the page.
  *
  * Each destination appears once (the old ContactCTA and the rack's Contact caption merged): email, GitHub,
  * LinkedIn, all live anchors outside any aria-hidden block.
  *
- * Desktop: one centred column x 0.30–0.70, y 0.14–0.52 (the dark sky above the cloud) · the links in one
- * row · the footer in the bottom band (night 0.88, clear from 136 px up and in a disc round the lamp; on the
- * windows much wider than 16:9 the footer takes the bottom corners). Phones: the top block from y 0.10 (no
- * text near the lamp at 0.85 of the height) · the footer band.
+ * Desktop: one centred column x 0.30–0.70, y 0.14–0.52 (the dark sky above the cloud) · the email on its own
+ * line, GitHub and LinkedIn in a mono row under it · the footer in the bottom band (night 0.88, clear from
+ * 136 px up and in a disc round the lamp; on the windows much wider than 16:9 the footer takes the bottom
+ * corners). Phones: the top block from y 0.10 (no text near the lamp at 0.85 of the height) · the footer band.
  */
 export function ContactSection() {
   return (
@@ -80,43 +81,45 @@ export function ContactSection() {
               </h3>
             </Reveal>
           ) : null}
-          {EXTRA.line ? (
-            <Reveal as="p" at={EXTRA.line} data-halo="" className={`${LEDE} mx-auto text-balance`}>
-              {RACK_CAPTIONS.contact.line}
+          {/* The small text under one halo, which arrives with the offer line (the h2 and the kicker stay off it). */}
+          <Reveal at={EXTRA.line ?? C.items[0]} y={0} data-halo="" style={TEXT_HALO}>
+            {EXTRA.line ? (
+              <Reveal as="p" at={EXTRA.line} className={`${LEDE} mx-auto text-balance`}>
+                {RACK_CAPTIONS.contact.line}
+              </Reveal>
+            ) : null}
+            {EXTRA.paragraph ? (
+              <Reveal
+                as="p"
+                at={EXTRA.paragraph}
+                className={`mx-auto mt-4 max-w-[32rem] ${BODY_TEXT} text-balance wide-tight:mt-2`}
+              >
+                I work with companies, founders and teams on new products and on systems already in production. I
+                reply within one business day.
+              </Reveal>
+            ) : null}
+            <Reveal as="p" at={C.items[0]} className="mt-4 wide-tight:mt-1">
+              <a href={EMAIL.href} aria-label={`Email ${EMAIL.label}`} className={EMAIL_LINK}>
+                {EMAIL.label}
+              </a>
             </Reveal>
-          ) : null}
-          {EXTRA.paragraph ? (
-            <Reveal
-              as="p"
-              at={EXTRA.paragraph}
-              data-halo=""
-              className={`mx-auto mt-4 max-w-[32rem] ${BODY_TEXT} wide-tight:mt-2`}
-              style={PARAGRAPH_SHORT}
-            >
-              I work with companies, founders and teams on new AWS builds, architecture and code reviews, and
-              fixes for systems already in production.
-            </Reveal>
-          ) : null}
-          <ul className="mt-7 flex flex-wrap items-baseline justify-center gap-x-6 gap-y-3 wide-tight:mt-2">
-            {LINKS.map((l, k) => {
-              const external = /^https?:\/\//.test(l.href);
-              return (
-                // Each link over its own halo (§2c): at 1366×768 the row sits at frame y 0.49, just above the cloud.
-                <Reveal as="li" key={l.id} at={C.items[Math.min(k, C.items.length - 1)]} data-halo="" style={LINK_SHORT}>
+            <ul className="flex flex-wrap items-baseline justify-center gap-x-6">
+              {LINKS.map((l, k) => (
+                <Reveal as="li" key={l.id} at={C.items[Math.min(k + 1, C.items.length - 1)]}>
                   <a
                     href={l.href}
-                    target={external ? "_blank" : undefined}
-                    rel={external ? "noreferrer" : undefined}
-                    aria-label={external ? `${l.label} (opens in a new tab)` : `Email ${l.label}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`${l.label} (opens in a new tab)`}
                     className={`${FILM_LINK} normal-case tracking-[0.12em]`}
                   >
                     {l.label}
-                    {external ? <span aria-hidden>↗</span> : null}
+                    <span aria-hidden>↗</span>
                   </a>
                 </Reveal>
-              );
-            })}
-          </ul>
+              ))}
+            </ul>
+          </Reveal>
         </div>
       </FrameBand>
       {/* The closing band: night under the footer line, clear from 136 px up. It lies beneath the composition

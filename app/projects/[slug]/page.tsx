@@ -1,560 +1,271 @@
-// /app/projects/[slug]/page.tsx
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import * as React from "react";
-import Image from "next/image";
-
-
-import {
-  ArrowLeft,
-  Github,
-  ExternalLink,
-  AlertTriangle,
-  Lightbulb,
-  Cloud,
-  CheckCircle2,
-  Shield,
-  Activity,
-  DollarSign,
-  Sparkles,
-} from "lucide-react";
+import { fraunces } from "@/app/_lib/fraunces";
 
 import { projects } from "@/content/projects";
 import type { Project } from "@/types/project";
+import { ITEM_META, TEXT_LINK } from "@/components/film/sectionTokens";
 
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/Chip";
 
-/* -------------------------------------------------
-   Data lookup
--------------------------------------------------- */
+/** The one real picture under each title: a capture of the live product (phones get the portrait capture). */
+type Picture = {
+  alt: string;
+  caption: string;
+  wide: { src: string; width: number; height: number };
+  narrow?: { src: string; width: number; height: number };
+};
+const PICTURES: Record<string, Picture> = {
+  "serverless-file-pipeline": {
+    alt: "The guest converter at soltani.org/test with one finished job: a PNG converted to WebP.",
+    caption: "The guest demo on this site, after a 35 KB PNG became a 9 KB WebP.",
+    wide: { src: "/case-studies/pipeline-job-done-1440.webp", width: 1440, height: 900 },
+    narrow: { src: "/case-studies/pipeline-job-done-390.webp", width: 780, height: 1688 },
+  },
+  chapterflow: {
+    alt: "The library section of chapterflow.ca, with a carousel of book covers.",
+    caption: "chapterflow.ca: the library, over 130 books in guided chapters.",
+    wide: { src: "/case-studies/chapterflow-library-1440.webp", width: 1440, height: 900 },
+    narrow: { src: "/case-studies/chapterflow-library-390.webp", width: 780, height: 1688 },
+  },
+  "soltani-org": {
+    alt: "The first frame of the soltani.org film, a dark data hall, with the name set over it.",
+    caption: "The page's first frame, as it appears in a link preview.",
+    wide: { src: "/og/soltani-og.png", width: 1200, height: 630 },
+  },
+};
 
 function getProjectBySlug(slug: string): Project | undefined {
   return projects.find((p) => p.slug === slug);
 }
 
-/* -------------------------------------------------
-   Next metadata (params is a Promise in newer Next)
--------------------------------------------------- */
-
 type ParamsPromise = Promise<{ slug: string }>;
 
-export async function generateMetadata({
-  params,
-}: {
-  params: ParamsPromise;
-}): Promise<Metadata> {
+export async function generateMetadata({ params }: { params: ParamsPromise }): Promise<Metadata> {
   const { slug } = await params;
   const project = getProjectBySlug(slug);
 
-  if (!project) return { title: "Project not found" };
+  if (!project) return { title: "Not found · Will Soltani" };
 
+  // Each case study unfurls as itself, with its own preview image (public/og/case-<slug>.png; soltani.org
+  // uses the homepage's).
+  const title = `${project.title} · Case study`;
+  const image = slug === "soltani-org" ? "/og/soltani-og.png" : `/og/case-${slug}.png`;
   return {
-    title: `${project.title} | Case Study`,
+    title: `${title} · Will Soltani`,
     description: project.description,
+    alternates: { canonical: `/projects/${slug}` },
+    openGraph: {
+      title,
+      description: project.description,
+      type: "article",
+      url: `/projects/${slug}`,
+      siteName: "Will Soltani",
+      locale: "en_CA",
+      images: [{ url: image, width: 1200, height: 630, alt: `${project.title}, a case study on soltani.org` }],
+    },
+    twitter: { card: "summary_large_image" },
   };
 }
 
-/* -------------------------------------------------
-   Small presentational helpers
--------------------------------------------------- */
+/* The page's type: one serif for the title and the section headings, Geist Sans for reading. */
+const H2 = "font-serif text-[1.75rem] font-normal leading-tight text-slate-50 sm:text-[2rem]";
+const BODY = "text-[17px] leading-[1.7] text-slate-200";
+// ≤ 72 characters a line at 17 px (Geist averages ≈ 7.2 px a character there; 68ch ran to ≈ 93).
+const MEASURE = "max-w-[32.5rem]";
+const isExternal = (href: string) => /^https?:\/\//.test(href);
 
-function cn(...classes: Array<string | undefined | false>) {
-  return classes.filter(Boolean).join(" ");
-}
-
-function SectionHeader(props: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle?: string;
-}) {
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5">
-        {props.icon}
-      </div>
-      <div className="min-w-0">
-        <h2 className="text-xl font-semibold text-slate-50">{props.title}</h2>
-        {props.subtitle ? (
-          <p className="mt-1 text-sm text-slate-400">{props.subtitle}</p>
-        ) : null}
-      </div>
-    </div>
+    <section className="mt-16 sm:mt-20">
+      <h2 className={H2}>{title}</h2>
+      <div className={`mt-5 ${MEASURE}`}>{children}</div>
+    </section>
   );
 }
 
-function SoftCard(props: { children: React.ReactNode; className?: string }) {
+/** A plain list of lines (failure modes, next steps). */
+function Lines({ items }: { items: readonly string[] }) {
   return (
-    <Card
-      className={cn(
-        "rounded-2xl border-white/10 bg-white/5 backdrop-blur",
-        "shadow-[0_10px_40px_rgba(0,0,0,0.25)]",
-        props.className
-      )}
-    >
-      {props.children}
-    </Card>
+    <ul className="space-y-3">
+      {items.map((line) => (
+        <li key={line} className={`${BODY} relative pl-5`}>
+          <span aria-hidden className="absolute left-0 top-[0.72em] h-1 w-1 rounded-full bg-slate-300" />
+          {line}
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function Pill(props: {
-  label: string;
-  value: string;
-  className?: string;
-}) {
+/** A text link that opens in a new tab: the arrow, and the hint read aloud. */
+function NewTabLink({ href, children, className = TEXT_LINK }: { href: string; children: React.ReactNode; className?: string }) {
   return (
-    <div
-      className={cn(
-        "inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs",
-        props.className
-      )}
-    >
-      <span className="text-slate-400">{props.label}</span>
-      <span className="text-slate-200">{props.value}</span>
-    </div>
+    <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+      {children} <span aria-hidden>↗</span>
+      <span className="sr-only"> (opens in a new tab)</span>
+    </a>
   );
 }
 
-function ServiceTile(props: { name: string }) {
-  return (
-    <div className="group rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur transition hover:bg-white/7">
-      <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex items-center rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-sm text-amber-200">
-          {props.name}
-        </span>
-        <span className="text-xs text-slate-500 opacity-0 transition group-hover:opacity-100">
-          Included
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/* -------------------------------------------------
-   Page
--------------------------------------------------- */
-
-export default async function ProjectPage({
-  params,
-}: {
-  params: ParamsPromise;
-}) {
+export default async function ProjectPage({ params }: { params: ParamsPromise }) {
   const { slug } = await params;
   const project = getProjectBySlug(slug);
   if (!project) notFound();
 
-  const tags = project.tags ?? [];
   const cs = project.caseStudy;
-  const canRunGuestTest = project.slug === "serverless-file-pipeline";
-
-  const servicesUsed =
-    typeof project.stack === "string" && project.stack.trim().length > 0
-      ? project.stack
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
+  const picture = PICTURES[project.slug];
+  const next = projects[(projects.indexOf(project) + 1) % projects.length];
+  const email = `mailto:will@soltani.org?subject=${encodeURIComponent(`Project enquiry: ${project.title}`)}`;
+  const step = project.nextStep;
 
   return (
-    <main className="relative">
-      {/* sticky top strip */}
-      <div className="sticky top-0 z-10 border-b border-white/10 bg-[#070b16]/80 backdrop-blur">
-        <div className="mx-auto max-w-6xl px-4 py-3 sm:px-6">
-          <Link
-            href="/#projects"
-            className="inline-flex items-center gap-2 text-sm text-slate-300 hover:text-slate-100"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Portfolio
-          </Link>
-        </div>
-      </div>
+    <main className={`${fraunces.variable} relative px-5 pb-28 pt-8 sm:px-8 sm:pt-10`}>
+      <div className="mx-auto max-w-[68rem]">
+        <Link href="/#projects" className={`${TEXT_LINK} text-[15px]`}>
+          Back to soltani.org
+        </Link>
 
-      {/* background wash */}
-      <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(900px_circle_at_40%_-10%,rgba(56,189,248,0.10),transparent_55%),radial-gradient(900px_circle_at_80%_0%,rgba(168,85,247,0.08),transparent_55%)]" />
-
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
-        {/* -------------------------------------------------
-            HEADER
-        -------------------------------------------------- */}
-        <header className="space-y-6">
-          <div className="space-y-3">
-            <h1 className="max-w-4xl text-4xl font-semibold tracking-tight text-slate-50 sm:text-5xl">
-              {project.title}
-            </h1>
-
-            <p className="max-w-3xl text-base leading-relaxed text-slate-300">
-              {project.description}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {project.featured ? (
-              <Badge className="bg-sky-500/10 text-sky-200 hover:bg-sky-500/15">
-                Featured
-              </Badge>
-            ) : null}
-
-            {project.status ? (
-              <Badge
-                variant="outline"
-                className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
-              >
-                {project.status}
-              </Badge>
-            ) : null}
-
-            {project.type ? (
-              <Badge
-                variant="outline"
-                className="border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
-              >
-                {project.type}
-              </Badge>
-            ) : null}
-          </div>
-
-          {/* “facts row” makes it feel premium */}
-          <div className="flex flex-wrap gap-2">
-            {project.stack ? <Pill label="Stack" value={project.stack} /> : null}
-            {tags.length ? <Pill label="Tags" value={tags.join(", ")} /> : null}
-          </div>
-
-          {/* chips row */}
-          {tags.length ? (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {tags.map((t) => (
-                <Chip key={t}>{t}</Chip>
-              ))}
-            </div>
+        <header className="mt-14 sm:mt-20">
+          <h1 className="max-w-[18ch] font-serif text-[2.75rem] font-normal leading-[1.02] tracking-[-0.015em] text-slate-50 [font-variation-settings:'opsz'_144] sm:text-[clamp(3.5rem,7vw,5.5rem)]">
+            {project.title}
+          </h1>
+          <p className="mt-6 max-w-[40rem] font-serif text-xl leading-snug text-slate-200 sm:text-[1.5rem]">
+            {project.description}
+          </p>
+          {project.byline ? (
+            <p className="mt-4 max-w-[29rem] text-[15px] leading-relaxed text-slate-300">{project.byline}</p>
           ) : null}
-
-          {/* buttons */}
-          <div className="flex flex-wrap gap-2 pt-1">
-            {project.githubUrl ? (
-              <Button
-                asChild
-                variant="outline"
-                className="border-white/15 bg-white/5 text-slate-100 hover:bg-white/10"
-              >
-                <a href={project.githubUrl} target="_blank" rel="noreferrer">
-                  <span className="inline-flex items-center gap-2">
-                    <Github className="h-4 w-4" />
-                    View Code
-                  </span>
-                </a>
-              </Button>
-            ) : null}
-
-            {project.demoUrl ? (
-              <Button
-                asChild
-                variant="outline"
-                className="border-white/15 bg-white/5 text-slate-100 hover:bg-white/10"
-              >
-                <a href={project.demoUrl} target="_blank" rel="noreferrer">
-                  <span className="inline-flex items-center gap-2">
-                    <ExternalLink className="h-4 w-4" />
-                    Live Demo
-                  </span>
-                </a>
-              </Button>
-            ) : null}
-
-            {canRunGuestTest ? (
-              <Button
-                asChild
-                className="bg-sky-600/90 text-white shadow-[0_10px_30px_rgba(2,132,199,0.3)] hover:bg-sky-500"
-              >
-                <Link href="/test">Test</Link>
-              </Button>
-            ) : null}
-          </div>
         </header>
 
-        {/* -------------------------------------------------
-            BODY
-        -------------------------------------------------- */}
-        <div className="mt-10 space-y-12">
-          {/* Architecture Diagram */}
-          <SoftCard className="p-4 sm:p-6">
-            <div className="relative overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                {cs?.diagram?.src ? (
-                <div className="relative w-full">
-                    <Image
-                    src={cs.diagram.src}
-                    alt={cs.diagram.alt ?? `${project.title} architecture diagram`}
-                    width={1400}
-                    height={800}
-                    className="h-auto w-full"
-                    priority
-                    />
-                    {cs.diagram.caption ? (
-                    <p className="border-t border-white/10 px-4 py-3 text-xs text-slate-400">
-                        {cs.diagram.caption}
-                    </p>
-                    ) : null}
-                </div>
-                ) : (
-                <div className="flex h-60 items-center justify-center">
-                    <p className="text-sm text-slate-400">
-                    Diagram will render here (add <span className="text-slate-300">caseStudy.diagram</span>)
-                    </p>
-                </div>
-                )}
-                
-            </div>
-            </SoftCard>
-
-
-          {/* Problem Statement */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<AlertTriangle className="h-5 w-5 text-rose-300" />}
-              title="Problem Statement"
-              subtitle="Constraints, scale, and what success looks like."
-            />
-            <SoftCard className="p-5 sm:p-6">
-              <p className="text-sm leading-relaxed text-slate-300">
-                {cs?.overview ??
-                  "Describe the real-world problem this project solves. Keep it concrete: inputs, constraints, scale, and what success looks like."}
-              </p>
-            </SoftCard>
-          </section>
-
-          {/* Solution */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<Lightbulb className="h-5 w-5 text-yellow-300" />}
-              title="Solution"
-              subtitle="How the system works end-to-end."
-            />
-            <SoftCard className="p-5 sm:p-6">
-              <p className="text-sm leading-relaxed text-slate-300">
-                {cs?.overview ??
-                  "Explain the approach at a high level: event flow, storage, processing, and how you ensure reliability and security."}
-              </p>
-            </SoftCard>
-          </section>
-
-          {/* AWS Services Used */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<Cloud className="h-5 w-5 text-amber-300" />}
-              title="AWS Services Used"
-              subtitle="Core services and why they are in the design."
-            />
-
-            {servicesUsed.length ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {servicesUsed.map((s) => (
-                  <ServiceTile key={s} name={s} />
-                ))}
-              </div>
-            ) : (
-              <SoftCard className="p-5 sm:p-6">
-                <p className="text-sm text-slate-400">
-                  Add a <span className="text-slate-300">stack</span> string on
-                  the project to list services here.
-                </p>
-              </SoftCard>
-            )}
-          </section>
-
-          {/* Architecture Decisions */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<CheckCircle2 className="h-5 w-5 text-sky-300" />}
-              title="Architecture Decisions"
-              subtitle="Tradeoffs and reasoning behind key choices."
-            />
-            <div className="grid gap-4">
-              {cs?.decisions?.length ? (
-                cs.decisions.map((d) => (
-                  <SoftCard key={d.title} className="p-5 sm:p-6">
-                    <p className="text-base font-semibold text-slate-100">
-                      {d.title}
-                    </p>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-300">
-                      {d.detail}
-                    </p>
-                  </SoftCard>
-                ))
-              ) : (
-                <SoftCard className="p-5 sm:p-6">
-                  <p className="text-sm text-slate-400">
-                    Add{" "}
-                    <span className="text-slate-300">caseStudy.decisions</span>{" "}
-                    to show your tradeoffs here.
-                  </p>
-                </SoftCard>
-              )}
-            </div>
-          </section>
-
-          {/* Security Model */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<Shield className="h-5 w-5 text-emerald-300" />}
-              title="Security Model"
-              subtitle="IAM, encryption, and exposure controls."
-            />
-            <div className="grid gap-4">
-              {cs?.security?.length ? (
-                cs.security.map((line) => (
-                  <SoftCard key={line} className="p-5 sm:p-6">
-                    <p className="text-sm leading-relaxed text-slate-300">
-                      {line}
-                    </p>
-                  </SoftCard>
-                ))
-              ) : (
-                <SoftCard className="p-5 sm:p-6">
-                  <p className="text-sm text-slate-400">
-                    Add{" "}
-                    <span className="text-slate-300">caseStudy.security</span>{" "}
-                    to list IAM, encryption, network, and exposure choices.
-                  </p>
-                </SoftCard>
-              )}
-            </div>
-          </section>
-
-          {/* Reliability Patterns */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<Sparkles className="h-5 w-5 text-violet-300" />}
-              title="Reliability Patterns"
-              subtitle="Retries, DLQs, idempotency, and resilience."
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              {(cs?.failureModes?.length ? cs.failureModes : [])
-                .slice(0, 4)
-                .map((p) => (
-                  <SoftCard key={p} className="p-5 sm:p-6">
-                    <p className="text-sm leading-relaxed text-slate-300">
-                      {p}
-                    </p>
-                  </SoftCard>
-                ))}
-
-              {!cs?.failureModes?.length ? (
-                <SoftCard className="p-5 sm:p-6 md:col-span-2">
-                  <p className="text-sm text-slate-400">
-                    Add{" "}
-                    <span className="text-slate-300">
-                      caseStudy.failureModes
-                    </span>{" "}
-                    for retries, DLQs, idempotency, timeouts, etc.
-                  </p>
-                </SoftCard>
+        {picture ? (
+          <figure className="mt-12 sm:mt-14">
+            <picture>
+              {picture.narrow ? (
+                <source
+                  media="(max-width: 640px)"
+                  srcSet={picture.narrow.src}
+                  width={picture.narrow.width}
+                  height={picture.narrow.height}
+                />
               ) : null}
+              {/* A plain <img> in a <picture> (art direction: the portrait capture on phones); the captures are
+                  already sized WebP, and width/height reserve the box, so nothing shifts as it loads. */}
+              <img
+                src={picture.wide.src}
+                width={picture.wide.width}
+                height={picture.wide.height}
+                alt={picture.alt}
+                decoding="async"
+                fetchPriority="high"
+                className="h-auto w-full rounded-sm bg-[#0b1020]"
+              />
+            </picture>
+            <figcaption className="mt-3 text-[15px] leading-relaxed text-slate-300">{picture.caption}</figcaption>
+          </figure>
+        ) : null}
+
+        {project.stack ? (
+          <p className={`mt-10 ${ITEM_META}`}>
+            <span aria-hidden className="mr-2 text-lamp">
+              ●
+            </span>
+            {project.stack}
+          </p>
+        ) : null}
+
+        {cs?.overview ? (
+          <Section title="What it does">
+            <p className={BODY}>{cs.overview}</p>
+          </Section>
+        ) : null}
+
+        {cs?.architecture?.length ? (
+          <Section title="How it works">
+            <ol className="space-y-4">
+              {cs.architecture.map((line, i) => (
+                <li key={line} className={`${BODY} grid grid-cols-[2.25rem_1fr]`}>
+                  <span aria-hidden className="pt-[0.2em] font-mono text-[13px] text-slate-300">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ol>
+          </Section>
+        ) : null}
+
+        {cs?.decisions?.length ? (
+          <Section title="Decisions and tradeoffs">
+            <div className="space-y-8">
+              {cs.decisions.map((d) => (
+                <div key={d.title}>
+                  <h3 className="text-[17px] font-semibold leading-snug text-slate-50">{d.title}</h3>
+                  <p className={`mt-2 ${BODY}`}>{d.detail}</p>
+                </div>
+              ))}
             </div>
-          </section>
+          </Section>
+        ) : null}
 
-          {/* Observability */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<Activity className="h-5 w-5 text-cyan-300" />}
-              title="Observability"
-              subtitle="Logs, metrics, alarms, and tracing."
-            />
-            <div className="grid gap-4 md:grid-cols-2">
-              {(cs?.observability?.length ? cs.observability : [])
-                .slice(0, 4)
-                .map((o) => (
-                  <SoftCard key={o} className="p-5 sm:p-6">
-                    <p className="text-sm leading-relaxed text-slate-300">{o}</p>
-                  </SoftCard>
-                ))}
+        {cs?.security?.length ? (
+          <Section title="Security">
+            <Lines items={cs.security} />
+          </Section>
+        ) : null}
 
-              {!cs?.observability?.length ? (
-                <SoftCard className="p-5 sm:p-6 md:col-span-2">
-                  <p className="text-sm text-slate-400">
-                    Add{" "}
-                    <span className="text-slate-300">
-                      caseStudy.observability
-                    </span>{" "}
-                    for logs, metrics, alarms, tracing.
-                  </p>
-                </SoftCard>
-              ) : null}
-            </div>
-          </section>
+        {cs?.failureModes?.length ? (
+          <Section title="What can go wrong">
+            <Lines items={cs.failureModes} />
+          </Section>
+        ) : null}
 
-          {/* Cost Considerations */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<DollarSign className="h-5 w-5 text-emerald-300" />}
-              title="Cost Considerations"
-              subtitle="Cost drivers and how you keep them under control."
-            />
-            <SoftCard className="p-5 sm:p-6">
-              {cs?.cost?.length ? (
-                <ul className="list-disc space-y-2 pl-5 text-sm text-slate-300">
-                  {cs.cost.map((c) => (
-                    <li key={c}>{c}</li>
-                  ))}
-                </ul>
+        {cs?.observability?.length ? (
+          <Section title="Observability">
+            <Lines items={cs.observability} />
+          </Section>
+        ) : null}
+
+        {cs?.cost?.length ? (
+          <Section title="Cost">
+            <Lines items={cs.cost} />
+          </Section>
+        ) : null}
+
+        {cs?.next?.length ? (
+          <Section title="What's next">
+            <Lines items={cs.next} />
+          </Section>
+        ) : null}
+
+        {/* The close, in the homepage Contact's voice: one line, the next step, the email, the next case study. */}
+        <section className="mt-20 sm:mt-28" aria-labelledby="case-close">
+          <h2 id="case-close" className={`${H2} max-w-[24ch]`}>
+            Need something like this built or reviewed?
+          </h2>
+          <p className="mt-6 flex flex-wrap gap-x-8 gap-y-3 text-[17px]">
+            {step ? (
+              isExternal(step.href) ? (
+                <NewTabLink href={step.href}>{step.label}</NewTabLink>
               ) : (
-                <p className="text-sm text-slate-400">
-                  Add <span className="text-slate-300">caseStudy.cost</span> for
-                  cost drivers and mitigations.
-                </p>
-              )}
-            </SoftCard>
-          </section>
-
-          {/* Key Takeaways */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<CheckCircle2 className="h-5 w-5 text-amber-300" />}
-              title="Key Takeaways"
-              subtitle="What you learned and what you would improve next."
-            />
-            <SoftCard className="p-5 sm:p-6">
-              {cs?.next?.length ? (
-                <ul className="space-y-3 text-sm text-slate-300">
-                  {cs.next.map((n) => (
-                    <li key={n} className="flex gap-3">
-                      <span className="mt-2 h-1.5 w-1.5 rounded-full bg-amber-300/80" />
-                      <span className="leading-relaxed">{n}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-slate-400">
-                  Add <span className="text-slate-300">caseStudy.next</span> or a
-                  dedicated “takeaways” list later.
-                </p>
-              )}
-            </SoftCard>
-          </section>
-
-          {/* Technologies Used */}
-          <section className="space-y-4">
-            <SectionHeader
-              icon={<Cloud className="h-5 w-5 text-sky-300" />}
-              title="Technologies Used"
-              subtitle="Quick scan of tools used in this build."
-            />
-            <SoftCard className="p-5 sm:p-6">
-              <div className="flex flex-wrap gap-2">
-                {servicesUsed.length ? (
-                  servicesUsed.map((s) => <Chip key={s}>{s}</Chip>)
-                ) : (
-                  <p className="text-sm text-slate-400">
-                    Add a <span className="text-slate-300">stack</span> string to
-                    show chips here.
-                  </p>
-                )}
-              </div>
-            </SoftCard>
-          </section>
-        </div>
+                <Link href={step.href} rel={step.href === "/test" ? "nofollow" : undefined} prefetch={false} className={TEXT_LINK}>
+                  {step.label}
+                </Link>
+              )
+            ) : null}
+            <a href={email} aria-label="Email will@soltani.org" className={TEXT_LINK}>
+              will@soltani.org
+            </a>
+            {project.githubUrl ? <NewTabLink href={project.githubUrl}>Source on GitHub</NewTabLink> : null}
+          </p>
+          {next && next.slug !== project.slug ? (
+            <p className="mt-12 text-[15px] text-slate-300">
+              <Link href={`/projects/${next.slug}`} className={TEXT_LINK}>
+                Next case study: {next.title}
+              </Link>
+            </p>
+          ) : null}
+        </section>
       </div>
     </main>
   );

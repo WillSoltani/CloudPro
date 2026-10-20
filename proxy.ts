@@ -57,8 +57,11 @@ export async function proxy(req: NextRequest) {
   const isGuestProjectApi = pathname.startsWith("/app/api/projects/guest/");
   if (isGuestProjectPage || isGuestProjectApi) {
     if (isGuestProjectPage && !req.cookies.get("guest_sid")?.value) {
+      // Straight from /test and still no cookie: cookies are blocked; the page explains (no redirect loop).
+      if (req.nextUrl.searchParams.get("from") === "test") return NextResponse.next();
       const url = req.nextUrl.clone();
       url.pathname = "/test";
+      url.search = "";
       return NextResponse.redirect(url);
     }
     return NextResponse.next();
@@ -91,7 +94,9 @@ export async function proxy(req: NextRequest) {
   if (!token || !(await isValidToken(token, authConfig))) {
     const currentTarget = req.nextUrl.clone();
     const loginUrl = new URL("/auth/login", currentTarget.origin);
-    loginUrl.searchParams.set("returnTo", currentTarget.toString());
+    // A path, not a URL: behind App Runner req.nextUrl carries the container's origin (https://localhost:3000),
+    // which sanitizeReturnTo rejects, so the deep link was lost after sign-in.
+    loginUrl.searchParams.set("returnTo", `${req.nextUrl.pathname}${req.nextUrl.search}`);
     const res = NextResponse.redirect(loginUrl);
 
     res.cookies.set("id_token", "", {
