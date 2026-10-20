@@ -92,7 +92,7 @@ export function SkillsSection() {
                 </div>
                 <ul className={`mt-1.5 ${SEP_LIST} wide:mt-0`}>
                   {g.items.map((it, i) => (
-                    <li key={it} className={`${ITEM_META} ${SEP_ITEM} text-slate-200`}>
+                    <li key={it} className={`${ITEM_META.replace("text-slate-300", "text-slate-200")} ${SEP_ITEM}`}>
                       {i > 0 ? (
                         <span aria-hidden className={SEP_DOT}>
                           ·

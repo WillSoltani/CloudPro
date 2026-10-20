@@ -53,6 +53,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   const [nearTop, setNearTop] = useState(true);
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   // `inView`: the hero extends below the header's bottom edge (the brand hides there).
   const film = useFilmInView("-80px 0px 0px 0px");
   // The reel clock (FilmBackdrop): `section` is the chapter whose unit has lit (the active pill, in step
@@ -99,6 +100,11 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   const onPanelBlur = (e: FocusEvent<HTMLDivElement>) => {
     const next = e.relatedTarget as Node | null;
     if (next && !e.currentTarget.contains(next) && next !== toggleRef.current) setOpen(false);
+  };
+  // And from the toggle itself (Shift+Tab back past it while the panel is open).
+  const onToggleBlur = (e: FocusEvent<HTMLButtonElement>) => {
+    const next = e.relatedTarget as Node | null;
+    if (open && next && !panelRef.current?.contains(next)) setOpen(false);
   };
 
   useEffect(() => {
@@ -203,6 +209,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
           <button
             ref={toggleRef}
             type="button"
+            onBlur={onToggleBlur}
             className={`inline-flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 md:hidden ${FOCUS_RING}`}
             onClick={() => setOpen((v) => !v)}
             aria-label="Toggle menu"
@@ -223,7 +230,7 @@ export function NavbarClient({ initialLoggedIn }: Props) {
             exit="exit"
             className="md:hidden"
           >
-            <div id="mobile-nav" className="px-4 pb-4 sm:px-6" onBlur={onPanelBlur}>
+            <div ref={panelRef} id="mobile-nav" className="px-4 pb-4 sm:px-6" onBlur={onPanelBlur}>
               <nav
                 aria-label="Primary"
                 className="rounded-2xl border border-white/10 bg-[#070b16]/80 p-2 backdrop-blur"

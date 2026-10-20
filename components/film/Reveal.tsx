@@ -126,7 +126,11 @@ export function FlowReveal({
     const apply = () => {
       raf = 0;
       const vh = window.innerHeight;
-      const t = Math.min(1, Math.max(0, (vh - el.getBoundingClientRect().top) / (0.18 * vh)));
+      // The untransformed top: subtract the rise actually rendered (read from the computed style, since
+      // `[data-reveal]:focus-within` may override it), so the ramp follows the scroll, not the last value.
+      const tr = getComputedStyle(el).transform;
+      const ty = tr === "none" ? 0 : new DOMMatrixReadOnly(tr).m42;
+      const t = Math.min(1, Math.max(0, (vh - (el.getBoundingClientRect().top - ty)) / (0.18 * vh)));
       const o = easeOutCubic(t);
       el.style.opacity = String(+o.toFixed(3));
       el.style.transform = o >= 1 ? "" : `translateY(${((1 - o) * 10).toFixed(2)}px)`;

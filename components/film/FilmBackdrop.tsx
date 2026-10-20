@@ -56,8 +56,8 @@ const SETTLE_MS = 500;
 // fetches only its stride-ENGAGE_STRIDE skeleton (plus 0, M and last) and the next segment its 0, M and
 // last: an idle phone no longer downloads two films before the first scroll.
 const ENGAGE_STRIDE = 4;
-// A slow network (navigator.connection, or the timed first hero frames where there is none): the smallest
-// tier, and at most this many requests in flight.
+// A slow network (navigator.connection's effectiveType, or the timed first hero frames where there is none):
+// the smallest tier, and at most this many requests in flight.
 const SLOW_INFLIGHT = 3;
 // Without navigator.connection: the first this-many hero frames are timed; a median above SLOW_FRAME_MS
 // moves every segment not yet started to the smallest tier (at the next segment boundary).
@@ -337,14 +337,13 @@ export function FilmBackdrop({
     const position = reduced ? scrolled : spring;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const connection = (
-      navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; downlink?: number } }
+      navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }
     ).connection;
     const saveData = connection?.saveData === true;
-    // A slow network by the browser's own estimate (2g, slow-2g, 3g, or under 2 Mb/s).
-    let slow =
-      !!connection &&
-      (["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "") ||
-        (typeof connection.downlink === "number" && connection.downlink > 0 && connection.downlink < 2));
+    // A slow network by the browser's own class (2g, slow-2g, 3g). Not by downlink: Chrome's first estimate
+    // reads 1.45–1.75 Mb/s on fast connections too (and never moves for localhost), so it sent desktops to
+    // the smallest tier.
+    let slow = !!connection && ["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "");
     const coarse = window.matchMedia("(pointer: coarse)").matches;
     let maxInflight = saveData || slow ? SLOW_INFLIGHT : 6;
     const n = reel.length;

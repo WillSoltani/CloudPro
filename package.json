@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "verify": "npm run lint && npm run typecheck && npm run build",
     "test:pdf-fill": "tsx --test app/tests/pdf-fill/*.test.ts",
-    "test:raw-key": "tsx --test app/tests/raw-key/*.test.ts"
+    "test:raw-key": "tsx --test app/tests/raw-key/*.test.ts",
+    "test:return-to": "tsx --test app/tests/return-to/*.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.988.0",

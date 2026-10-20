@@ -11,6 +11,7 @@ import {
 
 // ✅ Client component is fine to render inside a Server Component layout
 import { PortfolioBackground } from "@/components/PortfolioBackground";
+import { InstantHistoryRestore } from "@/components/InstantHistoryRestore";
 
 // The production origin unless NEXT_PUBLIC_SITE_URL says otherwise, so og:url and the preview image's URL are
 // never the dev server or the container's origin.
@@ -58,7 +59,13 @@ export default async function RootLayout({
     isChapterFlowAuthHost(host);
 
   return (
-    <html lang="en" className={`${GeistSans.className} ${GeistMono.variable}`}>
+    // data-scroll-behavior: Next 16 turns html's smooth scrolling off for its own route changes (the
+    // portfolio only; ChapterFlow's hosts render as before).
+    <html
+      lang="en"
+      className={`${GeistSans.className} ${GeistMono.variable}`}
+      data-scroll-behavior={isChapterFlowSurface ? undefined : "smooth"}
+    >
       <body
         className={[
           "min-h-screen w-full overflow-x-hidden text-slate-100 antialiased",
@@ -66,6 +73,7 @@ export default async function RootLayout({
         ].join(" ")}
       >
         {!isChapterFlowSurface ? <PortfolioBackground /> : null}
+        {!isChapterFlowSurface ? <InstantHistoryRestore /> : null}
 
         {children}
       </body>

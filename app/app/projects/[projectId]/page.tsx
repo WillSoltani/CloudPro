@@ -90,9 +90,9 @@ async function fetchProjectFiles(projectId: string): Promise<FileRow[]> {
 function GuestNeedsCookie() {
   return (
     <main className="mx-auto flex min-h-[60svh] max-w-xl flex-col justify-center px-6 py-24">
-      <p className="text-lg leading-relaxed text-slate-200">
+      <h1 className="text-lg font-normal leading-relaxed text-slate-200">
         The demo needs a cookie to keep your files to yourself. Allow cookies for soltani.org and try again.
-      </p>
+      </h1>
       <p className="mt-6">
         <Link
           href="/test"

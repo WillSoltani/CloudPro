@@ -43,12 +43,17 @@ export const soltaniOrg: Project = {
       {
         title: "Frames on a canvas",
         detail:
-          "Each chapter keys its text to exact frame numbers, and neighbouring films share a boundary frame byte for byte, so the page plays as one shot. The cost is bytes: a full scroll is 9.4 to 29.1 MB of frames, depending on the tier.",
+          "Each chapter keys its text to exact frame numbers, and neighbouring films share a boundary frame byte for byte, so the page plays as one shot. The cost is bytes: a full scroll is 7.5 to 27.5 MB of frames, depending on the tier.",
       },
       {
         title: "One tier per visitor",
         detail:
-          "Each visitor loads a single width tier picked by pixel count, so a phone never pays for desktop frames. Coarse pointers are capped near 1.15 megapixels, and Save-Data gets the smallest tier.",
+          "Each visitor loads a single width tier picked by pixel count, so a phone never pays for desktop frames. Coarse pointers are capped near 1.15 megapixels; Save-Data and slow connections (a 2g or 3g class, or slow first frames where the browser reports none) get the smallest tier.",
+      },
+      {
+        title: "Wait for the first scroll",
+        detail:
+          "Until the visitor scrolls, the loader now fetches only every fourth frame of the opening film and three frames of the next one, so an idle phone no longer downloads two films. The first scroll starts the full loader, nearest frames first.",
       },
       {
         title: "Never rewrite a frame",
@@ -73,20 +78,16 @@ export const soltaniOrg: Project = {
       "The 2026-10-15 pass found no blocker and no major issue; production LCP was 64 to 124 ms.",
     ],
     failureModes: [
-      "A slow network: frames load coarse to fine and nearest first, so the canvas never shows an unrelated moment.",
-      "Reduced motion or Save-Data: stepped stills instead of the scrub.",
+      "A slow network: the smallest tier, and frames load coarse to fine and nearest first, so the canvas never shows an unrelated moment.",
+      "Reduced motion: stepped stills instead of the scrub. Save-Data: the smallest tier, without the breathing tails.",
       "No JavaScript: the server HTML carries every word in reading order.",
       "A reload or deep link into a section: its key frame paints before the page's scripts load.",
     ],
     cost: [
-      "A full scroll is 9.4 MB of frames at 768 px, 17.0 MB at 1280 and 29.1 MB at 1920; on phones, 10.6 MB at 432 and about 17.1 MB at 720.",
+      "A full scroll is 7.5 MB of frames at 768 px, 15.2 MB at 1280 and 27.5 MB at 1920; on phones, 8.3 MB at 432 and 15.2 MB at 720.",
       "Frames are cached for a year on CloudFront (PriceClass 100), so a repeat visit reuses them.",
       "The rack act needed no generation credits: it is a local Blender render.",
     ],
-    next: [
-      "Fetch only a skeleton of frames until the first scroll, so an idle phone stops downloading two films.",
-      "Send slow networks to the smallest tier automatically.",
-      "A shorter page under reduced motion.",
-    ],
+    next: ["A shorter page under reduced motion."],
   },
 };

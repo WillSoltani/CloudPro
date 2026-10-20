@@ -30,6 +30,8 @@ export function InteractiveBackground() {
     if (!ctx) return;
 
     const particles: Particle[] = [];
+    // Reduced motion: one still frame (no drift, no pulse, no pointer push, no animation loop).
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 
     const rand = (min: number, max: number) => min + Math.random() * (max - min);
@@ -120,8 +122,10 @@ export function InteractiveBackground() {
       for (let i = 0; i < particles.length; i++) {
         const p = particles[i];
 
-        p.x += p.vx;
-        p.y += p.vy;
+        if (!still) {
+          p.x += p.vx;
+          p.y += p.vy;
+        }
 
         // wrap
         if (p.x < -10) p.x = w + 10;
@@ -129,7 +133,7 @@ export function InteractiveBackground() {
         if (p.y < -10) p.y = h + 10;
         if (p.y > h + 10) p.y = -10;
 
-        if (mouseRef.current.active) {
+        if (!still && mouseRef.current.active) {
           const dx = p.x - mx;
           const dy = p.y - my;
           const dist = Math.hypot(dx, dy);
@@ -148,7 +152,7 @@ export function InteractiveBackground() {
         p.vy = Math.max(-maxV, Math.min(maxV, p.vy));
 
         // pulse alpha
-        const pulse = 0.5 + 0.5 * Math.sin(p.phase + t * 0.0012);
+        const pulse = still ? 0.5 : 0.5 + 0.5 * Math.sin(p.phase + t * 0.0012);
         const a = p.baseAlpha + pulse * 0.06;
 
         // dot
@@ -173,20 +177,25 @@ export function InteractiveBackground() {
         }
       }
 
-      rafRef.current = requestAnimationFrame(step);
+      if (!still) rafRef.current = requestAnimationFrame(step);
+    };
+    // A resize clears the canvas: the still frame is drawn again.
+    const onResize = () => {
+      setCanvasSize();
+      if (still) step(0);
     };
 
     setCanvasSize();
     initParticles();
 
-    window.addEventListener("resize", setCanvasSize, { passive: true });
+    window.addEventListener("resize", onResize, { passive: true });
     window.addEventListener("pointermove", onMove, { passive: true });
     window.addEventListener("pointerleave", onLeave, { passive: true });
 
     rafRef.current = requestAnimationFrame(step);
 
     return () => {
-      window.removeEventListener("resize", setCanvasSize);
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerleave", onLeave);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
