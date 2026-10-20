@@ -52,6 +52,19 @@ const LANDED = 8;
 const FIRST_PAINT_MS = 250;
 // After load, measures keep landing instead of scrubbing for this long (the browser restores scroll).
 const SETTLE_MS = 500;
+// Until the visitor engages (scrolls, or arrives on a hash or a restored position), the active segment
+// fetches only its stride-ENGAGE_STRIDE skeleton (plus 0, M and last) and the next segment its 0, M and
+// last: an idle phone no longer downloads two films before the first scroll.
+const ENGAGE_STRIDE = 4;
+// A slow network (navigator.connection, or the timed first hero frames where there is none): the smallest
+// tier, and at most this many requests in flight.
+const SLOW_INFLIGHT = 3;
+// Without navigator.connection: the first this-many hero frames are timed; a median above SLOW_FRAME_MS
+// moves every segment not yet started to the smallest tier (at the next segment boundary).
+const TIMED_FRAMES = 8;
+const SLOW_FRAME_MS = 400;
+// A tier may be up to this much narrower than the need (a 390 px phone at DPR 3 needs 438.75 px: 432 is 1.6 % short).
+const TIER_SLACK = 0.02;
 // The raw clock has no direction of travel once it has been still this long (the follower below).
 const QUIET_MS = 150;
 
@@ -323,10 +336,17 @@ export function FilmBackdrop({
     const listeners = drawnListeners.current;
     const position = reduced ? scrolled : spring;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const saveData =
-      (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    const connection = (
+      navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; downlink?: number } }
+    ).connection;
+    const saveData = connection?.saveData === true;
+    // A slow network by the browser's own estimate (2g, slow-2g, 3g, or under 2 Mb/s).
+    let slow =
+      !!connection &&
+      (["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "") ||
+        (typeof connection.downlink === "number" && connection.downlink > 0 && connection.downlink < 2));
     const coarse = window.matchMedia("(pointer: coarse)").matches;
-    const maxInflight = saveData ? 3 : 6;
+    let maxInflight = saveData || slow ? SLOW_INFLIGHT : 6;
     const n = reel.length;
     const portrait = pickFilmOrientation() === "portrait";
     const { drawnSegment: drawnSegmentMV, drawnFrame: drawnFrameMV } = api;
@@ -370,6 +390,11 @@ export function FilmBackdrop({
     let painted = false;
     let measured = false;
     let settleUntil = document.readyState === "complete" ? performance.now() + SETTLE_MS : Infinity;
+    // The idle gate (ENGAGE_STRIDE): open once the page has moved from the top (a scroll, a hash jump, a
+    // restored position) or a boot key shows a hold. Never applied under reduced motion or Save-Data.
+    let engaged = reduced || saveData || bootHold >= 0 || window.scrollY !== 0;
+    // Hero frame timings (ms), when there is no navigator.connection to ask.
+    const heroTimes: number[] = [];
     let savedHold: string | null = null;
     let chromeKey = "";
     // With tail frames on, the boot key stays up until the canvas has landed on a frame once.
@@ -414,14 +439,14 @@ export function FilmBackdrop({
     const tier = (film: FilmManifest) => {
       const sorted = [...film.widths].sort((a, b) => a - b);
       const pixels = (w: number) => (w * w) / film.aspect;
-      const pool = saveData
+      const pool = saveData || slow
         ? [sorted[0]]
         : coarse
           ? sorted.filter((w) => pixels(w) <= COARSE_MAX_PIXELS)
           : sorted;
       if (!pool.length) pool.push(sorted[0]);
       const span = Math.max(canvas.clientWidth, canvas.clientHeight * film.aspect);
-      const need = pixels(span * Math.min(dpr, 1.5) * 0.75);
+      const need = pixels(span * Math.min(dpr, 1.5) * 0.75 * (1 - TIER_SLACK));
       return pool.find((w) => pixels(w) >= need) ?? pool[pool.length - 1];
     };
 
@@ -586,6 +611,7 @@ export function FilmBackdrop({
           s.frames[k] = img;
           s.status[k] = 2;
           s.reg.el.dataset.loaded = String(++s.loaded);
+          if (s.reg.index === 0 && !connection) timeHeroFrame(img.src);
           if (s.reg.index === targetSeg) schedule();
         })
         .catch(() => {}) // a missing frame is covered by its neighbours
@@ -596,19 +622,24 @@ export function FilmBackdrop({
     };
 
     // The active segment first, then its neighbours. Segments further away only fetch the two
-    // frames that are always kept (0, M and last).
+    // frames that are always kept (0, M and last). Before the visitor engages, only the active segment's
+    // skeleton and the next segment's 0, M and last (ENGAGE_STRIDE); engage() re-ranks for the rest.
     const nextJob = (): [Segment, number] | null => {
       const ranked = [...segments.values()].sort(
         (a, b) => Math.abs(a.reg.index - active) - Math.abs(b.reg.index - active),
       );
       for (const s of ranked) {
         if (!s.near) continue;
-        const far = Math.abs(s.reg.index - active) > 1;
+        const ahead = s.reg.index - active;
+        if (!engaged && ahead !== 0 && ahead !== 1) continue;
+        const far = Math.abs(ahead) > 1;
         const last = s.reg.film.count - 1;
         const end = moveEnd(s);
         while (s.cursor < s.order.length) {
           const k = s.order[s.cursor];
-          if (s.status[k] !== 0 || (far && k !== 0 && k !== end && k !== last)) {
+          const kept = k === 0 || k === end || k === last;
+          const idleSkip = !engaged && !kept && (ahead !== 0 || k % ENGAGE_STRIDE !== 0);
+          if (s.status[k] !== 0 || (far && !kept) || idleSkip) {
             s.cursor++;
             continue;
           }
@@ -617,6 +648,50 @@ export function FilmBackdrop({
         }
       }
       return null;
+    };
+
+    // The visitor has engaged: lift the idle gate and rank every segment again (the gate skipped frames).
+    const engage = () => {
+      if (engaged) return;
+      engaged = true;
+      for (const t of segments.values()) rank(t, entryFrame(t));
+      pump();
+    };
+
+    // No navigator.connection (Safari): time the first TIMED_FRAMES hero frames from resource timing. A slow
+    // median moves the segments not yet started to the smallest tier at the next segment boundary (retier),
+    // never mid-segment, so a segment's own frames, and its joins, stay one tier.
+    const timeHeroFrame = (url: string) => {
+      if (slow || heroTimes.length >= TIMED_FRAMES) return;
+      const entry = performance.getEntriesByName(url).at(-1);
+      if (!entry || !(entry.duration > 0)) return;
+      heroTimes.push(entry.duration);
+      if (heroTimes.length < TIMED_FRAMES) return;
+      const sorted = [...heroTimes].sort((a, b) => a - b);
+      const mid = sorted.length / 2;
+      if ((sorted[mid - 1] + sorted[mid]) / 2 > SLOW_FRAME_MS) {
+        slow = true;
+        maxInflight = SLOW_INFLIGHT;
+      }
+    };
+    const retier = (after: number) => {
+      const released: (() => void)[] = [];
+      for (const t of segments.values()) {
+        if (t.reg.index <= after) continue;
+        const width = tier(t.reg.film);
+        if (width === t.width) continue;
+        for (const req of t.pending.values()) {
+          req.img.src = "";
+          released.push(req.release);
+        }
+        t.pending.clear();
+        t.frames = new Array(t.reg.film.count);
+        t.status = new Uint8Array(t.reg.film.count);
+        t.loaded = 0;
+        t.width = width;
+        t.reg.el.dataset.loaded = "0";
+      }
+      for (const release of released) release();
     };
 
     function pump() {
@@ -863,6 +938,7 @@ export function FilmBackdrop({
 
     const update = () => {
       if (!segments.size) return;
+      if (!engaged && window.scrollY !== 0) engage();
       const c = measure();
       const leap = Math.abs(c - spring.get());
       steer(c - scrolled.get());
@@ -981,6 +1057,7 @@ export function FilmBackdrop({
       });
       if (ph.seg !== active) {
         active = ph.seg;
+        if (slow) retier(active + 1);
         evict();
         for (const t of segments.values()) rank(t, entryFrame(t));
         pump();

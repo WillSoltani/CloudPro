@@ -208,9 +208,27 @@ export default async function ProjectPage({ params }: { params: ParamsPromise })
           </Section>
         ) : null}
 
+        {cs?.security?.length ? (
+          <Section title="Security">
+            <Lines items={cs.security} />
+          </Section>
+        ) : null}
+
         {cs?.failureModes?.length ? (
           <Section title="What can go wrong">
             <Lines items={cs.failureModes} />
+          </Section>
+        ) : null}
+
+        {cs?.observability?.length ? (
+          <Section title="Observability">
+            <Lines items={cs.observability} />
+          </Section>
+        ) : null}
+
+        {cs?.cost?.length ? (
+          <Section title="Cost">
+            <Lines items={cs.cost} />
           </Section>
         ) : null}
 
