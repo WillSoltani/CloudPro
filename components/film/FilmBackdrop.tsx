@@ -337,13 +337,18 @@ export function FilmBackdrop({
     const position = reduced ? scrolled : spring;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const connection = (
-      navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }
+      navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; rtt?: number; downlink?: number } }
     ).connection;
     const saveData = connection?.saveData === true;
     // A slow network by the browser's own class (2g, slow-2g, 3g). Not by downlink: Chrome's first estimate
     // reads 1.45–1.75 Mb/s on fast connections too (and never moves for localhost), so it sent desktops to
     // the smallest tier.
-    let slow = !!connection && ["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "");
+    // Slow: a 2g/3g class, or a 4g link that is both laggy and thin (Chrome reports rtt 0 and a low early
+    // downlink estimate on fast links, so downlink alone must never decide).
+    let slow =
+      !!connection &&
+      (["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "") ||
+        ((connection.rtt ?? 0) >= 100 && (connection.downlink ?? Infinity) < 2));
     const coarse = window.matchMedia("(pointer: coarse)").matches;
     let maxInflight = saveData || slow ? SLOW_INFLIGHT : 6;
     const n = reel.length;
@@ -391,7 +396,8 @@ export function FilmBackdrop({
     let settleUntil = document.readyState === "complete" ? performance.now() + SETTLE_MS : Infinity;
     // The idle gate (ENGAGE_STRIDE): open once the page has moved from the top (a scroll, a hash jump, a
     // restored position) or a boot key shows a hold. Never applied under reduced motion or Save-Data.
-    let engaged = reduced || saveData || bootHold >= 0 || window.scrollY !== 0;
+    // Save-Data visitors wait for the first scroll like everyone else (they get the smallest tier, not more bytes at idle).
+    let engaged = reduced || bootHold >= 0 || window.scrollY !== 0;
     // Hero frame timings (ms), when there is no navigator.connection to ask.
     const heroTimes: number[] = [];
     let savedHold: string | null = null;
