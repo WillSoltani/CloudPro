@@ -19,7 +19,9 @@ export async function GET(req: NextRequest) {
     forwardedProtoHeader: req.headers.get("x-forwarded-proto"),
     fallbackOrigin: req.nextUrl.origin,
   });
-  const redirectUrl = new URL(`/app/projects/${GUEST_PROJECT_ID}`, origin);
+  // `from=test` tells the workspace the cookie was just set: if it still arrives without one, cookies are
+  // blocked, and the page says so instead of sending the visitor back here in a loop.
+  const redirectUrl = new URL(`/app/projects/${GUEST_PROJECT_ID}?from=test`, origin);
 
   const res = NextResponse.redirect(redirectUrl);
   res.cookies.set(GUEST_SESSION_COOKIE, sessionId, guestCookieOptions());

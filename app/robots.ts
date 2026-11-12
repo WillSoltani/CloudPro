@@ -53,7 +53,8 @@ export default async function robots() {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/app/", "/api/", "/auth/"],
+        // /test sets a guest cookie and redirects into the app: nothing for a crawler (and it loops without cookies).
+        disallow: ["/app/", "/api/", "/auth/", "/test"],
       },
     ],
     sitemap: `${base}/sitemap.xml`,

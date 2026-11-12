@@ -2,10 +2,15 @@
 
 import { useEffect, useState } from "react";
 
-export function useAuthStatus() {
-  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+/**
+ * The session probe. `enabled` false skips it (signed out): the server saw no id_token cookie, and the
+ * probe of a signed-out visitor is redirected to Cognito by the middleware (a CORS error in the console).
+ */
+export function useAuthStatus(enabled = true) {
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(enabled ? null : false);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
 
     async function run() {
@@ -24,7 +29,7 @@ export function useAuthStatus() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [enabled]);
 
   return { loggedIn, loading: loggedIn === null };
 }

@@ -29,7 +29,8 @@ export const certifications: Certification[] = [
   },
   {
     name: "Google Data Analytics Professional Certificate",
-    issuer: "Coursera",
+    issuer: "Google · via Coursera",
+    year: "2024",
     verifyUrl:
       "https://coursera.org/share/a5e1d0e00602929475bbe63c9883c3c9",
   },

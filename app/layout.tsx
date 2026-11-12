@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import "./globals.css";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-import { getSiteUrl } from "@/app/_lib/site-url";
 import {
   isChapterFlowAppHost,
   isChapterFlowAuthHost,
@@ -12,19 +11,38 @@ import {
 
 // ✅ Client component is fine to render inside a Server Component layout
 import { PortfolioBackground } from "@/components/PortfolioBackground";
+import { InstantHistoryRestore } from "@/components/InstantHistoryRestore";
 
+// The production origin unless NEXT_PUBLIC_SITE_URL says otherwise, so og:url and the preview image's URL are
+// never the dev server or the container's origin.
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://soltani.org").replace(/\/+$/, "");
+
+// The portfolio's defaults. ChapterFlow (app/book/layout.tsx) sets its own title, description and openGraph,
+// which replace these whole; the summary_large_image card is set per page (app/page.tsx, the case studies),
+// so /book never inherits it. The title is a plain string, not a template: a root template would also apply
+// to /book's own default ("ChapterFlow" would read "ChapterFlow · Will Soltani"), so the portfolio's pages
+// spell out their " · Will Soltani" suffix.
 export const metadata: Metadata = {
-  title: "Will Soltani | Cloud Portfolio",
+  title: "Will Soltani · Products built and run on AWS",
   description:
-    "AWS-focused cloud portfolio featuring production-style projects, architecture, security, and observability.",
-  metadataBase: new URL(getSiteUrl()),
+    "Will Soltani designs, builds and runs production software for founders and teams: AWS back ends, web and mobile products, AI features.",
+  metadataBase: new URL(SITE_URL),
   openGraph: {
-    title: "Will Soltani | Cloud Portfolio",
+    title: "Will Soltani · Products built and run on AWS",
     description:
-      "AWS-focused cloud portfolio with production-grade projects and case studies.",
-    url: getSiteUrl(),
+      "AWS back ends, web and mobile products and AI features, designed, built and run in production.",
+    url: "/",
     siteName: "Will Soltani",
+    locale: "en_CA",
     type: "website",
+    images: [
+      {
+        url: "/og/soltani-og.png",
+        width: 1200,
+        height: 630,
+        alt: "Will Soltani: Products built and run on AWS, over a dark data hall",
+      },
+    ],
   },
 };
 
@@ -41,7 +59,13 @@ export default async function RootLayout({
     isChapterFlowAuthHost(host);
 
   return (
-    <html lang="en" className={`${GeistSans.className} ${GeistMono.variable}`}>
+    // data-scroll-behavior: Next 16 turns html's smooth scrolling off for its own route changes (the
+    // portfolio only; ChapterFlow's hosts render as before).
+    <html
+      lang="en"
+      className={`${GeistSans.className} ${GeistMono.variable}`}
+      data-scroll-behavior={isChapterFlowSurface ? undefined : "smooth"}
+    >
       <body
         className={[
           "min-h-screen w-full overflow-x-hidden text-slate-100 antialiased",
@@ -49,6 +73,7 @@ export default async function RootLayout({
         ].join(" ")}
       >
         {!isChapterFlowSurface ? <PortfolioBackground /> : null}
+        {!isChapterFlowSurface ? <InstantHistoryRestore /> : null}
 
         {children}
       </body>

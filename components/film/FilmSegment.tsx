@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
 import type { FilmEntry, FilmManifest } from "@/components/film/filmCore";
 import { WIDE_QUERY } from "@/components/film/filmBase";
 import { FilmProgressContext } from "@/components/film/filmProgress";
@@ -90,6 +90,16 @@ export function FilmSegment({
   );
 
   const posterClass = `${POSTER} ${posterUp ? "opacity-100" : "opacity-0"}`;
+  // A poster that fails to load (a CDN outage) is hidden rather than drawn as a broken-image glyph over the
+  // hero; one that failed before hydration is caught by the effect.
+  const posterRef = useRef<HTMLImageElement>(null);
+  const hidePoster = (e: SyntheticEvent<HTMLImageElement>) => {
+    e.currentTarget.style.visibility = "hidden";
+  };
+  useEffect(() => {
+    const img = posterRef.current;
+    if (img?.complete && img.naturalWidth === 0) img.style.visibility = "hidden";
+  }, []);
 
   return (
     <FilmProgressContext.Provider value={progress}>
@@ -112,10 +122,12 @@ export function FilmSegment({
               <picture>
                 <source media={WIDE_QUERY} srcSet={entry.landscape.poster} />
                 <img
+                  ref={posterRef}
                   src={entry.portrait.poster}
                   alt=""
                   aria-hidden
                   fetchPriority="high"
+                  onError={hidePoster}
                   className={posterClass}
                   style={{ objectPosition: REEL_OBJECT_POSITION }}
                 />
@@ -123,10 +135,12 @@ export function FilmSegment({
             ) : (
               // eslint-disable-next-line @next/next/no-img-element -- must match the canvas crop exactly
               <img
+                ref={posterRef}
                 src={entry.landscape.poster}
                 alt=""
                 aria-hidden
                 fetchPriority="high"
+                onError={hidePoster}
                 className={posterClass}
                 style={{ objectPosition: REEL_OBJECT_POSITION }}
               />

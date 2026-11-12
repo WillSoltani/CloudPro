@@ -20,12 +20,33 @@ const CARTRIDGES = ANCHORS.cartridges.map(([x]) => x);
 /** Each column's width as a share of the frame (the cartridges sit 0.19 apart). */
 const COLUMN_WIDTH = 0.17;
 
-function CertificationItem({ c, at }: { c: Certification; at: FrameWindow }) {
+/** The AWS titles set as "AWS Certified" over the role, so all three break the same way. */
+const AWS_CERTIFIED = "AWS Certified ";
+
+function CertificationItem({
+  c,
+  at,
+  stackedPin,
+}: {
+  c: Certification;
+  at: FrameWindow;
+  stackedPin?: FrameWindow;
+}) {
   const meta = [c.issuer, c.year].filter(Boolean).join(" · ");
   return (
-    <Reveal at={at} data-halo="">
+    <Reveal at={at} stackedPin={stackedPin} data-halo="">
       <p className={ITEM_META}>{meta}</p>
-      <h3 className={ITEM_NAME}>{c.name}</h3>
+      <h3 className={ITEM_NAME}>
+        {c.name.startsWith(AWS_CERTIFIED) ? (
+          <>
+            {AWS_CERTIFIED}
+            <br />
+            {c.name.slice(AWS_CERTIFIED.length)}
+          </>
+        ) : (
+          c.name
+        )}
+      </h3>
       {c.verifyUrl ? (
         <a
           href={c.verifyUrl}
@@ -66,12 +87,13 @@ export function CertificationsSection() {
       plate={<RackPlate index={2} n={PLATE.n} name={PLATE.headingText} handoff />}
     >
       <BlockTone top={0.62} />
-      <FrameBand from={0.17} to={0.33} x={0.13} right={0.62}>
+      {/* The head starts on the first column's left edge (cartridge 0 less half a column). */}
+      <FrameBand from={0.17} to={0.33} x={CARTRIDGES[0] - COLUMN_WIDTH / 2} right={0.62}>
         <ChapterHead
           n={PLATE.n}
           title={PLATE.headingText}
           support={PLATE.machine}
-          lede="Verified credentials with direct issuer verification links."
+          lede="Three AWS certifications and one from Google, each linked to its record."
         />
       </FrameBand>
       <FrameBand from={0.57} to={0.8} after={0.33}>
@@ -90,7 +112,7 @@ export function CertificationsSection() {
                   rest={ANCHORS.cartridges[slot]}
                   from={at[0] - 1}
                 >
-                  <CertificationItem c={c} at={at} />
+                  <CertificationItem c={c} at={at} stackedPin={CHOREO_CERTS.stacked?.items?.[k] ?? undefined} />
                 </RideAnchor>
               ),
             };

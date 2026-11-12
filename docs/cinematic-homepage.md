@@ -3,8 +3,8 @@
 Goal: turn the soltani.org homepage into a scroll-scrubbed cinematic film in the spirit of pear.no, while it stays a fast, skimmable portfolio. Technique, workflow, and budgets: `.claude/skills/cinematic-scroll/SKILL.md`.
 
 ## Who it's for
-- **Will Soltani** — cloud engineer in Toronto, ON (moved from Halifax, NS in 2026); AWS-certified (Solutions Architect Associate, Developer Associate, Cloud Practitioner); co-founder at Silicon X; builds ChapterFlow; UBC Computer Science.
-- **Audience** — hiring managers and engineers evaluating him for remote cloud roles in Canada. They skim. The film earns attention; the facts must still be findable in seconds.
+- **Will Soltani** — designs, builds and runs production software for founders and teams: AWS back ends, web and mobile products, AI features. Toronto, ON, working remotely. AWS-certified (Solutions Architect Associate, Developer Associate, Cloud Practitioner). Built and runs ChapterFlow (chapterflow.ca) and the file converter on this site.
+- **Audience** — founders, CTOs and teams with an AWS, web, mobile or AI project; most arrive by referral and skim. The film earns attention; the offer, the proof and the email must still be findable in seconds. The page offers services; it never asks for a job.
 
 ## Keep
 About, Certifications (with Credly links), Skills, Projects and case studies, Contact. Source of truth is `content/*.ts`. All of it stays real HTML; invent nothing.
@@ -61,6 +61,13 @@ Either fit the current dark site (`#070b16` base) or make a deliberate departure
   **Deployed 2026-10-16** (3.6 min): base URL `https://dkkkpszkw3bz9.cloudfront.net/films`, distribution `ENAT55PEJ29GX`, bucket
   `cloudportfoliofilms-filmsbucket376543fd-hpco9ybevxvm`; outputs in `infra/cdk.out/films-outputs.json` (gitignored). The 16 page films
   were synced the same day (`films-src/qa/part5/gate-c/sync.log`); their manifests point at the CDN.
+- **www redirect** — `CloudPortfolioWwwRedirect` (`infra/lib/www-redirect-stack.ts`; plan in `films-src/qa/part5/perfect-1/www/plan.md`, option B2): a dedicated DNS-validated ACM certificate for `www.soltani.org`, a CloudFront distribution aliased to it (caching disabled, TLSv1.2_2021, IPv6, HTTP/2 and 3, PriceClass 100) whose `cloudfront-js-2.0` viewer-request function answers every request with a `301` to `https://soltani.org` (path and query kept, `cache-control: public, max-age=86400`), and `www` A/AAAA alias records. The origin is a placeholder the function never reaches. The zone is imported without a lookup: its id comes from `soltaniHostedZoneId` in `infra/cdk.json` (`SOLTANI_HOSTED_ZONE_ID` overrides it), so CI's credential-free synth still works. The apex record, App Runner and the app are never referenced. Deploy from this machine with the same exports as above:
+  ```bash
+  npx cdk diff CloudPortfolioWwwRedirect                # expect 5 new resources, nothing else
+  npx cdk deploy CloudPortfolioWwwRedirect --outputs-file cdk.out/www-outputs.json
+  curl -sI 'http://www.soltani.org/x?a=1' | grep -iE '^HTTP|^location'   # 301 -> https://soltani.org/x?a=1
+  ```
+  Expect 8–15 min (certificate validation, then the distribution). It is also in `CDK_STACKS`, so `deploy-infra-dev.yml` deploys it on `infra/**` pushes to `main`. Rollback is `cdk destroy CloudPortfolioWwwRedirect`: www goes back to NXDOMAIN and the apex is untouched.
 - **Upload frames** — `scripts/films/sync-film.sh rack-00 --write-manifest` (then `rack-01`…`rack-05`, `tower-01`, `tower-04`, each with its `-p` portrait variant, in page order: 16 films) (bucket and domain come from the outputs file, or `FILMS_BUCKET`/`FILMS_DOMAIN`). It syncs only `*.webp` with immutable caching and never `--delete`, refuses a name that already has a manifest in the bucket (`--force` to override), verifies the CDN (200, `image/webp`, `immutable`, ACAO `*`, http→https, direct S3 URL 403, object count and bytes match local), then rewrites only `base`/`poster` in `public/films/<film>/manifest.json`. `git status --short public/films` must show only those sixteen manifests; re-run `scroll-qa` against the CDN before committing them. The `beacon*` films were never uploaded and are deleted.
 - **Credits** — part one 534 (`films-src/beacon/ledger.md`), part two 360 (`films-src/beacon2/ledger.md`, superseded), part three 1,443 per Higgsfield transactions (`films-src/reel/ledger.md`); part four 0 (the rack is a local Blender render); part five 286 of the 800 ceiling (`films-src/tower2/ledger.md`: T0 stills 16, bridge 108, lights-on 162).
 
@@ -144,4 +151,11 @@ ScrollToTop hides over phone text and the footer; focus rings on the auth contro
 **2026-10-16, after the merge:** Will removed the Experience/Education section and asked for a services tone (the site offers AWS
 work to companies, founders and teams; nothing reads as job-seeking). tower-01 now plays as a wordless passage (`#bridge`,
 FilmSegment, pace 120 ≈ 2.4 vh, dissolveIn 0.2 from the exit's key), Contact is chapter 05 and carries the offer; hero badge
-\"Available for new engagements.\"; copy rewritten in content/about.ts, the hero line, Contact and the Projects lede.
+"Available for new engagements."; copy rewritten in content/about.ts, the hero line, Contact and the Projects lede.
+**2026-10-18, expert range + flawless pass:** Skills are five areas on the five drive rows (Cloud & Serverless, Web & Product,
+AI & Automation, Software Engineering, 3D & Real-time Graphics; evidence-based, no game engines named); the hero reads
+"Software engineer · AWS · web · mobile · AI"; the homepage header is transparent everywhere; the case-study pages lost their
+placeholders; the project cards describe the real pipeline (Cognito, presigned S3, Step Functions, a container Lambda, DynamoDB)
+and ChapterFlow as a live product; Contact's email is the obvious action; back-to-top is a veiled jump; phone compositions lift
+into view during the read pin; the exit runs at pace 110 and the bridge at 160; rack chapters shade with a neutral night. Source:
+a three-lens Opus design critique of the live page (`films-src/qa/part5/critique-1/`).

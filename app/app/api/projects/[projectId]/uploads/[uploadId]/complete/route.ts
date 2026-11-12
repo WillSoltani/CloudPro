@@ -2,9 +2,10 @@ import "server-only";
 import { NextResponse } from "next/server";
 import { PutCommand } from "@aws-sdk/lib-dynamodb";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { ddbDoc, getTableName, s3 } from "@/app/app/api/_lib/aws";
+import { ddbDoc, getTableName, mustEnv, s3 } from "@/app/app/api/_lib/aws";
 import { requireActorForProject } from "@/app/app/api/_lib/actor";
 import { allowedOutputFormatsForFile } from "@/app/app/_lib/conversion-support";
+import { isIssuedRawKey } from "@/app/app/api/_lib/raw-key";
 
 export const runtime = "nodejs";
 
@@ -243,6 +244,17 @@ export async function POST(
     if (!rawName.trim() || !bucket || !key) {
       return NextResponse.json(
         { error: "bad_request", detail: "filename, bucket, key are required" },
+        { status: 400 }
+      );
+    }
+
+    // Only the object this upload was issued: the raw bucket, under the caller's own prefix, in this
+    // project's raw folder for this upload id. Anything else could register (and then download) someone
+    // else's object with the server's S3 credentials.
+    const rawBucket = await mustEnv("RAW_BUCKET");
+    if (bucket !== rawBucket || !isIssuedRawKey(key, actor.sub, projectId, uploadId)) {
+      return NextResponse.json(
+        { error: "bad_request", detail: "bucket and key must be the ones issued for this upload" },
         { status: 400 }
       );
     }

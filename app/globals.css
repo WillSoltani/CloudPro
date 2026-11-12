@@ -41,8 +41,11 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* No default outline in normal mode (each control draws the lamp ring), but a transparent one stays, so
+   forced-colors modes (Windows contrast themes) paint it as a visible ring. */
 :focus-visible {
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
 }
 
 @custom-variant dark (&:is(.dark *));
@@ -52,15 +55,6 @@ body {
    px laptops: 1366×657, 1440×700–775, 1536×730, 1280×650): a compact chapter head (ChapterHead `compact`) so
    a frame band below it still lands on its frame y. */
 @custom-variant wide-short (@media (min-width: 64rem) and (orientation: landscape) and (max-height: 50rem));
-/* The same where the film's frame is under 880 px tall (fh = max(width · 9/16, height): 1280×800, 1366×768
-   and every shorter laptop window): fixed-px type then fills more of the frame, so Experience tightens and
-   moves its columns off the beam and the skyline (ExperienceSection, FrameSplit `small*`, box halos). */
-@custom-variant wide-small (@media (min-width: 64rem) and (orientation: landscape) and (max-width: 1563px) and (max-height: 879px));
-/* Within those, the short laptop windows: at most 760 px tall (1280×720, 1366×657, 1440×700, 1536×730,
-   1280×650), or a window so much wider than 16:9 that the frame is cropped top and bottom (aspect ≥ 1.85:
-   1440×775). The 96 px header line then falls at frame y 0.13–0.19, so Experience folds its entries tighter
-   still (labels beside the titles, Education's bullets inline, a wider Work and Education). 1280×800 and
-   1366×768 are not in it. */
 /* Short phones (portrait, at most 700 px tall: 375×667, 360×640, 320×568), where the portrait crop of tower-04
    puts the lamp at ≈ 0.93 of the height: Contact's footer splits into the corners around it. */
 @custom-variant phone-short (@media (orientation: portrait) and (max-height: 700px));
@@ -79,6 +73,10 @@ body {
     @slot;
   }
 }
+/* The short laptop windows: at most 760 px tall (1280×720, 1366×657, 1440×700, 1536×730, 1280×650), or a
+   window so much wider than 16:9 that the frame is cropped top and bottom (aspect ≥ 1.85: 1440×775), within
+   the windows whose frame is under 880 px tall. The 96 px header line then falls at frame y 0.13–0.19, so
+   Contact tightens its rhythm. 1280×800 and 1366×768 are not in it. */
 @custom-variant wide-tight {
   @media (min-width: 64rem) and (orientation: landscape) and (max-width: 1563px) and (max-height: 760px) {
     @slot;
@@ -261,7 +259,7 @@ body {
   [data-halo]::before {
     content: "";
     position: absolute;
-    inset: -18px -36px;
+    inset: var(--halo-inset, -18px -36px);
     z-index: -1;
     pointer-events: none;
     background: var(--halo);
@@ -301,7 +299,7 @@ body {
    eased 160 px top where the composition is framed. */
 @layer components {
   [data-body] {
-    background-color: rgb(7 11 22 / 0.85);
+    background-color: var(--body-flat, rgb(7 11 22 / 0.85));
     mask-image: var(--body-mask-bottom);
   }
   @media (min-width: 64rem) and (orientation: landscape) {
@@ -313,18 +311,12 @@ body {
   }
 }
 
-/* Rows and splits (FrameLayout FrameRows / FrameSplit): stacked by default, framed where `wide` holds. */
+/* Rows (FrameLayout FrameRows): stacked by default, framed where `wide` holds. */
 @layer components {
   [data-rows] {
     display: flex;
     flex-direction: column;
     gap: 22px;
-  }
-  [data-split] {
-    display: flex;
-    flex-direction: column;
-    gap: 28px;
-    padding-inline: max(20px, calc((100cqw - 36rem) / 2));
   }
   @media (min-width: 64rem) and (orientation: landscape) {
     [data-compose-mode="auto"] [data-rows] {
@@ -339,50 +331,6 @@ body {
       grid-template-columns: var(--row-cols);
       column-gap: var(--row-gap);
       align-items: baseline;
-    }
-    [data-compose-mode="auto"] [data-split] {
-      display: grid;
-      grid-template-columns: var(--split-cols);
-      align-items: start;
-      gap: 0;
-      padding-inline: 0;
-    }
-    [data-compose-mode="auto"] [data-split-left] {
-      grid-column: 2;
-      grid-row: 1;
-    }
-    [data-compose-mode="auto"] [data-split-right] {
-      grid-column: 4;
-      grid-row: 1;
-      margin-top: var(--split-right-mt);
-    }
-  }
-  /* Small frames (the `wide-small` variant): FrameSplit's `smallLeft` / `smallRightTop`, and the soft box
-     halo (tones.ts boxHalo via --box-*) for a small-text block over bright fog, which follows its block. */
-  @media (min-width: 64rem) and (orientation: landscape) and (max-width: 1563px) and (max-height: 879px) {
-    [data-compose-mode="auto"] [data-split] {
-      grid-template-columns: var(--split-cols-s, var(--split-cols));
-    }
-    [data-compose-mode="auto"] [data-split-right] {
-      margin-top: var(--split-right-mt-s, var(--split-right-mt));
-    }
-    [data-compose-mode="auto"] [data-halo="box"]::before {
-      inset: var(--box-inset);
-      background: var(--box-bg);
-      mask-image: var(--box-mask);
-    }
-  }
-  /* The short laptop windows (`wide-tight`): FrameSplit's `tight` columns, a box halo's own profile there
-     (--box-bg-t), and a list set inline (`data-inline-tight`: Experience's Education bullets) with a quiet
-     separator between its items. */
-  [data-compose-mode="auto"] [data-split] {
-    @variant wide-tight {
-      grid-template-columns: var(--split-cols-t, var(--split-cols-s, var(--split-cols)));
-    }
-  }
-  [data-compose-mode="auto"] [data-halo="box"]::before {
-    @variant wide-tight {
-      background: var(--box-bg-t, var(--box-bg));
     }
   }
   /* Contact's closing band keeps tower-04's lamp and its halo clear at every size: a clear disc of 0.045 of the
@@ -413,28 +361,9 @@ body {
      deeper radial); without them it is the plain halo. */
   [data-halo]::before {
     @variant phone-short {
-      inset: var(--halo-inset-s, -18px -36px);
+      inset: var(--halo-inset-s, var(--halo-inset, -18px -36px));
       background: var(--halo-s, var(--halo));
       mask-image: var(--halo-mask-s, none);
-    }
-  }
-  [data-compose-mode="auto"] [data-inline-tight] > li + li::before {
-    @variant wide-tight {
-      content: " · ";
-      content: " · " / "";
-      color: rgb(100 116 139);
-    }
-  }
-}
-
-/* Layers that only exist in the framed layout (Experience's column tone; phones use the block tone). */
-@layer components {
-  [data-framed-only] {
-    display: none;
-  }
-  @media (min-width: 64rem) and (orientation: landscape) {
-    [data-compose-mode="auto"] [data-framed-only] {
-      display: block;
     }
   }
 }

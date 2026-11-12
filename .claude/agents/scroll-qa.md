@@ -27,9 +27,9 @@ You QA the homepage reel. Do not edit source files: report findings with numbers
 | 2 | `certifications` | `rack-02` · `-p` | 96 | 84 | `rack-K02(-p)` | byte-identical join |
 | 3 | `skills` | `rack-03` · `-p` | 120 | 84 | `rack-K03(-p)` | byte-identical join |
 | 4 | `projects` | `rack-04` · `-p` | 96 | 84 | `rack-K04(-p)` | byte-identical join |
-| 5 | `#exit` (FilmSegment, no section) | `rack-05` · `rack-05-p` (163 frames, scene 648–810; static tail f144–162) | 162 | 84 | `rack-K05(-p)` (its exact last frame: fog and the point) | byte-identical from rack-04 on both cameras (no dissolve) |
-| 6 | `#bridge` (FilmSegment, no section: a wordless passage since the Experience chapter was removed) | `tower-01` · `tower-01-p` (289 frames: bridge 145 + lights-on 144, clips mode) | 288 | 120 | `tower-K3(-p)` | joined; dissolve from the exit's key (`dissolveIn` 0.2) |
-| 7 | `contact` + footer | `tower-04` · `tower-04-p` (145 frames) | 144 | 84 | `tower-K4(-p)` | generated join over tower-K3 (`dissolveIn` 0.2); the page ends inside its read pin |
+| 5 | `#exit` (FilmSegment, no section) | `rack-05` · `rack-05-p` (163 frames, scene 648–810; static tail f144–162) | 162 | 110 | `rack-K05(-p)` (its exact last frame: fog and the point) | byte-identical from rack-04 on both cameras (no dissolve) |
+| 6 | `#bridge` (FilmSegment, no section: a wordless passage since the Experience chapter was removed) | `tower-01` · `tower-01-p` (289 frames: bridge 145 + lights-on 144, clips mode) | 288 | 160 | `tower-K3(-p)` | joined; dissolve from the exit's key (`dissolveIn` 0.2) |
+| 7 | `contact` + footer | `tower-04` · `tower-04-p` (145 frames) | 144 | 84 | `tower-K4(-p)` | generated join over tower-K3 (`dissolveIn` 0.1); the page ends inside its read pin |
 
 - `HOLD_SECTIONS = [[], [about], [certifications], [skills], [projects], [], [], [contact]]`; `HOLD_KEYS` comes from
   REEL (portrait per index, falling back to the landscape key). M = the timeline's `segment` (rack films,
@@ -138,11 +138,12 @@ at τ = τ_read/2 of each chapter, reload: the boot key from sessionStorage, the
 **C12 Chrome and nav.** `data-reel-chrome` = `film` at p < 1, `composed` through the read pin, `body` after it (`composed` at the very
 end of Contact). `aria-current` / `data-reel-section`: none in the hero; About from rack-01 f20; Certifications from rack-02 f26;
 Skills rack-03 f42; Projects rack-04 f32; none over the exit; none over the bridge; Contact at its amber (S − 12) — one frame before
-each switch shows the previous section. Header transparent (no blur classes) in `film` and `composed`, blurred in `body` once
-scrolled. ScrollToTop absent in `film`, present elsewhere past 500 px, except on coarse pointers where it is hidden whenever its box
+each switch shows the previous section. Header transparent at every scroll position (no fill, blur or border; the nav pill keeps its own 5 % fill). ScrollToTop absent in `film`, present elsewhere past 500 px, except on coarse pointers where it is hidden whenever its box
 (+8 px) would cover a visible text line of the active composition or the footer text. Brand hidden through the hero intro, visible after.
-**C13 Keyboard.** Tab from the hero CTA lands on the first Verify link with its Reveal at opacity 1, inside the viewport, the canvas
-on rack-02 M; the hero CTA is the hit target (`elementFromPoint`) at About f0/10/20/30 while on screen; Enter on it lands on
+**C13 Keyboard.** The hero CTA and the hero email line are focusable only while the hero caption is visible (hero p 0.56–0.98) and
+never before or after (they are `visibility: hidden`, so a cold Tab walk from the top skips them by design); inside that window Tab
+reaches both with the lamp ring; from there Tab lands on the next revealed link with its Reveal at opacity 1 and inside
+[88, innerHeight − 24] after the canvas settles (every forward stop must satisfy that band); Enter on the CTA lands on
 `#projects` at camera rest; the skip link goes to `#about`; every focused element is visible (`[data-reveal]:focus-within`).
 **C14 Reduced motion** (emulate, reload): `data-frame` only ever in the stills — hero {0, 72, 144, 216}, chapters {0, round(M/2), M},
 exit {0, last} (record every value over a full stepped scroll); never above M (no tails); no `[data-perspective-plate]`; every
@@ -183,7 +184,7 @@ and 390×844 DPR 3 touch, sized from disk; keys (`/images/reel/`) and posters re
 Dissolves (exit → tower-01) and the tower-K3 → tower-04 hand-over: screenshots at 0, 25,
 50, 75, 100, 125 % of the dissolve: no step > 3× the median step (pop), no full-width flat band (a 40 px row band with σ < 1.5 that
 is not in either film), no double image (judge the 50 % shot at 200 %).
-**C21 Regression.** `/projects/<slug>` keeps the particle canvas, smooth scroll, no `[data-film-segment]`, no Fraunces; client
+**C21 Regression.** `/projects/<slug>` keeps the particle canvas, smooth scroll, no `[data-film-segment]`; Fraunces is loaded only where used (the homepage and the case-study pages), never on /book; client
 navigation back to `/` shows the reel with zero errors; ChapterFlow surfaces (`app/book/**`, ChapterFlow hosts) unchanged.
 
 ## Footage status

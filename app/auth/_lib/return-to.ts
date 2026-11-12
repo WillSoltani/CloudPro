@@ -1,4 +1,5 @@
 import "server-only";
+import { hasControlChars, sanitizeReturnPath } from "./return-path";
 
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
@@ -33,11 +34,10 @@ export function sanitizeReturnTo(
   fallback: string
 ): string {
   const raw = String(value ?? "").trim();
-  if (!raw) return fallback;
+  if (!raw || hasControlChars(raw)) return fallback;
 
-  if (raw.startsWith("/")) {
-    return raw;
-  }
+  // A same-site path, resolved: "//host", "/\\host" and the like leave the site, so they fall back.
+  if (raw.startsWith("/")) return sanitizeReturnPath(raw, fallback);
 
   try {
     const target = new URL(raw);

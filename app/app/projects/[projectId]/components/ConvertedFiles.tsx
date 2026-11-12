@@ -24,6 +24,15 @@ type Props = {
   emptyMessage?: string;
 };
 
+/** The guest demo's tie back to the case study, from the job's own timestamps. */
+function PipelineLine({ seconds }: { seconds: number }) {
+  return (
+    <p className="mt-1 text-xs leading-snug text-slate-300">
+      Presigned upload to S3, a Step Functions run, one container Lambda: {seconds.toFixed(1)} s
+    </p>
+  );
+}
+
 async function triggerDownload(projectId: string, fileId: string) {
   const res = await fetch(
     `/app/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileId)}/download`
@@ -351,6 +360,7 @@ export function ConvertedFiles({
                       </>
                     )}
                   </div>
+                  {f.pipelineSeconds != null ? <PipelineLine seconds={f.pipelineSeconds} /> : null}
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 md:hidden">
                     <Badge>{f.fromLabel}</Badge>
                     <span className="text-slate-600">→</span>
@@ -494,6 +504,7 @@ export function ConvertedFiles({
 
                 <div className="flex flex-col gap-1 px-3 py-2">
                   <div className="truncate text-xs font-semibold text-slate-100">{f.name}</div>
+                  {f.pipelineSeconds != null ? <PipelineLine seconds={f.pipelineSeconds} /> : null}
                   <div className="flex items-center gap-1.5">
                     <Badge>{f.fromLabel}</Badge>
                     <span className="text-slate-600 text-xs">→</span>

@@ -22,8 +22,11 @@ export function DropzoneCard(props: {
   stagedItems: StagedItem[];
   onRemoveStagedItem: (id: string) => void;
   onFillPdf?: (item: { name: string; source: "staged" }) => void;
+  /** The guest demo: stage the bundled sample image (a visitor with no file to hand can still try it). */
+  onTrySample?: () => void;
 }) {
-  const { pendingCount, onPickFiles, onUploadClick, uploadDisabled, stagedItems, onRemoveStagedItem, onFillPdf } = props;
+  const { pendingCount, onPickFiles, onUploadClick, uploadDisabled, stagedItems, onRemoveStagedItem, onFillPdf, onTrySample } =
+    props;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dragDepthRef = useRef(0);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -128,6 +131,16 @@ export function DropzoneCard(props: {
               </span>
               Browse Files
             </button>
+
+            {onTrySample ? (
+              <button
+                type="button"
+                onClick={onTrySample}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-slate-100 hover:bg-white/10"
+              >
+                Try a sample
+              </button>
+            ) : null}
 
             <button
               type="button"

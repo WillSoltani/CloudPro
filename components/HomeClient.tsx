@@ -50,7 +50,7 @@ export function HomeClient() {
       <FilmSegment
         film={exit}
         id="exit"
-        aria-label="Interlude: the reply leaves the rack"
+        aria-label="The reply leaves the rack"
         length={lengthOf(exit)}
         reducedSteps={2}
         keyIn={keyInOf(exit)}
@@ -66,7 +66,7 @@ export function HomeClient() {
         <FilmSegment
           film={bridge}
           id="bridge"
-          aria-label="Interlude: the bridge to the tower"
+          aria-label="Over the lake to the tower"
           length={lengthOf(bridge)}
           reducedSteps={2}
           dissolveIn={0.2}
