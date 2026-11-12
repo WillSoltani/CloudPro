@@ -128,10 +128,11 @@ export async function openHome(page: Page, query = ""): Promise<void> {
 }
 
 /**
- * Waits until the film has come to rest: the canvas shows the frame the clock wants (painted = target segment and
- * frame) and has stayed there, with the clock unchanged, for three looks 60 ms apart. Where that exact frame is
- * never going to arrive (a phone loads only the even frames of a breathing tail on purpose) it also accepts a
- * neighbour once nothing is in flight and nothing has changed for six looks. Resolves false after `timeoutMs`
+ * Waits until the film has come to rest: the canvas shows the effective target (the target segment, and the target
+ * frame or, where the engine never loads that frame by design, such as an odd breathing-tail frame on a phone, a
+ * nearest frame it does load: `effectiveFrame`) and has stayed there, with the clock unchanged, for three looks
+ * 60 ms apart. It also accepts any frame of the target segment once nothing is in flight and nothing has changed
+ * for six looks (a frame that failed to load). Resolves false after `timeoutMs`
  * (the caller decides whether that is a failure). It reads the counters and the canvas hooks only; no threshold
  * on how fast anything is.
  */
@@ -146,7 +147,8 @@ export function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
       const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]");
       if (!s || !c) continue;
       const key = `${c.dataset.reel}|${c.dataset.segment}|${c.dataset.frame}|${s.targetSeg}|${s.targetFrame}`;
-      const exact = s.paintedSeg === s.targetSeg && s.paintedFrame === s.targetFrame;
+      const reach = Math.abs(s.effectiveFrame - s.targetFrame);
+      const exact = s.paintedSeg === s.targetSeg && s.paintedFrame >= 0 && Math.abs(s.paintedFrame - s.targetFrame) === reach;
       const resting = exact || (s.inflight === 0 && s.paintedSeg === s.targetSeg);
       if (resting && key === last) {
         if (++stable >= (exact ? 3 : 6)) return true;

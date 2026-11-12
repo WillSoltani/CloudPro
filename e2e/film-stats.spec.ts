@@ -44,6 +44,8 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
   expect(s.ticks).toBeGreaterThan(0);
   expect(s.staleTicks).toBeLessThanOrEqual(s.ticks);
   expect(s.staleMsMax).toBeLessThanOrEqual(s.staleMs + 1e-6);
+  // A fine pointer without reduced motion loads every frame, so the effective target is the target itself.
+  expect(s.effectiveFrame).toBe(s.targetFrame);
   expect(s.measures).toBeGreaterThan(0);
   expect(s.canvasResizes).toBeGreaterThan(0); // the first sizing of the backing store
   // The painted values are the ones the canvas hooks carry.

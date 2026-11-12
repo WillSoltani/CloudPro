@@ -198,12 +198,14 @@ viewports, reduced motion); they have no timing thresholds.
 
 **The counters.** Frames requested (`requests`), asked for a second time in the page load (`refetches`), decoded and failed
 (`decodes`, `failures`); `inflightPeak`; frames held and their estimated size, width x height x 4 bytes each, MB = 10^6
-(`framesAlivePeak`, `decodedMBPeak`); canvas paints, split into exact (the target frame) and fallback (a neighbour) with the summed
-distance (`draws`, `exactDraws`, `fallbackDraws`, `fallbackDistance`); clock ticks, ticks that ended with the canvas not showing the
-target frame (`staleTicks`), the time spent so (`staleMs`) and the longest continuous stretch (`staleMsMax`); `held` (draw declined
-because a nearer frame was coming); `canvasResizes` (backing-store reallocations); `measures` (layout read batches). The script's
+(`framesAlivePeak`, `decodedMBPeak`); canvas paints, split into exact (the effective target) and fallback (any other frame) with the
+summed distance to the effective target (`draws`, `exactDraws`, `fallbackDraws`, `fallbackDistance`); clock ticks, ticks that ended
+with the canvas not showing the effective target (`staleTicks`), the time spent so (`staleMs`) and the longest continuous stretch
+(`staleMsMax`). The effective target (`effectiveFrame`, beside the raw `targetFrame`) is the target frame, or, where the engine never
+loads that frame by design (odd breathing-tail frames on a coarse pointer, frames between the reduced-motion stills), the nearest
+frame it does load. Also `held` (draw declined because a nearer frame was coming); `canvasResizes` (backing-store reallocations); `measures` (layout read batches). The script's
 columns: "exact %" = exactDraws / draws, "stale %" = staleTicks / ticks, "mean fallback dist" = fallbackDistance / draws (an exact
-paint counts 0), "settle ms" = time from the scroll stopping until the canvas shows the target frame (null: not within 10 s). Full
+paint counts 0), "settle ms" = time from the scroll stopping until the canvas shows the effective target (null: not within 10 s). Full
 list and where the engine updates each: `docs/film-lab-gate.md`.
 
 **Baseline** (before any loader change). 2026-11-12, run (b): real frames from the film CDN, local production build with
@@ -233,6 +235,11 @@ events for the leg (the scroll plus 3 s); "film frames" are `f_NNNN.webp` reques
 | return leg: refetches | 992 | 843 | 796 |
 | return leg: exact draws / stale ticks | 100 % / 0 % | 89.6 % / 22.4 % | 86.1 % / 25.1 % |
 | return leg: frames alive peak / decoded MB peak | 611 / 5068 | 611 / 988 | 586 / 947 |
+
+Scored before the effective target existed: exact draws, stale ticks, the longest stale stretch, the mean fallback distance and
+settle ms counted every paint of an even tail frame for an odd target as a fallback and a stale tick, so the iphone and slowphone
+columns overstate lag inside the breathing tails (the desktop column is unaffected: a fine pointer loads every frame). Re-run the
+baseline before comparing a later stage against these phone figures.
 
 Read it as a lab picture, not a verdict: the CDN is close to this machine and the network throttle only reaches the slow profile, so
 the delivery shortfall seen live (20 to 30 frames per second) shows as stale time and fallback paints, not as a wall. Two runs on the

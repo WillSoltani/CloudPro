@@ -21,12 +21,15 @@ import { coverRect, manifestFor } from "@/components/film/filmBase";
 import { HOLD_REVEALS_KEY, HOLD_STORAGE_KEY } from "@/components/film/reel";
 import { REEL_CHROME_EVENT, type ReelChrome } from "@/components/film/useReelChrome";
 import {
+  aimAt,
   countDraw,
   countRequest,
   dropFrame,
   filmInstrument,
   frameBytes,
   holdFrame,
+  newEffectiveTarget,
+  onTarget,
   recoverStale,
   tickStale,
 } from "@/components/film/filmStats";
@@ -367,6 +370,9 @@ export function FilmBackdrop({
     const { drawnSegment: drawnSegmentMV, drawnFrame: drawnFrameMV } = api;
     // Measurement only (components/film/filmStats.ts, `window.__filmStats`): nothing below reads it back.
     const { stats, clock: staleClock, requested } = filmInstrument();
+    // What the counters score against: the frames the canvas can show for the current target (filmStats aimAt,
+    // with the loader's own `usable` rule), refreshed with the target in onReel.
+    const effective = newEffectiveTarget();
     // Estimated decoded size of one of a segment's frames at its current tier.
     const bytesOf = (s: Segment) => frameBytes(s.width, s.reg.film.aspect);
     // A segment lets go of every decoded frame it holds (retier, dispose, teardown).
@@ -449,6 +455,23 @@ export function FilmBackdrop({
     // τ at the end of the read pin, for the breath curve.
     const tauRead = (s: Segment) => (s.after > 0 ? s.read / s.after : 0);
 
+    // Stills shown per segment under reduced motion: frames still(s, 0) = 0 … still(s, steps − 1) = M.
+    const stillSteps = (s: Segment) => Math.max(2, s.reg.reducedSteps);
+    const still = (s: Segment, k: number) => Math.round((k / (stillSteps(s) - 1)) * moveEnd(s));
+
+    // The frames this page load ever requests, so the only ones the canvas can show: the move (0…M); tail frames
+    // (after M) only while tails play, and only the even ones on coarse pointers; under reduced motion only the
+    // stills. rank() requests by it, and the counters score against it (aimAt), so a frame never loaded by design
+    // is never counted as lag.
+    const usable = (s: Segment, i: number) => {
+      const end = moveEnd(s);
+      if (reduced) {
+        for (let k = 0; k < stillSteps(s); k++) if (still(s, k) === i) return true;
+        return false;
+      }
+      return i <= end || (tailCount(s) > 0 && (!coarse || (i - end) % 2 === 0));
+    };
+
     // Move progress → frame (0…M); under reduced motion the stills.
     const toIndex = (s: Segment, frac: number) => {
       const end = moveEnd(s);
@@ -479,17 +502,14 @@ export function FilmBackdrop({
     const tolerance = (s: Segment) => Math.max(LANDED, Math.round(s.reg.film.count / 32));
 
     // Request order around `target`: the target itself, M, last and 0 (always resident), then each
-    // coarse-to-fine pass nearest-first, so the frames that matter now arrive first. Tail frames (after M)
-    // only while tails play, and only the even ones on coarse pointers.
+    // coarse-to-fine pass nearest-first, so the frames that matter now arrive first. Only usable frames.
     const rank = (s: Segment, target: number) => {
       const count = s.reg.film.count;
       const end = moveEnd(s);
-      const tailOn = tailCount(s) > 0;
-      const usable = (i: number) => i <= end || (tailOn && (!coarse || (i - end) % 2 === 0));
       const seen = new Uint8Array(count);
       const order: number[] = [];
       const push = (i: number) => {
-        if (i >= 0 && i < count && !seen[i] && usable(i)) {
+        if (i >= 0 && i < count && !seen[i] && usable(s, i)) {
           seen[i] = 1;
           order.push(i);
         }
@@ -500,9 +520,8 @@ export function FilmBackdrop({
       push(count - 1);
       push(0);
       if (reduced) {
-        const steps = Math.max(2, s.reg.reducedSteps);
         const stills: number[] = [];
-        for (let k = 0; k < steps; k++) stills.push(Math.round((k / (steps - 1)) * end));
+        for (let k = 0; k < stillSteps(s); k++) stills.push(still(s, k));
         stills.sort(nearest).forEach(push);
       } else {
         for (const stride of STRIDES) {
@@ -581,12 +600,12 @@ export function FilmBackdrop({
       ctx.drawImage(img, rect.left, rect.top, rect.width, rect.height);
       drawnSeg = targetSeg;
       drawnFrame = i;
-      countDraw(stats, i, targetFrame);
+      countDraw(stats, i, effective);
       stats.paintedSeg = targetSeg;
       stats.paintedFilm = s.reg.film.name;
       stats.paintedFrame = i;
       stats.width = s.width;
-      if (gap === 0 && staleClock.since >= 0) recoverStale(stats, staleClock, performance.now());
+      if (staleClock.since >= 0 && onTarget(effective, drawnSeg, i, targetSeg)) recoverStale(stats, staleClock, performance.now());
       // Overlays follow the painted frame (frame first: a listener on the segment then reads both).
       drawnFrameMV.set(i);
       drawnSegmentMV.set(targetSeg);
@@ -1040,6 +1059,12 @@ export function FilmBackdrop({
       return shownClock;
     };
 
+    // `usable` for the target segment, for aimAt (one closure for the effect, not one per tick).
+    const usableAtTarget = (i: number) => {
+      const t = segments.get(targetSeg);
+      return !!t && usable(t, i);
+    };
+
     const onReel = (spr: number) => {
       const c = follow(spr);
       const ph = phaseOf(c);
@@ -1067,8 +1092,11 @@ export function FilmBackdrop({
       } else {
         targetFrame = 0;
       }
+      if (s) aimAt(effective, targetFrame, s.reg.film.count, usableAtTarget);
+      else effective.lo = effective.hi = targetFrame;
       stats.targetSeg = targetSeg;
       stats.targetFrame = targetFrame;
+      stats.effectiveFrame = effective.lo;
       for (const t of segments.values()) {
         const i = t.reg.index;
         if (i < ph.seg) {
@@ -1117,7 +1145,7 @@ export function FilmBackdrop({
       // Paint in this tick (the spring's frame), not the next one: the picture never trails the clock by a frame.
       if (raf) cancelAnimationFrame(raf);
       draw();
-      tickStale(stats, staleClock, drawnSeg !== targetSeg || drawnFrame !== targetFrame, performance.now());
+      tickStale(stats, staleClock, !onTarget(effective, drawnSeg, drawnFrame, targetSeg), performance.now());
     };
 
     const io = new IntersectionObserver(

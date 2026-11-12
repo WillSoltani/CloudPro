@@ -38,12 +38,14 @@
  * for, sits beside them); "film frames" are requests for <film>/<width>/f_NNNN.<ext>; MB is 10^6 bytes of
  * response bodies. Counter figures come from
  * window.__filmStats, reset right before each pass:
- *   exact %          share of canvas paints that showed exactly the target frame
- *   stale %          share of clock ticks after which the canvas did not show the target frame
+ *   exact %          share of canvas paints that showed the effective target (the target frame, or where the
+ *                    engine never loads it by design, e.g. an odd tail frame on a phone, the nearest frame it does)
+ *   stale %          share of clock ticks after which the canvas did not show the effective target
  *   stale max ms     longest continuous stale stretch (time from its first stale tick until the target shows)
- *   mean dist        mean |painted - target| in frames over ALL paints (an exact paint counts 0)
+ *   mean dist        mean distance in frames from the painted frame to the effective target over ALL paints
+ *                    (an exact paint counts 0)
  *   alive peak / MB  most decoded frames held at once / their estimated size (width x height x 4 bytes)
- *   settle ms        time from the scroll stopping until the canvas shows the target frame (null: over 10 s)
+ *   settle ms        time from the scroll stopping until the canvas shows the effective target (null: over 10 s)
  *   meas/s           calls of the engine's measure() per second of scrolling (each is a batch of layout reads)
  *   frame ms         the browser's own requestAnimationFrame intervals during the scroll (median, p95, max)
  *   >33 ms           count of those intervals longer than 33.4 ms
@@ -152,14 +154,16 @@ async function pagePass({ dir, speed, limitMs, settleLimitMs }) {
     requestAnimationFrame(tick);
   });
   const atEnd = { ...window.__filmStats };
-  // The scroll has stopped: how long until the canvas shows the target frame (three frames in a row)?
+  // The scroll has stopped: how long until the canvas shows the effective target (three frames in a row)? On target:
+  // the painted frame is as far from the target as the effective frame is (filmStats onTarget).
   let streak = 0;
   let streakStart = 0;
   let settleMs = null;
   await new Promise((resolve) => {
     const look = (now) => {
       const s = window.__filmStats;
-      if (s.paintedSeg === s.targetSeg && s.paintedFrame === s.targetFrame) {
+      const reach = Math.abs((s.effectiveFrame ?? s.targetFrame) - s.targetFrame);
+      if (s.paintedSeg === s.targetSeg && s.paintedFrame >= 0 && Math.abs(s.paintedFrame - s.targetFrame) === reach) {
         if (streak++ === 0) streakStart = now;
         if (streak >= 3) {
           settleMs = streakStart - endedAt.now;

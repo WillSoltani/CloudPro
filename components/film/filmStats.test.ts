@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  aimAt,
   countDraw,
   countRequest,
   dropFrame,
   frameBytes,
   holdFrame,
+  missBy,
+  newEffectiveTarget,
   newFilmStats,
   newStaleClock,
+  onTarget,
   recoverStale,
   resetFilmStats,
   tickStale,
@@ -119,7 +123,7 @@ describe("resetFilmStats", () => {
     holdFrame(s, frameBytes(768, 16 / 9));
     holdFrame(s, frameBytes(768, 16 / 9));
     dropFrame(s, frameBytes(768, 16 / 9));
-    countDraw(s, 4, 6);
+    countDraw(s, 4, { lo: 6, hi: 6 });
     tickStale(s, c, false, 0);
     s.held = 3;
     s.canvasResizes = 1;
@@ -180,9 +184,10 @@ describe("frame gauges and draws", () => {
 
   it("splits draws into exact and fallback paints", () => {
     const s = newFilmStats();
-    countDraw(s, 10, 10);
-    countDraw(s, 8, 10);
-    countDraw(s, 13, 10);
+    const eff = { lo: 10, hi: 10 };
+    countDraw(s, 10, eff);
+    countDraw(s, 8, eff);
+    countDraw(s, 13, eff);
     assert.equal(s.draws, 3);
     assert.equal(s.exactDraws, 1);
     assert.equal(s.fallbackDraws, 2);
@@ -201,5 +206,117 @@ describe("frame gauges and draws", () => {
     assert.equal(s.refetches, 1);
     assert.equal(s.inflightPeak, 3);
     assert.equal(s.inflight, 1);
+  });
+});
+
+// The engine's rule (FilmBackdrop `usable`) for a film of 61 frames whose move ends at M = 40 and whose 20 tail
+// frames play: on a coarse pointer only the even tail frames (42, 44, …) are ever requested.
+const COUNT = 61;
+const M = 40;
+const coarseTail = (i: number) => i <= M || (i - M) % 2 === 0;
+const fineTail = () => true;
+// Reduced motion, 5 stills over the move: 0, 10, 20, 30, 40.
+const stills = (i: number) => [0, 10, 20, 30, 40].includes(i);
+
+describe("effective target (aimAt, missBy, onTarget)", () => {
+  it("is the target itself when the engine loads it", () => {
+    const eff = newEffectiveTarget();
+    aimAt(eff, 43, COUNT, fineTail);
+    assert.deepEqual(eff, { lo: 43, hi: 43 });
+    aimAt(eff, 42, COUNT, coarseTail);
+    assert.deepEqual(eff, { lo: 42, hi: 42 });
+    aimAt(eff, 17, COUNT, coarseTail); // in the move every frame is usable
+    assert.deepEqual(eff, { lo: 17, hi: 17 });
+    const s = newFilmStats();
+    countDraw(s, 42, eff); // 17 is wanted: 42 is a plain fallback
+    assert.equal(s.fallbackDraws, 1);
+    assert.equal(s.fallbackDistance, 25);
+  });
+
+  it("counts an even neighbour of an odd tail frame on a coarse pointer as exact, on either side", () => {
+    const eff = newEffectiveTarget();
+    aimAt(eff, 43, COUNT, coarseTail);
+    assert.deepEqual(eff, { lo: 42, hi: 44 });
+    const s = newFilmStats();
+    countDraw(s, 42, eff);
+    countDraw(s, 44, eff);
+    assert.equal(s.draws, 2);
+    assert.equal(s.exactDraws, 2);
+    assert.equal(s.fallbackDraws, 0);
+    assert.equal(s.fallbackDistance, 0);
+    assert.equal(onTarget(eff, 3, 42, 3), true);
+    assert.equal(onTarget(eff, 3, 44, 3), true);
+    assert.equal(onTarget(eff, 2, 42, 3), false); // another segment's frame
+    assert.equal(onTarget(eff, -1, -1, 3), false); // the canvas was cleared by a resize
+    // The last frame of an odd tail has only its lower neighbour.
+    aimAt(eff, 59, 60, coarseTail);
+    assert.deepEqual(eff, { lo: 58, hi: 58 });
+  });
+
+  it("measures a fallback paint from the nearest effective frame, not from the raw target", () => {
+    const eff = newEffectiveTarget();
+    aimAt(eff, 43, COUNT, coarseTail);
+    const s = newFilmStats();
+    countDraw(s, 46, eff); // 3 from 43, 2 from 44
+    countDraw(s, 40, eff); // 3 from 43, 2 from 42
+    assert.equal(s.exactDraws, 0);
+    assert.equal(s.fallbackDraws, 2);
+    assert.equal(s.fallbackDistance, 4);
+    assert.equal(missBy(eff, 46), 2);
+    assert.equal(onTarget(eff, 0, 46, 0), false);
+  });
+
+  it("aims at a reduced-motion still, and a frame between stills at its nearest still", () => {
+    const eff = newEffectiveTarget();
+    aimAt(eff, 20, 41, stills);
+    assert.deepEqual(eff, { lo: 20, hi: 20 });
+    const s = newFilmStats();
+    countDraw(s, 20, eff);
+    countDraw(s, 10, eff);
+    assert.equal(s.exactDraws, 1);
+    assert.equal(s.fallbackDistance, 10);
+    aimAt(eff, 13, 41, stills); // nearer 10 than 20
+    assert.deepEqual(eff, { lo: 10, hi: 10 });
+    assert.equal(missBy(eff, 10), 0);
+    assert.equal(missBy(eff, 20), 10);
+    aimAt(eff, 15, 41, stills); // halfway: either still
+    assert.deepEqual(eff, { lo: 10, hi: 20 });
+    assert.equal(missBy(eff, 20), 0);
+  });
+
+  it("keeps the raw target when nothing is usable", () => {
+    const eff = newEffectiveTarget();
+    aimAt(eff, 7, 10, () => false);
+    assert.deepEqual(eff, { lo: 7, hi: 7 });
+  });
+
+  it("opens no stale stretch through a tail on a coarse pointer while the nearest usable frame shows", () => {
+    const s = newFilmStats();
+    const c = newStaleClock();
+    const eff = newEffectiveTarget();
+    // The clock walks the tail one frame a tick; the canvas shows the even frame at or just below the target
+    // (what draw() paints with every even frame loaded): odd targets are never painted.
+    let t = 0;
+    for (let target = M; target <= M + 20; target++) {
+      aimAt(eff, target, COUNT, coarseTail);
+      const painted = target - ((target - M) % 2);
+      countDraw(s, painted, eff);
+      tickStale(s, c, !onTarget(eff, 4, painted, 4), (t += 16));
+    }
+    assert.equal(s.ticks, 21);
+    assert.equal(s.staleTicks, 0);
+    assert.equal(s.staleMs, 0);
+    assert.equal(s.staleMsMax, 0);
+    assert.equal(s.exactDraws, 21);
+    assert.equal(s.fallbackDistance, 0);
+    // The same pass scored against the raw target (the old rule) would have been stale on every odd tick.
+    const old = newFilmStats();
+    const oc = newStaleClock();
+    t = 0;
+    for (let target = M; target <= M + 20; target++) {
+      tickStale(old, oc, target - ((target - M) % 2) !== target, (t += 16));
+    }
+    assert.equal(old.staleTicks, 10);
+    assert.ok(old.staleMsMax > 0);
   });
 });

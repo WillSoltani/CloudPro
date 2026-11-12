@@ -33,19 +33,23 @@ export type FilmStats = {
   decodedMBPeak: number;
   /** Canvas paints. */
   draws: number;
-  /** Paints of exactly the target frame. */
+  /**
+   * Paints of the effective target: the target frame itself, or, where the engine never loads that frame by
+   * design (an odd breathing-tail frame on a coarse pointer, a frame between the reduced-motion stills), the
+   * usable frame nearest to it (either one on a tie). See `aimAt`.
+   */
   exactDraws: number;
-  /** Paints of a neighbour of the target frame (draws = exactDraws + fallbackDraws). */
+  /** Paints of any other frame (draws = exactDraws + fallbackDraws). */
   fallbackDraws: number;
-  /** Sum over fallback paints of |painted − target|. */
+  /** Sum over fallback paints of their distance to the effective target (`missBy`). */
   fallbackDistance: number;
   /** Clock ticks processed (each call of the engine's onReel). */
   ticks: number;
-  /** Ticks after which the canvas did not show the target frame of the target segment. */
+  /** Ticks after which the canvas did not show the effective target of the target segment. */
   staleTicks: number;
   /** Total time spent stale, in ms. */
   staleMs: number;
-  /** Longest continuous stale stretch, in ms: from its first stale tick to the moment the canvas shows the target again. */
+  /** Longest continuous stale stretch, in ms: from its first stale tick to the moment the canvas shows the effective target again. */
   staleMsMax: number;
   /** Times draw() declined to paint because a frame nearer the target was still coming. */
   held: number;
@@ -53,9 +57,15 @@ export type FilmStats = {
   canvasResizes: number;
   /** Calls of the engine's measure() (each a batch of layout reads). */
   measures: number;
-  /** The segment and frame the clock wants now. */
+  /** The segment and frame the clock wants now (the raw target, before `aimAt`). */
   targetSeg: number;
   targetFrame: number;
+  /**
+   * The frame the engine can show for that target: targetFrame when the engine loads it, else the nearest frame
+   * it does load (the lower of two at the same distance, the one draw() prefers). The canvas is on target when its
+   * frame is as far from targetFrame as this one is.
+   */
+  effectiveFrame: number;
   /** The segment, its film's name and the frame on the canvas now (−1 / "" before a paint and after a resize clears it). */
   paintedSeg: number;
   paintedFilm: string;
@@ -66,6 +76,12 @@ export type FilmStats = {
 
 /** The stale-stretch clock: when the open stretch began (−1: none open) and when the previous tick ran (−1: none yet). */
 export type StaleClock = { since: number; last: number };
+
+/**
+ * The frames that count as on target for the current target frame: `lo` ≤ `hi`, equal when the target itself is
+ * usable or only one usable frame is nearest. Filled in place by `aimAt` (no allocation per tick).
+ */
+export type EffectiveTarget = { lo: number; hi: number };
 
 export function newFilmStats(mode = "legacy"): FilmStats {
   return {
@@ -94,6 +110,7 @@ export function newFilmStats(mode = "legacy"): FilmStats {
     measures: 0,
     targetSeg: 0,
     targetFrame: 0,
+    effectiveFrame: 0,
     paintedSeg: -1,
     paintedFilm: "",
     paintedFrame: -1,
@@ -103,6 +120,41 @@ export function newFilmStats(mode = "legacy"): FilmStats {
 
 export function newStaleClock(): StaleClock {
   return { since: -1, last: -1 };
+}
+
+export function newEffectiveTarget(): EffectiveTarget {
+  return { lo: 0, hi: 0 };
+}
+
+/**
+ * Aim the counters at what the engine can show for `target` in a film of `count` frames. `usable` is the engine's
+ * own rule for the frames it ever requests (FilmBackdrop `usable`), so a frame it never loads by design is never
+ * scored as lag: when `target` is usable it is the effective target; otherwise the usable frames nearest to it
+ * are (both, at the same distance on either side). With no usable frame at all the raw target stands.
+ */
+export function aimAt(eff: EffectiveTarget, target: number, count: number, usable: (i: number) => boolean): void {
+  for (let d = 0; d < count; d++) {
+    const below = target - d >= 0 && target - d < count && usable(target - d);
+    const above = d > 0 && target + d >= 0 && target + d < count && usable(target + d);
+    if (below || above) {
+      eff.lo = below ? target - d : target + d;
+      eff.hi = above ? target + d : target - d;
+      return;
+    }
+  }
+  eff.lo = target;
+  eff.hi = target;
+}
+
+/** Distance from the painted frame to the nearest effective target (0: on target; Infinity: nothing painted). */
+export function missBy(eff: EffectiveTarget, painted: number): number {
+  if (painted < 0) return Infinity;
+  return Math.min(Math.abs(painted - eff.lo), Math.abs(painted - eff.hi));
+}
+
+/** The canvas shows the effective target of the target segment. */
+export function onTarget(eff: EffectiveTarget, paintedSeg: number, paintedFrame: number, targetSeg: number): boolean {
+  return paintedSeg === targetSeg && missBy(eff, paintedFrame) === 0;
 }
 
 /**
@@ -163,20 +215,21 @@ export function countRequest(s: FilmStats, repeated: boolean, inflight: number):
   if (inflight > s.inflightPeak) s.inflightPeak = inflight;
 }
 
-/** A canvas paint of frame `painted` while the target is `target`. */
-export function countDraw(s: FilmStats, painted: number, target: number): void {
+/** A canvas paint of frame `painted` while the effective target is `eff` (see aimAt). */
+export function countDraw(s: FilmStats, painted: number, eff: EffectiveTarget): void {
   s.draws++;
-  if (painted === target) {
+  const miss = missBy(eff, painted);
+  if (miss === 0) {
     s.exactDraws++;
   } else {
     s.fallbackDraws++;
-    s.fallbackDistance += Math.abs(painted - target);
+    s.fallbackDistance += miss;
   }
 }
 
 /**
- * One clock tick, after the tick's draw(): `stale` when the canvas does not show the target frame of the target
- * segment. The time since the previous tick counts as stale when that tick left the canvas stale; a stretch runs
+ * One clock tick, after the tick's draw(): `stale` when the canvas does not show the effective target of the
+ * target segment (`!onTarget`). The time since the previous tick counts as stale when that tick left the canvas stale; a stretch runs
  * from its first stale tick until a tick (or recoverStale) finds the target on the canvas.
  */
 export function tickStale(s: FilmStats, clock: StaleClock, stale: boolean, now: number): void {
@@ -192,7 +245,7 @@ export function tickStale(s: FilmStats, clock: StaleClock, stale: boolean, now: 
 }
 
 /**
- * The canvas has just painted the target outside a tick (a frame arrived while the clock was at rest): the open
+ * The canvas has just painted the effective target outside a tick (a frame arrived while the clock was at rest): the open
  * stretch ends now rather than at the next tick, which may be long after the viewer stopped scrolling.
  */
 export function recoverStale(s: FilmStats, clock: StaleClock, now: number): void {

@@ -60,18 +60,29 @@ up to date where it already does the work; it only writes the object, never read
 exactly as without it. `mode` is `"legacy"` for this loader. Counters (requests, refetches, decodes, failures,
 draws split into exact and fallback paints with their summed distance, ticks, stale ticks, stale ms and the
 longest stale stretch, held paints, canvas resizes, measures) grow until `window.__filmStatsReset()`; gauges
-(in flight, frames alive, decoded MB, target and painted segment and frame, tier width) always describe now, and
-a reset restarts the peaks from them. A refetch is a request for a film, width and index already requested in
-this page load. Stale means the canvas does not show the target frame of the target segment after a clock tick;
-a stretch ends at the tick, or the paint between ticks, that shows the target again.
+(in flight, frames alive, decoded MB, target, effective and painted segment and frame, tier width) always describe
+now, and a reset restarts the peaks from them. A refetch is a request for a film, width and index already
+requested in this page load.
 
-Open the home page with `?hud=1` to see two lines of them, refreshed four times a second.
+Draws and staleness are scored against the **effective target**, not the raw one. `targetFrame` is the frame the
+clock wants; `effectiveFrame` is the frame the engine can show for it. They differ only where the engine never
+loads the target frame by design: on a coarse pointer it requests only the even frames of a breathing tail, and
+under reduced motion only the stills. The rule comes from the engine itself (`usable` in `FilmBackdrop`, the
+predicate `rank()` requests by), applied by `aimAt` in `filmStats.ts`. A paint is exact, and the canvas is on
+target, when the painted frame is the target or, for a target the engine never loads, a usable frame nearest to it
+(an odd tail frame on a phone: either even neighbour). `effectiveFrame` names the lower one on such a tie, the one
+draw() prefers; the rule is "as far from `targetFrame` as `effectiveFrame` is". `fallbackDistance` is the distance
+to the nearest effective frame. Stale means the canvas does not show the effective target of the target segment
+after a clock tick; a stretch ends at the tick, or the paint between ticks, that shows it again.
+
+Open the home page with `?hud=1` to see two lines of them, refreshed four times a second. The first line reads
+`f<painted>/<target>`, followed by `eff <effective>` when the two targets differ.
 
 ## The specs
 
 All run on placeholder frames and have no timing thresholds: they scroll in half-viewport steps and wait for the film to come
-to rest (the canvas shows the frame the clock wants; where a phone never loads that exact frame, a neighbour once nothing is in
-flight and nothing changes) before they look.
+to rest (the canvas shows the effective target, or any frame of the target segment once nothing is in flight and nothing
+changes) before they look.
 
 | Spec | What it checks |
 | --- | --- |
