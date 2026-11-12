@@ -52,15 +52,17 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
   expect(s.paintedFrame).toBe(Number(await canvas.getAttribute("data-frame")));
   expect(s.width).toBe(Number(await canvas.getAttribute("data-width")));
 
-  // The reset zeroes the counters and keeps the gauges.
-  const after = await page.evaluate(() => {
+  // The reset zeroes the counters and keeps the gauges. The loader goes on in the background, so the gauge is
+  // read in the same synchronous step as the reset, not from the earlier read.
+  const { gaugeBefore, after } = await page.evaluate(() => {
+    const gaugeBefore = window.__filmStats!.framesAlive;
     window.__filmStatsReset!();
-    return { ...window.__filmStats! };
+    return { gaugeBefore, after: { ...window.__filmStats! } };
   });
   for (const k of ["requests", "refetches", "decodes", "failures", "draws", "exactDraws", "fallbackDraws", "ticks", "staleTicks", "staleMs", "staleMsMax", "held", "canvasResizes", "measures"] as const) {
     expect(after[k], k).toBe(0);
   }
-  expect(after.framesAlive).toBe(s.framesAlive);
+  expect(after.framesAlive).toBe(gaugeBefore);
   expect(after.framesAlivePeak).toBe(after.framesAlive);
 });
 

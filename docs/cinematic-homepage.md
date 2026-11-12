@@ -159,3 +159,95 @@ placeholders; the project cards describe the real pipeline (Cognito, presigned S
 and ChapterFlow as a live product; Contact's email is the obvious action; back-to-top is a veiled jump; phone compositions lift
 into view during the read pin; the exit runs at pace 110 and the bridge at 160; rack chapters shade with a neutral night. Source:
 a three-lens Opus design critique of the live page (`films-src/qa/part5/critique-1/`).
+
+## Lab gate
+A local gate that measures how well the film keeps up with a steady scroll, so every later change to how frames load is judged by
+numbers and not by feel. It changes nothing a visitor sees. Setup, placeholder frames and the Playwright specs are in
+`docs/film-lab-gate.md`; the manual QA it complements is `.claude/agents/scroll-qa.md`.
+
+**Why.** On phones the film lags: the loader delivers 20 to 30 frames per second while a 600 px/s scroll needs 40 to 60, it has no
+memory cap, a pass makes about 1,100 to 1,240 requests, and a one-way pass refetches nothing (measured on the live site before this
+work). The gate reproduces that picture on a local production build and puts a number on each part of it.
+
+**What it measures.** `scripts/films/scrub-quality.mjs` drives one steady, time-based scroll pass through the home page per profile
+(and, with `--back`, the same pass back up, reported separately). Profiles: `desktop` (Chromium 1440x900, DPR 2, 900 px/s),
+`iphone` (WebKit, device "iPhone 14", 600 px/s), `slowphone` (Chromium 390x844 mobile, DPR 3, CPU 4x slower, 9 Mbit/s down,
+1.5 up, 165 ms latency, 600 px/s). The engine's counters (`window.__filmStats`, reset right before the pass) say what the canvas
+showed; Playwright's request events say what went over the network; the script samples the browser's own frame clock and long
+tasks itself. It refuses any page that is not localhost or 127.0.0.1 unless both `--cap` and `--allow-remote` are given, and it
+never runs against the live site in this repository's workflow.
+
+**How to run it.** A production build and server first (never `next dev`):
+```bash
+# placeholder frames (served from public/films; what CI uses)
+npm run film:placeholder
+NEXT_DIST_DIR=.next-film NEXT_PUBLIC_FILM_BASE=/films npx next build
+NEXT_DIST_DIR=.next-film npx next start --hostname 127.0.0.1 --port 3006
+# real frames from the film CDN (a local page may load them; it is how the site works)
+NEXT_DIST_DIR=.next-film-cdn npx next build
+NEXT_DIST_DIR=.next-film-cdn npx next start --hostname 127.0.0.1 --port 3007
+# the gate
+npm run film:quality -- --base http://127.0.0.1:3007 --back --json out.json
+npm run film:quality -- --profiles iphone --speed 400 --assert thresholds.json
+```
+Options: `--base`, `--profiles desktop,iphone,slowphone`, `--speed <px/s>`, `--back`, `--cap <requests>`, `--allow-remote`,
+`--json <file>`, `--assert <file>` (`{"*" or "<profile>": {"pass.exactShare": {"min": 97}}}`, dot paths into the JSON; exit 1 when
+one is missed; nothing is enforced by default yet), `--headed`. The Playwright specs (`npm run test:film`) check correctness on
+placeholder frames (every film painted, the frame read back from the canvas equals `data-frame`, no 4xx/5xx, no console errors,
+viewports, reduced motion); they have no timing thresholds.
+
+**The counters.** Frames requested (`requests`), asked for a second time in the page load (`refetches`), decoded and failed
+(`decodes`, `failures`); `inflightPeak`; frames held and their estimated size, width x height x 4 bytes each, MB = 10^6
+(`framesAlivePeak`, `decodedMBPeak`); canvas paints, split into exact (the target frame) and fallback (a neighbour) with the summed
+distance (`draws`, `exactDraws`, `fallbackDraws`, `fallbackDistance`); clock ticks, ticks that ended with the canvas not showing the
+target frame (`staleTicks`), the time spent so (`staleMs`) and the longest continuous stretch (`staleMsMax`); `held` (draw declined
+because a nearer frame was coming); `canvasResizes` (backing-store reallocations); `measures` (layout read batches). The script's
+columns: "exact %" = exactDraws / draws, "stale %" = staleTicks / ticks, "mean fallback dist" = fallbackDistance / draws (an exact
+paint counts 0), "settle ms" = time from the scroll stopping until the canvas shows the target frame (null: not within 10 s). Full
+list and where the engine updates each: `docs/film-lab-gate.md`.
+
+**Baseline** (before any loader change). 2026-11-12, run (b): real frames from the film CDN, local production build with
+`NEXT_DIST_DIR=.next-film-cdn` on 127.0.0.1:3007, `--back`, engine at commit `cd419d7e` (the gate adds counters only), Apple M1
+laptop, macOS 26.5, Node 20.20.2, Playwright 1.62.1, other work running on the machine. Network figures are Playwright request
+events for the leg (the scroll plus 3 s); "film frames" are `f_NNNN.webp` requests.
+
+| | desktop | iphone | slowphone |
+| --- | ---: | ---: | ---: |
+| before the first scroll: requests (all / film frames) / MB | 80 / 58 / 2.21 | 80 / 58 / 1.03 | 80 / 58 / 1.05 |
+| pass down: requests (all / film frames) | 1397 / 1384 | 1148 / 1135 | 1077 / 1064 |
+| pass down: MB | 26.4 | 6.64 | 6.61 |
+| refetches | 0 | 0 | 0 |
+| exact draws | 90.4 % | 76.1 % | 60.0 % |
+| stale ticks | 9.8 % | 49.0 % | 57.8 % |
+| longest stale stretch | 230 ms | 399 ms | 722 ms |
+| mean fallback distance (frames) | 0.11 | 0.33 | 0.59 |
+| frames alive peak / decoded MB peak | 531 / 4404 | 382 / 618 | 353 / 571 |
+| in-flight peak | 6 | 6 | 6 |
+| canvas resizes | 0 | 0 | 0 |
+| measures per second | 47.2 | 59.0 | 51.2 |
+| browser frame ms median / p95 / max | 16.7 / 33.4 / 233 | 17 / 19 / 117 | 16.7 / 33.6 / 51 |
+| frames over 33 ms | 68 | 11 | 119 |
+| long tasks | 1 (229 ms) | n/a (WebKit) | 0 |
+| console errors | 0 | 0 | 0 |
+| **return leg**: requests (all) / engine requests | 992 / 992 | 153 / 996 | 1020 / 1020 |
+| return leg: refetches | 992 | 843 | 796 |
+| return leg: exact draws / stale ticks | 100 % / 0 % | 89.6 % / 22.4 % | 86.1 % / 25.1 % |
+| return leg: frames alive peak / decoded MB peak | 611 / 5068 | 611 / 988 | 586 / 947 |
+
+Read it as a lab picture, not a verdict: the CDN is close to this machine and the network throttle only reaches the slow profile, so
+the delivery shortfall seen live (20 to 30 frames per second) shows as stale time and fallback paints, not as a wall. Two runs on the
+same build differ by the machine's load and the CDN's edge cache: the repeat run had exact draws 85.3 / 99.9 / 57.1 % and longest
+stale stretch 621 / 135 / 1031 ms for desktop / iphone / slowphone, with request counts within 15 %. Compare a later
+stage against several runs, not one. WebKit answers a repeat load of a frame from its memory cache without a request event, so on
+the iphone return leg the page's own count ("engine requests", 996) is the one to read. What the table already shows: nothing caps
+memory (the decoded frames held would be 4 to 5 GB on desktop and 0.6 to 1 GB on phones by the width x height x 4 estimate), a pass
+makes a thousand requests, and the way back refetches nearly every frame (an engine that evicts what the visitor just saw).
+
+**Targets set by the plan** (none is enforced yet):
+- the exact frame on 97 % of draws at 600 px/s on the phone profile without throttling;
+- on Fast 4G: a mean fallback distance of 4 frames or less, and the exact frame within 1 s of stopping;
+- longest stale stretch 100 ms or less;
+- 30 requests or fewer per pass;
+- decoded frames within 160 MB on phones and 384 to 512 MB on desktop;
+- scrolling back costs 0 requests;
+- 0 canvas reallocations when the address bar moves.

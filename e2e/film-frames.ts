@@ -94,3 +94,77 @@ export async function readPaintedFrame(page: Page): Promise<PaintedFrame | null>
     pixels: decoded && names[decoded.filmId] ? { film: names[decoded.filmId], index: decoded.index } : null,
   };
 }
+
+export type PageWatch = { consoleErrors: string[]; failed: string[] };
+
+/**
+ * Collects the console errors, uncaught page errors and the 4xx/5xx answers of this app's own origin (the page,
+ * everything under /films, the committed hold keys under /images/reel and the framework files under /_next). A
+ * request to another host (the film CDN on a FILM_FRAMES=cdn run) is not looked at: it is not this app's to fix.
+ */
+export function watchPage(page: Page, baseURL: string): PageWatch {
+  const watch: PageWatch = { consoleErrors: [], failed: [] };
+  const origin = new URL(baseURL).origin;
+  page.on("console", (msg) => {
+    if (msg.type() === "error") watch.consoleErrors.push(msg.text());
+  });
+  page.on("pageerror", (err) => watch.consoleErrors.push(`pageerror: ${err.message}`));
+  page.on("response", (res) => {
+    const url = new URL(res.url());
+    const mine = url.origin === origin && (url.pathname === "/" || url.pathname.startsWith("/films/") || url.pathname.startsWith("/images/reel/") || url.pathname.startsWith("/_next/"));
+    if (mine && res.status() >= 400) watch.failed.push(`${res.status()} ${url.pathname}`);
+  });
+  return watch;
+}
+
+/** The engine's counters, a copy (null before the engine's effect has run). */
+export const readFilmStats = (page: Page) => page.evaluate(() => (window.__filmStats ? { ...window.__filmStats } : null));
+
+/** Loads the home page and waits until the film canvas has painted a first frame and the counters exist. */
+export async function openHome(page: Page, query = ""): Promise<void> {
+  await page.goto(`/${query}`, { waitUntil: "load" });
+  await page.locator("canvas[data-segment]").waitFor({ state: "attached" });
+  await page.waitForFunction(() => !!window.__filmStats && document.querySelector<HTMLCanvasElement>("canvas[data-segment]")?.dataset.frame !== undefined);
+}
+
+/**
+ * Waits until the film has come to rest: the canvas shows the frame the clock wants (painted = target segment and
+ * frame) and has stayed there, with the clock unchanged, for three looks 60 ms apart. Where that exact frame is
+ * never going to arrive (a phone loads only the even frames of a breathing tail on purpose) it also accepts a
+ * neighbour once nothing is in flight and nothing has changed for six looks. Resolves false after `timeoutMs`
+ * (the caller decides whether that is a failure). It reads the counters and the canvas hooks only; no threshold
+ * on how fast anything is.
+ */
+export function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
+  return page.evaluate(async (limit) => {
+    const t0 = performance.now();
+    let stable = 0;
+    let last = "";
+    while (performance.now() - t0 < limit) {
+      await new Promise((r) => setTimeout(r, 60));
+      const s = window.__filmStats;
+      const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]");
+      if (!s || !c) continue;
+      const key = `${c.dataset.reel}|${c.dataset.segment}|${c.dataset.frame}|${s.targetSeg}|${s.targetFrame}`;
+      const exact = s.paintedSeg === s.targetSeg && s.paintedFrame === s.targetFrame;
+      const resting = exact || (s.inflight === 0 && s.paintedSeg === s.targetSeg);
+      if (resting && key === last) {
+        if (++stable >= (exact ? 3 : 6)) return true;
+      } else {
+        stable = 0;
+      }
+      last = key;
+    }
+    return false;
+  }, timeoutMs);
+}
+
+/** The farthest the document scrolls (px). */
+export const maxScroll = (page: Page) => page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+
+/** The document scrolled sideways (it must not). */
+export const horizontalOverflow = (page: Page) =>
+  page.evaluate(() => ({
+    html: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    body: document.body.scrollWidth - document.documentElement.clientWidth,
+  }));

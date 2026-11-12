@@ -187,6 +187,11 @@ is not in either film), no double image (judge the 50 % shot at 200 %).
 **C21 Regression.** `/projects/<slug>` keeps the particle canvas, smooth scroll, no `[data-film-segment]`; Fraunces is loaded only where used (the homepage and the case-study pages), never on /book; client
 navigation back to `/` shows the reel with zero errors; ChapterFlow surfaces (`app/book/**`, ChapterFlow hosts) unchanged.
 
+## Lab gate (automated companion)
+`scripts/films/scrub-quality.mjs` (`npm run film:quality`) and the film specs (`npm run test:film`, placeholder frames) measure frame delivery,
+exact-frame share, stale time, memory and refetches on a local production build; read `docs/film-lab-gate.md`. They do not replace these
+checks (no pins, plates, contrast or joins). Quote their numbers in the report where a change touches loading, `FilmBackdrop` or `reel.ts`.
+
 ## Footage status
 Everything has landed (2026-10-14): final rack films with tails on both cameras, the real exit, the tower act with its `-p` crops and
 `tower.timeline.json` beats. Run the tails-on branches of C4, C6 and C11 and the real joins in C20; nothing is pending. If a check

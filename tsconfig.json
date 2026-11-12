@@ -38,7 +38,9 @@
     ".next-chapterflow/types/**/*.ts",
     ".next-chapterflow/dev/types/**/*.ts",
     ".next-film/types/**/*.ts",
-    ".next-film/dev/types/**/*.ts"
+    ".next-film/dev/types/**/*.ts",
+    ".next-film-cdn/types/**/*.ts",
+    ".next-film-cdn/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -10,7 +10,7 @@ import { defineConfig, devices } from "@playwright/test";
 // page then loads the real frames from the film CDN named in the manifests (a locally served page may do
 // that; it is how the site works), for a run that needs real footage.
 //
-// The server has its own build directory (.next-film), so it never disturbs a `.next` from `next dev`
+// The server has its own build directory (.next-film, or .next-film-cdn for FILM_FRAMES=cdn), so it never disturbs a `.next` from `next dev`
 // or `npm run build`. Locally an already running server on the port is reused: it is whatever it was
 // built as, so stop it when you switch between FILM_FRAMES modes or change the source.
 //
@@ -49,7 +49,7 @@ export default defineConfig({
     stdout: "ignore",
     stderr: "pipe",
     env: {
-      NEXT_DIST_DIR: ".next-film",
+      NEXT_DIST_DIR: REAL_FRAMES ? ".next-film-cdn" : ".next-film",
       // Inlined at build time (components/film/filmBase.ts). Empty = the manifests' own CDN base.
       NEXT_PUBLIC_FILM_BASE: REAL_FRAMES ? "" : "/films",
       NEXT_TELEMETRY_DISABLED: "1",

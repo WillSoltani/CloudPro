@@ -10,7 +10,8 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas) | `e2e/film-frames.ts` |
-| First spec | `e2e/film-smoke.spec.ts` |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts` |
+| Scroll-pass measurement (the lab gate script) | `scripts/films/scrub-quality.mjs` (`npm run film:quality`) |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
 | `?hud=1` overlay with the counters | `components/film/FilmHud.tsx` (mounted by `FilmBackdrop`, renders nothing without the flag) |
 | Counter spec | `e2e/film-stats.spec.ts` |
@@ -27,7 +28,8 @@ FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real 
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
 ```
 
-`npm run film:quality` runs `scripts/films/scrub-quality.mjs` (the scroll-pass measurement).
+`npm run film:quality -- <options>` runs `scripts/films/scrub-quality.mjs` against a server you started (see "Scroll-pass
+gate" below and the "Lab gate" section of `docs/cinematic-homepage.md`, which also holds the baseline and the targets).
 
 ## Placeholder frames
 
@@ -60,7 +62,30 @@ a stretch ends at the tick, or the paint between ticks, that shows the target ag
 
 Open the home page with `?hud=1` to see two lines of them, refreshed four times a second.
 
-## Not in the gate yet
+## The specs
 
-The scroll-pass measurements (`scripts/films/scrub-quality.mjs`) and the film specs that judge loading and
-memory come in later stages.
+All run on placeholder frames and have no timing thresholds: they scroll in half-viewport steps and wait for the film to come
+to rest (the canvas shows the frame the clock wants; where a phone never loads that exact frame, a neighbour once nothing is in
+flight and nothing changes) before they look.
+
+| Spec | What it checks |
+| --- | --- |
+| `film-smoke` | page 200, canvas paints, pixels name the frame, no 4xx/5xx, no console errors |
+| `film-stats` | the counters exist, move with a scroll and add up; reset zeroes counters and keeps gauges; HUD only with `?hud=1` |
+| `film-reel` | a full one-way pass at 390x844 (touch, portrait films) and 1440x900: every film of the reel is painted, the frame read back from the canvas pixels equals `data-frame`, refetches 0, no 4xx/5xx, no console errors; then back up, where the refetches are only recorded (printed and added to the test annotations), not asserted yet |
+| `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, no horizontal scroll bar at the top or at the end |
+| `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
+
+## Scroll-pass gate
+
+`scripts/films/scrub-quality.mjs` measures how well the film keeps up with a steady scroll. It needs a production server on
+`--base` (default `http://127.0.0.1:3006`) and refuses anything that is not localhost or 127.0.0.1 unless `--cap` and
+`--allow-remote` are both given. It is not part of CI yet and enforces no thresholds unless `--assert` is given. Columns, options,
+the baseline and the plan's targets: "Lab gate" in `docs/cinematic-homepage.md`.
+
+```
+npm run film:quality -- --profiles desktop,iphone,slowphone --back --json out.json
+```
+
+With `FILM_FRAMES=cdn` the Playwright build goes to `.next-film-cdn` (real frames from the film CDN), so it never overwrites the
+placeholder build in `.next-film`.
