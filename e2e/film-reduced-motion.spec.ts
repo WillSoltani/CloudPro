@@ -23,16 +23,15 @@ test("with reduced motion the canvas paints stills and the page scrolls to the e
   for (let y = 0; ; y = Math.min(end, y + step)) {
     await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
     expect(await settle(page), `settles at y=${y}`).toBe(true);
-    const painted = await page.evaluate(() => {
+    // The hook and the pixels in one read (readPaintedFrame), so they describe the same paint.
+    const px = PLACEHOLDER_RUN ? await readPaintedFrame(page) : null;
+    const painted = px?.hook ?? (await page.evaluate(() => {
       const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]")!;
       return { segment: c.dataset.segment ?? "", frame: Number(c.dataset.frame) };
-    });
+    }));
     if (!perFilm.has(painted.segment)) perFilm.set(painted.segment, new Set());
     perFilm.get(painted.segment)!.add(painted.frame);
-    if (PLACEHOLDER_RUN) {
-      const px = await readPaintedFrame(page);
-      if (!px?.pixels || px.pixels.film !== painted.segment || px.pixels.index !== painted.frame) mismatches.push(`y=${y}: ${painted.segment}#${painted.frame}`);
-    }
+    if (px && (!px.pixels || px.pixels.film !== painted.segment || px.pixels.index !== painted.frame)) mismatches.push(`y=${y}: ${painted.segment}#${painted.frame}`);
     if (y >= end) break;
   }
 

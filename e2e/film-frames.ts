@@ -49,33 +49,56 @@ export type PaintedFrame = {
 };
 
 /**
- * The film and frame the canvas shows, from its hooks and (on placeholder frames) from its pixels. The
- * placeholder row sits on the reel's focus point, which the cover fit maps to the same share of the canvas
- * whatever the crop; it is mapped through the same fit anyway, from the frame's size (the painted tier's
- * width, the manifest's aspect).
+ * Where the 18 placeholder cells sit in a frame, for every film and tier the manifests declare, keyed
+ * `<film>|<tier width>`. The page cannot import scripts/films/placeholder-layout.mjs, so the geometry is worked out here,
+ * with the same cellCentres() the generator draws with, and handed to the page as data. A frame is `tier width` px
+ * wide and `round(width / aspect)` px tall (the same rule the generator uses).
+ */
+type CellGeometry = { centres: { x: number; y: number }[]; halfW: number; halfH: number; fh: number };
+let geometryCache: Record<string, CellGeometry> | null = null;
+function cellGeometry(): Record<string, CellGeometry> {
+  if (geometryCache) return geometryCache;
+  const table: Record<string, CellGeometry> = {};
+  for (const name of filmNames()) {
+    const m = readManifest(name);
+    for (const fw of m.widths) {
+      const fh = Math.round(fw / m.aspect);
+      table[`${name}|${fw}`] = { ...cellCentres(fw, fh), fh };
+    }
+  }
+  return (geometryCache = table);
+}
+
+/**
+ * The film and frame the canvas shows, from its hooks and (on placeholder frames) from its pixels.
+ *
+ * The hooks and the pixels are read in ONE page.evaluate, one synchronous block, so they describe the same paint:
+ * the engine's draw() writes the pixels and the three data attributes in one synchronous block too (FilmBackdrop.tsx),
+ * so nothing can paint between the two reads. (Two separate evaluates let a repaint, a nearer frame arriving, land
+ * between them: the hook then named the old frame and the pixels the new one.) Only the sampling happens in the page;
+ * the decoding is placeholder-layout.mjs decodeLumas().
+ *
+ * The placeholder row sits on the reel's focus point, which the cover fit maps to the same share of the canvas
+ * whatever the crop; it is mapped through the same fit anyway (components/film/filmBase.ts coverRect), from the
+ * frame's size (the painted tier's width, the manifest's aspect).
  */
 export async function readPaintedFrame(page: Page): Promise<PaintedFrame | null> {
-  const probe = await page.evaluate(() => {
-    const canvas = document.querySelector<HTMLCanvasElement>("canvas[data-segment]");
-    if (!canvas || canvas.dataset.frame === undefined) return null;
-    return { segment: canvas.dataset.segment ?? "", frame: Number(canvas.dataset.frame), width: Number(canvas.dataset.width) };
-  });
-  if (!probe) return null;
-  const manifest = readManifest(probe.segment);
-  const fw = probe.width;
-  const fh = Math.round(fw / manifest.aspect);
-  const { centres, halfW, halfH } = cellCentres(fw, fh);
-  const lumas = await page.evaluate(
-    ({ centres, fw, fh, focus, halfW, halfH }) => {
+  const read = await page.evaluate(
+    ({ geometry, focus }) => {
       const canvas = document.querySelector<HTMLCanvasElement>("canvas[data-segment]");
-      const ctx = canvas?.getContext("2d");
-      if (!canvas || !ctx) return null;
-      // The cover fit (components/film/filmBase.ts coverRect) on the canvas's device pixels.
+      if (!canvas || canvas.dataset.frame === undefined) return null;
+      const hook = { segment: canvas.dataset.segment ?? "", frame: Number(canvas.dataset.frame), width: Number(canvas.dataset.width) };
+      const ctx = canvas.getContext("2d");
+      const g = geometry[`${hook.segment}|${hook.width}`];
+      if (!ctx || !g) return { hook, lumas: null };
+      // The cover fit on the canvas's device pixels.
+      const fw = hook.width;
+      const fh = g.fh;
       const scale = Math.max(canvas.width / fw, canvas.height / fh);
       const left = (canvas.width - fw * scale) * focus[0];
       const top = (canvas.height - fh * scale) * focus[1];
-      const r = Math.max(1, Math.floor(Math.min(halfW, halfH) * scale * 0.5));
-      return centres.map((c) => {
+      const r = Math.max(1, Math.floor(Math.min(g.halfW, g.halfH) * scale * 0.5));
+      const lumas = g.centres.map((c) => {
         const x = Math.round(left + c.x * scale);
         const y = Math.round(top + c.y * scale);
         if (x - r < 0 || y - r < 0 || x + r > canvas.width || y + r > canvas.height) return -1;
@@ -84,13 +107,15 @@ export async function readPaintedFrame(page: Page): Promise<PaintedFrame | null>
         for (let i = 0; i < d.length; i += 4) sum += d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
         return sum / (d.length / 4);
       });
+      return { hook, lumas };
     },
-    { centres, fw, fh, focus: [...FOCUS], halfW, halfH },
+    { geometry: cellGeometry(), focus: [...FOCUS] },
   );
-  const decoded = lumas && lumas.every((l) => l >= 0) ? decodeLumas(lumas) : null;
+  if (!read) return null;
+  const decoded = read.lumas && read.lumas.every((l) => l >= 0) ? decodeLumas(read.lumas) : null;
   const names = filmNames();
   return {
-    hook: probe,
+    hook: read.hook,
     pixels: decoded && names[decoded.filmId] ? { film: names[decoded.filmId], index: decoded.index } : null,
   };
 }

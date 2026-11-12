@@ -211,7 +211,9 @@ list and where the engine updates each: `docs/film-lab-gate.md`.
 **Baseline** (before any loader change). 2026-11-12, run (b): real frames from the film CDN, local production build with
 `NEXT_DIST_DIR=.next-film-cdn` on 127.0.0.1:3007, `--back`, engine at commit `cd419d7e` (the gate adds counters only), Apple M1
 laptop, macOS 26.5, Node 20.20.2, Playwright 1.62.1, other work running on the machine. Network figures are Playwright request
-events for the leg (the scroll plus 3 s); "film frames" are `f_NNNN.webp` requests.
+events for the leg (the scroll plus 3 s); "film frames" are `f_NNNN.webp` requests. The run predates the clean leg boundary of the
+script (with `--back` the pass leg now includes the 1 s rest before the return leg, and network and engine figures are closed together and
+reset together), so the pass column's network figures of this run include that second but its engine figures do not.
 
 | | desktop | iphone | slowphone |
 | --- | ---: | ---: | ---: |

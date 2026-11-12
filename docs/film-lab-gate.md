@@ -9,7 +9,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | --- | --- |
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
-| Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas) | `e2e/film-frames.ts` |
+| Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
 | Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts` |
 | Scroll-pass measurement (the lab gate script) | `scripts/films/scrub-quality.mjs` (`npm run film:quality`) |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
@@ -80,6 +80,9 @@ Open the home page with `?hud=1` to see two lines of them, refreshed four times 
 
 ## The specs
 
+Where a spec compares the pixels with `data-frame`, both come from one `page.evaluate` (`readPaintedFrame`): `draw()` writes the pixels and the
+hooks in one synchronous block, so one synchronous read sees one paint. Two evaluates let a repaint land between them.
+
 All run on placeholder frames and have no timing thresholds: they scroll in half-viewport steps and wait for the film to come
 to rest (the canvas shows the effective target, or any frame of the target segment once nothing is in flight and nothing
 changes) before they look.
@@ -96,7 +99,8 @@ changes) before they look.
 
 `scripts/films/scrub-quality.mjs` measures how well the film keeps up with a steady scroll. It needs a production server on
 `--base` (default `http://127.0.0.1:3006`) and refuses anything that is not localhost or 127.0.0.1 unless `--cap` and
-`--allow-remote` are both given. It is not part of CI yet and enforces no thresholds unless `--assert` is given. Columns, options,
+`--allow-remote` are both given. It is not part of CI yet and enforces no thresholds unless `--assert` is given. Each leg's network and engine figures are closed together and reset together (with `--back`, the pass leg includes the 1 s rest
+before the return leg). Columns, options,
 the baseline and the plan's targets: "Lab gate" in `docs/cinematic-homepage.md`.
 
 ```

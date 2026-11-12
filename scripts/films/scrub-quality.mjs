@@ -32,12 +32,12 @@
  * dot path into a profile's result in the JSON output, for example "pass.exactShare" or "back.requests"
  * ("*" applies to every profile). A missing value fails. None are enforced by default yet.
  *
- * What is measured, per leg ("load" = before the first scroll, "pass" = the pass down plus 3 s of tail,
- * "back" = the pass up plus 3 s of tail). Network figures are Playwright's request events (WebKit answers a
- * repeat load from its memory cache without one, so "engine requests", the page's own count of frames asked
- * for, sits beside them); "film frames" are requests for <film>/<width>/f_NNNN.<ext>; MB is 10^6 bytes of
- * response bodies. Counter figures come from
- * window.__filmStats, reset right before each pass:
+ * What is measured, per leg ("load" = before the first scroll, "pass" = the pass down plus 3 s of tail, and with
+ * --back one more second of rest before the return leg, "back" = the pass up plus 3 s of tail). A leg's network and
+ * engine figures are closed at the same moment and the next leg starts from a reset of both. Network figures are
+ * Playwright's request events (WebKit answers a repeat load from its memory cache without one, so "engine
+ * requests", the page's own count of frames asked for, sits beside them); "film frames" are requests for <film>/<width>/f_NNNN.<ext>; MB is 10^6 bytes of
+ * response bodies. Counter figures come from window.__filmStats, reset right before each pass:
  *   exact %          share of canvas paints that showed the effective target (the target frame, or where the
  *                    engine never loads it by design, e.g. an odd tail frame on a phone, the nearest frame it does)
  *   stale %          share of clock ticks after which the canvas did not show the effective target
@@ -128,12 +128,11 @@ const FRAME_RE = /\/\d+\/f_\d+\.(webp|avif|jpe?g|png)$/i;
 
 // ---- in the page -----------------------------------------------------------------------------------------
 
-/** Runs in the page: reset the counters, scroll steadily, then watch for the exact frame. */
+/** Runs in the page: scroll steadily, then watch for the exact frame. The counters were reset by the caller just before (runLeg). */
 async function pagePass({ dir, speed, limitMs, settleLimitMs }) {
   const root = document.documentElement;
   const maxY = () => root.scrollHeight - window.innerHeight;
   if (!window.__filmStats || !window.__filmStatsReset) throw new Error("window.__filmStats is missing: not the film home page, or a build without the counters");
-  window.__filmStatsReset();
   const startedAt = performance.now();
   let last = startedAt;
   let y = window.scrollY;
@@ -217,7 +216,8 @@ async function measureProfile(name) {
   const speed = opts.speed ?? prof.speed;
   const browser = await browserFor(prof.engine);
   const ctx = await browser.newContext(prof.context);
-  const legs = { load: newLeg(), pass: newLeg(), back: newLeg() };
+  // "between" collects the few events that fall between closing one leg and opening the next; it is not reported.
+  const legs = { load: newLeg(), pass: newLeg(), back: newLeg(), between: newLeg() };
   let phase = "load";
   const seenFrames = new Set();
   const legOf = new WeakMap();
@@ -300,20 +300,27 @@ async function measureProfile(name) {
     longSupported: window.__lab.longSupported,
   }));
 
-  async function runLeg(leg, dir) {
+  /**
+   * One leg: reset the engine counters and open the leg's network bucket at the same moment, scroll, wait out the tail
+   * (plus `restMs`, a rest before the next leg, which belongs to this leg), then close the network bucket and read the
+   * engine counters together, so both describe the same window. The next leg starts from a reset of both.
+   */
+  async function runLeg(leg, dir, restMs = 0) {
+    await page.evaluate(() => {
+      if (!window.__filmStats || !window.__filmStatsReset) throw new Error("window.__filmStats is missing: not the film home page, or a build without the counters");
+      window.__filmStatsReset();
+    });
     phase = leg;
     const pass = await page.evaluate(pagePass, { dir, speed, limitMs: SCROLL_LIMIT_MS, settleLimitMs: SETTLE_LIMIT_MS });
-    await page.waitForTimeout(TAIL_MS);
+    await page.waitForTimeout(TAIL_MS + restMs);
+    phase = "between";
     const after = await page.evaluate(() => ({ stats: { ...window.__filmStats }, long: window.__lab.long.slice(), now: performance.now() }));
     return { pass, after };
   }
 
   const raw = {};
-  raw.pass = await runLeg("pass", 1);
-  if (opts.back) {
-    await page.waitForTimeout(1000);
-    raw.back = await runLeg("back", -1);
-  }
+  raw.pass = await runLeg("pass", 1, opts.back ? 1000 : 0);
+  if (opts.back) raw.back = await runLeg("back", -1);
   phase = "done";
   await Promise.all(sizeJobs);
   await ctx.close();
