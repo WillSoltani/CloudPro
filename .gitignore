@@ -12,9 +12,14 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
 # next.js
 /.next/
+/.next-film/
 /out/
 
 # production
@@ -57,6 +62,7 @@ infra/lib/lambdas/*/node_modules/
 # Built film frames live on S3 + CloudFront; only each film's manifest is committed
 /public/films/*/*
 !/public/films/*/manifest.json
+# (the generated placeholder frames' marker, public/films/<name>/.placeholder.json, is covered by /public/films/*/*)
 infra/dist/
 
 # Python caches and merge leftovers under scripts/films
