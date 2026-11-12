@@ -91,6 +91,12 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=optional
 
+      - name: Install sharp for the placeholder generator (this job only)
+        # sharp encodes the placeholder frames. It is deliberately not in package.json or the lockfile:
+        # there it would pull the Linux libvips binaries into every Linux install, production included,
+        # and next/image would start using it. --no-save leaves package.json and the lockfile untouched.
+        run: npm install --no-save sharp@0.34.5
+
       - name: Cache placeholder frames
         id: film-placeholders
         uses: actions/cache@v4

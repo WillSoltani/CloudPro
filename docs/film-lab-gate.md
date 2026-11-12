@@ -33,6 +33,11 @@ gate" below and the "Lab gate" section of `docs/cinematic-homepage.md`, which al
 
 ## Placeholder frames
 
+The generator needs `sharp`, which is deliberately not a declared dependency: declared, its Linux binaries would
+install in production too and `next/image` would start using it. Next carries it as an optional dependency, which is
+enough on a Mac. CI runs `npm install --no-save sharp@0.34.5` first; do the same on a machine where
+`npm run film:placeholder` cannot load sharp.
+
 - One file per frame and width at the real pixel size, lossless WebP, a few hundred bytes each.
   Every film in `public/films/*/manifest.json` is covered: frames, the poster the manifest names. The hold
   keys are `/images/reel/*.webp` (committed stills), so there is nothing to generate for them.

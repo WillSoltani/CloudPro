@@ -26,6 +26,8 @@
  *   - a directory whose marker matches and whose files are all there is left alone (no-op);
  *   - --clean removes the width directories, the poster and the marker of a directory it wrote, never the
  *     manifest, and refuses a directory of real frames unless --force.
+ * Needs sharp, which is not a declared dependency (next carries it as an optional one, enough on a Mac). CI
+ * runs `npm install --no-save sharp@0.34.5` before this; do the same on a machine without a working sharp.
  * Output is gitignored (/public/films/*\/* but manifest.json), so nothing here can be committed by accident.
  */
 
