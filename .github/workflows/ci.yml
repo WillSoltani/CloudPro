@@ -103,6 +103,9 @@ jobs:
           # when it finds them).
           key: ${{ runner.os }}-film-placeholders-${{ hashFiles('public/films/*/manifest.json', 'scripts/films/placeholder.mjs', 'scripts/films/placeholder-layout.mjs', 'package-lock.json') }}
 
+      - name: Film engine unit tests (counters)
+        run: npm run test:film-unit
+
       - name: Generate placeholder frames
         run: npm run film:placeholder
 

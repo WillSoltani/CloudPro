@@ -11,6 +11,9 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas) | `e2e/film-frames.ts` |
 | First spec | `e2e/film-smoke.spec.ts` |
+| Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
+| `?hud=1` overlay with the counters | `components/film/FilmHud.tsx` (mounted by `FilmBackdrop`, renders nothing without the flag) |
+| Counter spec | `e2e/film-stats.spec.ts` |
 | CI job | `film` in `.github/workflows/ci.yml` ("Film specs (placeholder frames)") |
 
 ## Commands
@@ -18,6 +21,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 ```
 npm run film:placeholder      # write the stand-ins under public/films (a second run does nothing)
 npm run test:film             # Playwright, chromium, placeholder frames
+npm run test:film-unit        # node:test, the counters' pure helpers
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
@@ -41,6 +45,20 @@ node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
 - The page is built with `NEXT_PUBLIC_FILM_BASE=/films`, so frames and posters are served from `public/films`.
   If the production server was started earlier in another mode (placeholders or `FILM_FRAMES=cdn`), stop it:
   locally `reuseExistingServer` keeps it.
+
+## Counters
+
+`components/film/FilmBackdrop.tsx` keeps `window.__filmStats` (type `FilmStats` in `components/film/filmStats.ts`)
+up to date where it already does the work; it only writes the object, never reads it back, so the film behaves
+exactly as without it. `mode` is `"legacy"` for this loader. Counters (requests, refetches, decodes, failures,
+draws split into exact and fallback paints with their summed distance, ticks, stale ticks, stale ms and the
+longest stale stretch, held paints, canvas resizes, measures) grow until `window.__filmStatsReset()`; gauges
+(in flight, frames alive, decoded MB, target and painted segment and frame, tier width) always describe now, and
+a reset restarts the peaks from them. A refetch is a request for a film, width and index already requested in
+this page load. Stale means the canvas does not show the target frame of the target segment after a clock tick;
+a stretch ends at the tick, or the paint between ticks, that shows the target again.
+
+Open the home page with `?hud=1` to see two lines of them, refreshed four times a second.
 
 ## Not in the gate yet
 
