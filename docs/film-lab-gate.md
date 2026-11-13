@@ -17,6 +17,8 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Counter spec | `e2e/film-stats.spec.ts` |
 | Canvas backing size (`backingSize`, `growCap`, `?backing=full`) and its unit tests | `components/film/backing.ts`, `backing.test.ts`; spec `e2e/film-backing.spec.ts` |
 | Frame loader interface and the legacy loader, its unit tests | `components/film/loader/types.ts`, `legacy.ts`, `legacy.test.ts` (see "The frame loader") |
+| Rules every loader shares (usable frames, network class), their unit tests | `components/film/loader/usable.ts`, `network.ts`, `shared.test.ts` |
+| The budget loader's pure planner and byte arithmetic (not wired yet), their unit tests | `components/film/loader/budget-plan.ts`, `budget-bytes.ts`, `budget-plan.test.ts`, `budget-bytes.test.ts` |
 | CI job | `film` in `.github/workflows/ci.yml` ("Film specs (placeholder frames)") |
 
 ## Commands
@@ -64,14 +66,27 @@ request and one main-thread decode per frame, 6 in flight, nearest-first ranking
 except frames 0, M and last), with unit tests in `components/film/loader/legacy.test.ts` (fake Image, run by
 `npm run test:film-unit`). `FilmBackdrop` picks the loader in one place in its effect, `const loader = createLegacyLoader(...)`;
 that is where another loader is selected (a later stage adds a `?loader=...` flag there). A loader reports through the
-narrow `LoaderStats` hook (requests with refetches, decodes, failures, in flight, frames alive and their bytes), so
-`window.__filmStats` keeps the same meaning whichever loader runs, and `mode` names it (`"legacy"`).
+narrow `LoaderStats` hook (requests with refetches, decodes, failures, in flight, frames alive and their bytes; for a loader
+that reserves decodes and keeps compressed bytes also decode start and end, bytes held, its budget and a change of name),
+turned into `window.__filmStats` by the one adapter `loaderStatsFor` in `filmStats.ts`, so the counters keep the same
+meaning whichever loader runs, and `mode` names it (`"legacy"`; it may change at run time). The interface also carries a
+width-change signal (`onWidth`: a slow-network retier; the canvas backing cap follows it), page visibility and
+online/offline (`visibility`, `network`; the legacy loader ignores both), and the rules no loader re-implements: the usable
+frames (`isUsable`, `usable.ts`) and the network class (Save-Data, slow connection, the timed hero frames: `network.ts`).
+`FilmBackdrop` reuses one `WantPlan` object between ticks; a loader never keeps a reference to it.
+
+The budget loader (stage 4) is planned by `budget-plan.ts` (`createBudgetPlanner`: the wanted set within a decoded-byte
+budget, the fetch order, eviction, the compressed-byte cap, retries; no DOM, fetch or worker; its header says how a loader
+drives it) with the byte rules in `budget-bytes.ts` (`pickFrameBudgetBytes`, `?budget=<MB>`, frames per tier). It is not
+wired into `FilmBackdrop` yet.
 
 ## Counters
 
 `components/film/FilmBackdrop.tsx` keeps `window.__filmStats` (type `FilmStats` in `components/film/filmStats.ts`)
 up to date where it already does the work; it only writes the object, never reads it back, so the film behaves
-exactly as without it. `mode` is `"legacy"` for this loader. Counters (requests, refetches, decodes, failures,
+exactly as without it. `mode` is `"legacy"` for this loader. The budget loader's counters (redecodes, worker and
+main-thread decodes with their mean ms, decodes in flight and their peak, compressed bytes held and their peak, the budget)
+are 0 under the legacy loader. Counters (requests, refetches, decodes, failures,
 draws split into exact and fallback paints with their summed distance, ticks, stale ticks, stale ms and the
 longest stale stretch, held paints, canvas resizes, measures) grow until `window.__filmStatsReset()`; gauges
 (in flight, frames alive, decoded MB, target, effective and painted segment and frame, tier width, canvas backing
