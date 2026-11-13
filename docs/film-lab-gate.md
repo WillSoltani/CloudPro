@@ -120,8 +120,9 @@ separate step done by whoever owns the bucket); (3) `npm run film:pack -- --chec
 gate in Chromium and WebKit against a local production build that reads the packs from the CDN (built without `NEXT_PUBLIC_FILM_BASE`, e.g.
 `NEXT_DIST_DIR=.next-film-cdn`; no `?packorigin=`): `npm run film:quality -- --profiles desktop,iphone,slowphone --assert
 scripts/films/packs-live.assert.json`, which fails unless every profile read packs before the first scroll and through the pass with
-no per-frame file request, no film fallen back to files, at most 30 film data requests and no console error; (5) only then merge
-the manifests and deploy. A new or re-cut film gets a new name (frames are immutable) and its packs built the same way;
+no per-frame file request, no film fallen back to files, at most 30 film data requests and no console error (checked on
+2026-11-13 before the upload, desktop against the CDN: it failed as it should, all 8 films fallen back to 1,387 frame files);
+(5) only then merge the manifests and deploy. A new or re-cut film gets a new name (frames are immutable) and its packs built the same way;
 `build-film.sh` writes a manifest without `packs`, which is correct until the packs exist.
 
 **Measuring packs before they are uploaded (lab only).** `node scripts/films/pack-serve.mjs [--root <out tree>] [--port 3008]
