@@ -56,6 +56,7 @@
 import { chromium, webkit, devices } from "@playwright/test";
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
+import { legBucket } from "./leg-bucket.mjs";
 
 const require = createRequire(import.meta.url);
 const PLAYWRIGHT_VERSION = require("@playwright/test/package.json").version;
@@ -229,8 +230,8 @@ async function measureProfile(name) {
     await ctx.route("**/*", (route) => {
       if (++requestsSeen > opts.cap) {
         capped = true;
-        legs[phase].aborted++;
-        if (FRAME_RE.test(new URL(route.request().url()).pathname)) legs[phase].abortedFrames++;
+        legBucket(legs, phase).aborted++;
+        if (FRAME_RE.test(new URL(route.request().url()).pathname)) legBucket(legs, phase).abortedFrames++;
         return route.abort();
       }
       return route.continue();
@@ -250,7 +251,7 @@ async function measureProfile(name) {
   const page = await ctx.newPage();
 
   page.on("request", (req) => {
-    const leg = legs[phase];
+    const leg = legBucket(legs, phase);
     legOf.set(req, leg);
     leg.requests++;
     const path = new URL(req.url()).pathname;
@@ -273,12 +274,12 @@ async function measureProfile(name) {
     );
   });
   page.on("response", (res) => {
-    if (res.status() >= 400) legs[phase].failedResponses++;
+    if (res.status() >= 400) legBucket(legs, phase).failedResponses++;
   });
   page.on("console", (m) => {
-    if (m.type() === "error") legs[phase].errors.push(m.text().slice(0, 200));
+    if (m.type() === "error") legBucket(legs, phase).errors.push(m.text().slice(0, 200));
   });
-  page.on("pageerror", (e) => legs[phase].errors.push(`pageerror: ${String(e).slice(0, 200)}`));
+  page.on("pageerror", (e) => legBucket(legs, phase).errors.push(`pageerror: ${String(e).slice(0, 200)}`));
 
   if (prof.throttle) {
     const cdp = await ctx.newCDPSession(page);
