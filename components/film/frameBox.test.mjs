@@ -1,6 +1,6 @@
 // Tests for components/film/frameBox.ts (pure; the CSS it writes is evaluated here numerically and checked
-// against filmBase coverRect, the canvas's own fit). Run from the repo root:
-//   node --experimental-strip-types --test components/film/frameBox.test.mjs
+// against filmBase coverRect, the canvas's own fit). Run: npm run test:film-unit (with the other film unit tests), or
+// alone from the repo root: node --experimental-strip-types --test components/film/frameBox.test.mjs
 // (A .mjs file is outside tsconfig's include, so tsc never sees the `.ts` import specifiers.)
 import test from "node:test";
 import assert from "node:assert/strict";

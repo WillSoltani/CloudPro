@@ -17,7 +17,7 @@
     "film:quality": "node scripts/films/scrub-quality.mjs",
     "film:pack": "node scripts/films/pack.mjs",
     "test:film": "playwright test --project=chromium",
-    "test:film-unit": "tsx --test components/film/*.test.ts components/film/loader/*.test.ts scripts/films/*.test.mjs",
+    "test:film-unit": "tsx --test components/film/*.test.ts components/film/*.test.mjs components/film/loader/*.test.ts scripts/films/*.test.mjs",
     "test:film:safari": "PW_WEBKIT=1 playwright test --project=webkit"
   },
   "dependencies": {
