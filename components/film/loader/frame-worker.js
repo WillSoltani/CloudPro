@@ -20,9 +20,11 @@
  * On `init` the store answers `ready: false` when it lacks fetch, Blob or createImageBitmap.
  *
  * PACK READS (stage 7, `pack` / `pack-to` / `pack-stop` / `pack-forget`): one PackBytes (./pack-format.mjs) per pack
- * URL keeps the header and the bytes of frames still arriving. A read starts at the first byte not held: from byte 0 a
- * plain GET (no Range header, so a complete 200 can be stored by the HTTP cache), else `Range: bytes=n-`; it stops
- * (abort) before the next byte held, at its `to`, or when the page says. A 206 must name the range asked for in a
+ * URL keeps the header and the bytes of frames still arriving. A read starts at the first byte not held. Only a read from
+ * byte 0 to the end of the file is a plain GET (no Range header, so a complete 200 can be stored by the HTTP cache); a
+ * read that stops before the end of the file asks for that closed range (`Range: bytes=n-m`; before the header is known,
+ * up to the page's estimate `est`), and one from a later byte to the end asks for `bytes=n-`. It stops (abort) before
+ * the next byte held, at its `to`, or when the page says. A 206 must name the range asked for in a
  * readable Content-Range; where that header is unreadable, its Content-Length (or, failing that, the bytes of a body
  * read to its end) must match. A 200 to a Range request is the whole file from byte 0: the bytes held already are
  * counted as read twice and skipped, and the pack is read from 0 from then on (`rangeless`). Each frame whose bytes are

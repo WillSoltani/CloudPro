@@ -56,8 +56,9 @@ export type PackFailure =
   /** Worth another try: a network error, a 408/429/5xx answer, a body that ended early. */
   | "retry"
   /**
-   * The pack cannot be read here: a 404/410/416 or another final status, a header that fails its check, a 206 whose
-   * Content-Range (or, unreadable, its byte count) disagrees with the range asked for, a body that cannot be streamed.
+   * The pack cannot be read here: a 403 (the film CDN, for a pack it does not hold), 404, 410, 416 or another final
+   * status, a header that fails its check, a 206 whose Content-Range (or, unreadable, its byte count) disagrees with the
+   * range asked for, a body that cannot be streamed.
    */
   | "final";
 

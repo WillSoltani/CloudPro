@@ -111,7 +111,7 @@ frame files after about 1.2 s; `--check-cdn` checks that answer. The film CDN an
 `Access-Control-Allow-Methods: GET,HEAD,OPTIONS`, max age 3600.
 
 **Shipping packs: upload first, deploy after.** A manifest that names a pack the CDN does not hold makes every first visit
-ask for it, get a 404 and fall back to one file per frame (correct, but slower than today's idle gate by one wasted request), so
+ask for it, get a 403 (the film CDN's answer for an object it does not hold; final after one request, as a 404 is) and fall back to one file per frame (correct, but slower than today's idle gate by one wasted request), so
 the order is: (1) build with `npm run film:pack -- --from-cdn <film>|--all --write-manifest` (the output goes to the `--out` tree,
 never into git; the manifest entries are the only committed change) and `--verify` it; (2) the packs are uploaded to the
 films bucket under the same path as the output tree (`films/<name>/<width>/pack-<hash>.bin`, `Cache-Control: public,
@@ -126,7 +126,7 @@ no per-frame file request, no film fallen back to files, at most 30 film data re
 `build-film.sh` writes a manifest without `packs`, which is correct until the packs exist.
 
 **Measuring packs before they are uploaded (lab only).** `node scripts/films/pack-serve.mjs [--root <out tree>] [--port 3008]
-[--log f]` serves the built packs on 127.0.0.1 with the CDN's behaviour for them (`Access-Control-Allow-Origin: *`, the exposed
+[--log f]` serves the built packs (`--root`, default `films-src/packs` under the repository root: the tree `npm run film:pack` writes by default) on 127.0.0.1 with the CDN's behaviour for them (`Access-Control-Allow-Origin: *`, the exposed
 headers, `Accept-Ranges`, 206 with `Content-Range`, strong ETag, `immutable`, a one hour preflight; nothing else is served). A page
 on `127.0.0.1` or `localhost` with **`?packorigin=http://127.0.0.1:3008`** reads its packs from there (same path, other origin)
 while the frames stay where the manifest puts them (`select.ts` `packOriginFromQuery`: ignored on any other page host and for any
@@ -164,7 +164,7 @@ the whole file on a fast link; continuing later is a Range read from the first b
 next byte held, at its end, or when the planner says. A 206 must carry a readable Content-Range naming the start asked for and
 the pack's total; where that header is unreadable, its Content-Length (or the bytes of a body read to its end) must match. A 200
 to a Range request is the whole file from byte 0: the bytes held already are counted as read twice and skipped, and the pack is
-read from byte 0 from then on. A 404/410/416 or another final status, a header that fails its check (`parsePackHeader`), a
+read from byte 0 from then on. A 403 (the film CDN's answer for a pack it does not hold), 404, 410, 416 or another final status, a header that fails its check (`parsePackHeader`), a
 mismatched range or a body that cannot be streamed are final; a network error, a 408/429/5xx or a body that ends early is
 retried after 400 ms, then 800 ms. Three failed reads in a row with no frame delivered, or one final failure, give the pack up.
 

@@ -56,8 +56,9 @@ import type { FrameLoader, HeldFrame, LoaderEnv } from "./types";
  * file instead of one file per frame, unless the page asked `?pack=0` (`packs: false`) or plays reduced-motion stills
  * (five frames do not need the film). The planner says which pack reads run and over which bytes (budget-plan.ts
  * `nextPackOp`); the store runs them (frame-worker.js) and puts each frame it cuts out under the same key a fetch of it
- * would have used, so the planner, the decodes and the cap see a frame's bytes arrive either way. A pack that 404s,
- * fails its header check or fails PACK_TRIES times is given up: that film's missing frames are then fetched as files,
+ * would have used, so the planner, the decodes and the cap see a frame's bytes arrive either way. A pack whose server
+ * gives a final answer (the film CDN answers 403 for a pack it does not hold, other servers 404), that fails its header
+ * check or that fails PACK_TRIES times is given up: that film's missing frames are then fetched as files,
  * and the frames the pack delivered stay. Counters: `stats.packRequested`, `packBytes`, `packFilms`, `framesArrived`.
  */
 

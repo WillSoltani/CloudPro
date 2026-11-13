@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// LAB ONLY: serves built packs from a local output tree (default /Users/radinsoltani/cf-wt/cloudpro-packs-out, the tree
-// `npm run film:pack` writes) on 127.0.0.1, with the film CDN's behaviour for them: Access-Control-Allow-Origin: *,
+// LAB ONLY: serves built packs from a local output tree (default films-src/packs under the repository root, the tree
+// `npm run film:pack` writes by default) on 127.0.0.1, with the film CDN's behaviour for them: Access-Control-Allow-Origin: *,
 // Access-Control-Expose-Headers (Content-Range, Content-Length, ETag, Accept-Ranges), Accept-Ranges, a 206 with a
 // Content-Range on a Range request, a strong ETag, `immutable`, and a one hour preflight. Only
 // /films/<name>/<width>/pack-<8 hex>.bin is served; everything else is 404.
@@ -15,6 +15,9 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/** The default --root: the builder's own default output tree (scripts/films/pack.mjs --out), films-src/packs under the repository root. */
+export const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "films-src", "packs");
 
 /** Answers one request for `data`: the CDN's headers, Range as 206, a 416 past the end. Pure of any server state. */
 export function answer(method, headers, data, etag) {
@@ -98,7 +101,7 @@ export function startPackServer({ root, port, log }) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const args = process.argv.slice(2);
   const opt = (n, d) => (args.includes(n) ? args[args.indexOf(n) + 1] : d);
-  const root = path.resolve(opt("--root", "/Users/radinsoltani/cf-wt/cloudpro-packs-out"));
+  const root = path.resolve(opt("--root", DEFAULT_ROOT));
   const port = Number(opt("--port", "3008"));
   const logFile = opt("--log", null);
   await startPackServer({ root, port, log: logFile ? fs.createWriteStream(logFile, { flags: "a" }) : null });

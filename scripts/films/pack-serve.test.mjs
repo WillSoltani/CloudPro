@@ -1,10 +1,18 @@
 // Tests for the lab pack server's answers (scripts/films/pack-serve.mjs). Run: npm run test:film-unit
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { answer } from "./pack-serve.mjs";
+import path from "node:path";
+import { REPO } from "./pack-lib.mjs";
+import { answer, DEFAULT_ROOT } from "./pack-serve.mjs";
 
 const data = Buffer.from("0123456789");
 const E = '"abc"';
+
+describe("pack-serve default root", () => {
+  it("is the builder's default output tree (pack.mjs --out), films-src/packs under the repository root", () => {
+    assert.equal(DEFAULT_ROOT, path.join(REPO, "films-src", "packs"));
+  });
+});
 
 describe("pack-serve answer", () => {
   it("a plain GET is a 200 with the CDN's headers", () => {
