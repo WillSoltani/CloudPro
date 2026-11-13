@@ -81,6 +81,13 @@ function expectLayersStill(base: Snap, s: Snap, label: string): void {
   const mid = (s.band!.y0 + s.band!.y1) / 2;
   expect(close(mid, TOOLBAR.shown * FOCUS_Y, 1.5), `${label}: marker row centre ${mid.toFixed(2)} vs ${(TOOLBAR.shown * FOCUS_Y).toFixed(2)}`).toBe(true);
   expect(close(s.band!.y0, base.band!.y0, 0.5) && close(s.band!.y1, base.band!.y1, 0.5), `${label}: marker row rows ${s.band!.y0.toFixed(2)}..${s.band!.y1.toFixed(2)} vs ${base.band!.y0.toFixed(2)}..${base.band!.y1.toFixed(2)}`).toBe(true);
+  // The key layers' boxes, the hero poster's box and the frame variables (the captions' frame) are fixed by the two
+  // static heights: a toolbar move, which moves dvh and innerHeight (and in "resize" mode the window), moves none.
+  expect(s.keys.map((k) => [k.i, k.box]), `${label}: key layer boxes`).toEqual(base.keys.map((k) => [k.i, k.box]));
+  expect(s.poster, `${label}: a hero poster`).not.toBeNull();
+  expect(s.poster, `${label}: hero poster box`).toEqual(base.poster);
+  expect(s.frameVars, `${label}: a chapter composition`).not.toBeNull();
+  expect(s.frameVars, `${label}: frame variables (--fx0 --fy0 --fw --fh)`).toEqual(base.frameVars);
   // A hold key that has laid its picture out lines up with the canvas's picture (same focus line) and keeps its box.
   for (const k of s.keys) {
     if (!k.pic) continue;
