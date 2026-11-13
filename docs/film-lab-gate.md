@@ -432,3 +432,28 @@ Reading it:
 - Long tasks: the desktop return leg showed 0.3 to 2.7 s of long tasks in some runs with either loader (legacy 0 to 3.3 s
   over three runs, budget 0.35 to 2.7 s over three runs), with the page's own scripts a small share of a CPU profile; it is
   not specific to either loader and not investigated further here.
+
+## Stage 7 on placeholder frames
+
+The real-frame A/B (three alternating rounds against a lab server holding the real packs) is in "Stage 7: packs" under "Lab gate" in
+`docs/cinematic-homepage.md`. A first look on placeholder frames, one run each of
+`npm run film:quality -- --base http://127.0.0.1:3007 --profiles desktop,slowphone --back` with packs (`--query-slowphone "budget=160"`)
+and with `--query "pack=0" --query-slowphone "pack=0&budget=160"`, 2026-11-13, commit `e1bd0a6c` built as `.next-film`. The machine was
+loaded (1-minute load average 46 to 54). Cells: packs / `?pack=0`.
+
+| | desktop | slowphone |
+| --- | ---: | ---: |
+| before the first scroll: film data requests | 1 / 58 | 1 / 58 |
+| before the first scroll: film data MB | 0.13 / 0.03 | 0.06 / 0.01 |
+| pass: film data requests | 9 / 1370 | 11 / 1157 |
+| pass: exact draws % | 100 / 95.8 | 99.8 / 81.1 |
+| pass: stale ticks % | 0 / 7.1 | 0.4 / 28.2 |
+| pass: longest stale ms | 0 / 212 | 59 / 266 |
+| pass: decoded MB peak (budget) | 530.8 / 530.8 (536.9) | 166.6 / 166.6 (167.8) |
+| back: film data requests | 0 / 14 | 0 / 131 |
+| back: longest stale ms | 0 / 0 | 47 / 0 |
+| console errors | 0 / 0 | 0 / 0 |
+
+Placeholder packs are a few kilobytes while the manifests' hints are the real packs' sizes, so the first read's closed range covers
+the whole placeholder pack: the bytes before the first scroll are higher with packs here, not on real packs (0.49 vs 0.52 MB on a
+phone, 1.61 vs 1.67 MB desktop).
