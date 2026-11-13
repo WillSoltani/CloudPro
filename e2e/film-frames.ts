@@ -145,6 +145,23 @@ export function watchPage(page: Page, baseURL: string): PageWatch {
 /** The engine's counters, a copy (null before the engine's effect has run). */
 export const readFilmStats = (page: Page) => page.evaluate(() => (window.__filmStats ? { ...window.__filmStats } : null));
 
+/**
+ * The frame loaders the film specs run with (components/film/loader/select.ts): the default, the budget loader decoding
+ * in the film worker (its `mode` must be "budget": the worker chunk was emitted by the build and runs in this browser),
+ * and the legacy loader by `?loader=legacy`.
+ */
+export const LOADERS = [
+  { name: "budget", param: "", mode: "budget" },
+  { name: "legacy", param: "loader=legacy", mode: "legacy" },
+] as const;
+export type SpecLoader = (typeof LOADERS)[number];
+
+/** A query string ("" or "?…") with the loader's parameter and `extra` ("a=1&b=2"). */
+export function loaderQuery(loader: SpecLoader, extra = ""): string {
+  const parts = [loader.param, extra].filter(Boolean);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
 /** Loads the home page and waits until the film canvas has painted a first frame and the counters exist. */
 export async function openHome(page: Page, query = ""): Promise<void> {
   await page.goto(`/${query}`, { waitUntil: "load" });

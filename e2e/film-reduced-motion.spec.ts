@@ -1,17 +1,19 @@
 import { expect, test } from "@playwright/test";
-import { assertPlaceholdersPresent, maxScroll, openHome, PLACEHOLDER_RUN, readPaintedFrame, settle, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
 
 // Reduced motion: the film shows stills (FilmBackdrop toIndex: a few frames per segment, 5 for the hero and the
-// bridge-style segments, 3 for a chapter) instead of scrubbing, and the page still scrolls to its end.
+// bridge-style segments, 3 for a chapter) instead of scrubbing, and the page still scrolls to its end. With both frame
+// loaders (LOADERS).
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
 test.use({ contextOptions: { reducedMotion: "reduce" }, viewport: { width: 1440, height: 900 } });
 
-test("with reduced motion the canvas paints stills and the page scrolls to the end @reduced-motion", async ({ page, baseURL }) => {
+for (const loader of LOADERS) test(`${loader.name}: with reduced motion the canvas paints stills and the page scrolls to the end @reduced-motion`, async ({ page, baseURL }) => {
   test.setTimeout(180_000);
   const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
-  await openHome(page);
+  await openHome(page, loaderQuery(loader));
+  expect((await readFilmStats(page))!.mode, "the loader running").toBe(loader.mode);
   expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
   expect(await settle(page), "the first still settles").toBe(true);
 
