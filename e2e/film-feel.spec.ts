@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { assertPlaceholdersPresent, openHome, readFilmStats, settle } from "./film-frames";
+import { assertPlaceholdersPresent, openHome, readFilmStats, settle, settleNote } from "./film-frames";
 
 // The feel of the scrub (components/film/smoothing.ts): how far the shown clock (the canvas's `data-clock`, the frame
 // stats.targetFrame) trails the raw clock (stats.rawClock / rawFrame, set on every scroll event) while the page moves,
@@ -129,7 +129,7 @@ const report = (f: Feel) =>
 /** Home page at rest, after the load-time landing window (FilmBackdrop SETTLE_MS) has passed. */
 async function ready(page: Page, query = ""): Promise<void> {
   await openHome(page, query);
-  expect(await settle(page), "the first frame settles").toBe(true);
+  expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
   await page.waitForTimeout(700);
 }
 

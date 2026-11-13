@@ -1,5 +1,5 @@
 import type { Page } from "@playwright/test";
-import { settle } from "./film-frames";
+import { settle, unsettledAt } from "./film-frames";
 
 /**
  * The toolbar simulation, shared by e2e/film-toolbar.spec.ts and the scratch scripts that run it on an older build.
@@ -186,13 +186,23 @@ export function snapshot(page: Page): Promise<Snap> {
   });
 }
 
+/**
+ * Waits for the film to come to rest (e2e/film-frames.ts settle) and throws when it does not, with settle()'s snapshot
+ * (the scroll position, the target, what is painted, the engine's and the loader's state) in the message.
+ */
+async function settleOrThrow(page: Page, what: string): Promise<void> {
+  if (await settle(page)) return;
+  const y = await page.evaluate(() => window.scrollY);
+  throw new Error(`the film did not come to rest ${what}: ${unsettledAt(page, y)}`);
+}
+
 /** Moves the simulated toolbar (see ToolbarMode) and lets the page react. */
 export async function moveToolbar(page: Page, to: "shown" | "hidden", mode: ToolbarMode = "resize"): Promise<void> {
   await setToolbar(page, to, mode);
   // Two frames for the resize handlers and observers, then until the film is at rest again.
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
   await page.waitForTimeout(150);
-  await settle(page);
+  await settleOrThrow(page, `after the toolbar moved (${to}, ${mode})`);
 }
 
 /** Moves the toolbar without waiting (to do it while the page is scrolling). */
@@ -204,7 +214,7 @@ export async function setToolbar(page: Page, to: "shown" | "hidden", mode: Toolb
 /** Scrolls to `y` and waits for the film to come to rest there. */
 export async function restAt(page: Page, y: number): Promise<void> {
   await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
-  await settle(page);
+  await settleOrThrow(page, `at scroll ${y}`);
 }
 
 /**
