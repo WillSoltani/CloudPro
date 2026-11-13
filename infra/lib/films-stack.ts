@@ -47,6 +47,12 @@ export class FilmsStack extends cdk.Stack {
       ],
     });
 
+    // Film "pack" files are read from a web worker on https://soltani.org with `Range: bytes=a-b`.
+    // The reader needs `Content-Range` on each 206 to know the total size, and `Content-Range` is not
+    // CORS-safelisted, so a cross-origin script can only read it if it is listed in
+    // Access-Control-Expose-Headers. Content-Length, ETag and Accept-Ranges are exposed for the same
+    // reader (length checks, cache validation, range support). A `Range` request header can trigger a
+    // preflight per URL; Access-Control-Max-Age lets the browser reuse it (Chromium default is 5 s).
     const responseHeaders = new cloudfront.ResponseHeadersPolicy(this, "FilmsResponseHeaders", {
       comment: "Always-on CORS for public film frames, applied at the edge on cache hits too",
       corsBehavior: {
@@ -54,6 +60,10 @@ export class FilmsStack extends cdk.Stack {
         accessControlAllowHeaders: ["*"],
         accessControlAllowMethods: ["GET", "HEAD", "OPTIONS"],
         accessControlAllowOrigins: ["*"],
+        accessControlExposeHeaders: ["Content-Range", "Content-Length", "ETag", "Accept-Ranges"],
+        // 1 hour: long enough to cover a whole film load, short enough that a policy change lands
+        // within the hour; Chromium caps this at 2 hours anyway.
+        accessControlMaxAge: cdk.Duration.hours(1),
         originOverride: true,
       },
       customHeadersBehavior: {
