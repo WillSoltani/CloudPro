@@ -145,6 +145,23 @@ export function watchPage(page: Page, baseURL: string): PageWatch {
 /** The engine's counters, a copy (null before the engine's effect has run). */
 export const readFilmStats = (page: Page) => page.evaluate(() => (window.__filmStats ? { ...window.__filmStats } : null));
 
+/**
+ * The frame loaders the film specs run with (components/film/loader/select.ts): the default, the budget loader decoding
+ * in the film worker (its `mode` must be "budget": the worker chunk was emitted by the build and runs in this browser),
+ * and the legacy loader by `?loader=legacy`.
+ */
+export const LOADERS = [
+  { name: "budget", param: "", mode: "budget" },
+  { name: "legacy", param: "loader=legacy", mode: "legacy" },
+] as const;
+export type SpecLoader = (typeof LOADERS)[number];
+
+/** A query string ("" or "?…") with the loader's parameter and `extra` ("a=1&b=2"). */
+export function loaderQuery(loader: SpecLoader, extra = ""): string {
+  const parts = [loader.param, extra].filter(Boolean);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
 /** Loads the home page and waits until the film canvas has painted a first frame and the counters exist. */
 export async function openHome(page: Page, query = ""): Promise<void> {
   await page.goto(`/${query}`, { waitUntil: "load" });
@@ -195,3 +212,30 @@ export const horizontalOverflow = (page: Page) =>
     html: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     body: document.body.scrollWidth - document.documentElement.clientWidth,
   }));
+
+/**
+ * Scrolls from `from` to `to` in `step` px, calling `visit(y)` at each stop (the caller usually waits for the film to
+ * settle there), and once more at `to` itself.
+ */
+export async function walkPage(page: Page, from: number, to: number, step: number, visit: (y: number) => Promise<void>): Promise<void> {
+  const dir = to >= from ? 1 : -1;
+  for (let y = from; dir > 0 ? y < to : y > to; y += dir * step) {
+    await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
+    await visit(y);
+  }
+  await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), to);
+  await visit(to);
+}
+
+/** The film and frame the canvas shows: the pixels' reading on placeholder frames, else the hooks'. */
+export async function paintedNow(page: Page): Promise<{ segment: string; frame: number; width: number; pixelsAgree: boolean }> {
+  const painted = PLACEHOLDER_RUN ? await readPaintedFrame(page) : null;
+  const hook =
+    painted?.hook ??
+    (await page.evaluate(() => {
+      const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]")!;
+      return { segment: c.dataset.segment ?? "", frame: Number(c.dataset.frame), width: Number(c.dataset.width) };
+    }));
+  const pixelsAgree = !painted || (!!painted.pixels && painted.pixels.film === hook.segment && painted.pixels.index === hook.frame);
+  return { ...hook, pixelsAgree };
+}

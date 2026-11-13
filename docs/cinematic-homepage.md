@@ -259,3 +259,116 @@ nearly every frame it asks for (an engine that evicts what the visitor just saw)
 - decoded frames within 160 MB on phones and 384 to 512 MB on desktop;
 - scrolling back costs 0 requests;
 - 0 canvas reallocations when the address bar moves.
+
+### Stage 4: budget loader
+The second loader (`components/film/loader/budget.ts`, the default; the legacy loader stays selectable with `?loader=legacy`) against the
+legacy one, on **real frames**. Design and counters: "The budget loader" in `docs/film-lab-gate.md`.
+
+**Setup.** Date 2026-11-13, commit `84e879ab` (the gate script and specs of this stage are added on top; no engine file changed).
+Machine: Apple M1 laptop, macOS 26.5, Node 20.20.2, Playwright 1.62.1, Chromium 151.0.7922.34, WebKit 26.5. Local production build
+without `NEXT_PUBLIC_FILM_BASE` (`NEXT_DIST_DIR=.next-film-cdn`) on 127.0.0.1:3006, frames from the film CDN. Three rounds, alternating
+(legacy, budget, legacy, budget, legacy, budget), each `npm run film:quality -- --profiles desktop,iphone,slowphone --back`;
+legacy with `--query "loader=legacy"`, budget with `--query "loader=budget"` and, for iphone and slowphone,
+`--query-iphone/--query-slowphone "loader=budget&budget=160"` (the lab browsers report a desktop memory size, so the real default
+budget applies on desktop: 536.9 MB = 512 MiB; the two phone profiles ran at 167.8 MB = 160 MiB). Cells: median of the three runs
+and, in brackets, min to max. "Network film-frame requests" are Playwright request events for `f_NNNN.webp`; "engine requests" the page's own
+count (WebKit answers a repeat load without an event, and reports each `createImageBitmap(Blob)` as a `blob:` event, so read these two rows,
+not "requests (all)", on the iphone profile).
+
+**The machine was not quiet.** Another session on this computer ran iOS builds the whole time: the 1-minute load average at the start of
+the six runs was 21.5, 23.9, 13.5, 12.0, 12.8 and 4.2 (round 3's budget run: 4.2, then 5.4 at its end; 8 cores). Run-to-run noise is
+therefore larger than in the stage 1 baseline (legacy slowphone exact draws 74.3 to 84.2 %, and the one budget outlier below is in
+round 1, the loaded one). Two more alternating rounds were run afterwards (loads 7.5 and 3.8 at their start, but the machine
+spiked to 87 during round 4's budget run); they are not in the table, only quoted below.
+
+**Later fixes not in these numbers.** Every row below predates two failure-path fixes to the budget loader (failed fetches of
+frames other than the target are retried; a decoder that rejects the frames moves to main-thread decodes, then to the legacy
+loader). Both act only when a fetch or a decode fails, and these runs had 0 failed frames and 0 failed responses on every leg,
+so they were not re-run.
+
+**Pass down**
+
+| | desktop legacy | desktop budget | iphone legacy | iphone budget | slowphone legacy | slowphone budget |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| network film-frame requests | 1384 | 1384 | 1288 | 1288 | 1130 (1072 to 1135) | 1144 (1124 to 1147) |
+| engine requests | 1384 | 1384 | 1288 | 1288 | 1130 (1072 to 1136) | 1144 (1124 to 1148) |
+| refetches | 0 | 0 | 0 | 0 | 0 | 0 |
+| redecodes | 0 | 0 | 0 | 0 | 0 | 0 |
+| exact draws % | 99.1 (98.9 to 99.2) | 98.8 (98.5 to 100) | 100 (99.9 to 100) | 100 (97 to 100) | 81.1 (74.3 to 84.2) | 82.1 (80.4 to 84) |
+| stale ticks % | 1.4 (1.4 to 1.8) | 2.2 (0.2 to 2.2) | 0.2 (0.2 to 0.4) | 0.3 (0.2 to 2.3) | 32 (30.8 to 38.2) | 34 (32.6 to 35.1) |
+| longest stale ms | 67 (51 to 67) | 51 (32 to 83) | 37 (35 to 52) | 33 (32 to 287) | 566 (515 to 583) | 552 (517 to 669) |
+| mean fallback distance (frames) | 0.01 | 0.01 (0 to 0.02) | 0 | 0 (0 to 0.03) | 0.3 (0.24 to 0.46) | 0.34 (0.32 to 0.39) |
+| settle ms after stop | 17 | 17 | 16 (16 to 17) | 16 (13 to 17) | 17 (16 to 17) | 18 (17 to 19) |
+| frames alive peak | 611 | 64 | 611 | 103 | 383 (332 to 388) | 103 |
+| decoded MB peak | 5067.9 | 530.8 | 987.5 | 166.6 | 619.5 (537 to 627.6) | 166.6 |
+| budget MB | 0 | 536.9 | 0 | 167.8 | 0 | 167.8 |
+| bytes held MB peak | 0 | 27.5 | 0 | 7.9 | 0 | 7.1 (7.1 to 7.2) |
+| in-flight peak | 6 | 6 | 6 | 6 | 6 | 6 |
+| frames over 33 ms | 0 (0 to 1) | 1 (0 to 1) | 0 (0 to 10) | 3 (2 to 15) | 2 (0 to 5) | 1 (0 to 1) |
+| long tasks (count) | 0 | 1 (0 to 1) | 0 | 0 | 0 (0 to 2) | 1 (0 to 1) |
+| long tasks (total ms) | 0 | 95 (0 to 130) | 0 | 0 | 0 (0 to 1572) | 417 (0 to 755) |
+| console errors | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**Return leg**
+
+| | desktop legacy | desktop budget | iphone legacy | iphone budget | slowphone legacy | slowphone budget |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| network film-frame requests | 992 | 0 | 0 | 0 | 998 (986 to 1016) | 144 (139 to 164) |
+| engine requests | 992 | 0 | 896 | 0 | 998 (986 to 1016) | 144 (139 to 164) |
+| refetches | 992 | 0 | 896 | 0 | 835 (800 to 840) | 0 |
+| redecodes | 0 | 1368 (1361 to 1378) | 0 | 1243 (1200 to 1243) | 0 | 815 (803 to 840) |
+| exact draws % | 100 | 100 | 100 | 100 | 100 | 100 |
+| stale ticks % | 0 | 0 | 0 | 0 | 0 | 0 |
+| longest stale ms | 0 | 0 | 0 | 0 | 0 | 0 |
+| mean fallback distance (frames) | 0 | 0 | 0 | 0 | 0 | 0 |
+| settle ms after stop | 17 | 17 (17 to 18) | 17 (16 to 17) | 17 (17 to 18) | 16 (15 to 17) | 16 (16 to 17) |
+| frames alive peak | 611 | 64 | 611 | 103 | 611 | 103 |
+| decoded MB peak | 5067.9 | 530.8 | 987.5 | 166.6 | 987.5 | 166.6 |
+| budget MB | 0 | 536.9 | 0 | 167.8 | 0 | 167.8 |
+| bytes held MB peak | 0 | 27.5 | 0 | 7.9 | 0 | 7.9 |
+| in-flight peak | 6 | 0 | 6 | 0 | 6 | 6 |
+| frames over 33 ms | 2 | 1 (0 to 3) | 1 (0 to 1) | 0 (0 to 8) | 1 (0 to 10) | 0 (0 to 5) |
+| long tasks (count) | 2 (1 to 2) | 1 (0 to 3) | 0 | 0 | 1 (0 to 3) | 0 (0 to 5) |
+| long tasks (total ms) | 314 (284 to 806) | 106 (0 to 1415) | 0 | 0 | 271 (0 to 2055) | 0 (0 to 2269) |
+| console errors | 0 | 0 | 0 | 0 | 0 | 0 |
+
+**Verdict per line** (three required runs; "five runs" adds the two later rounds, read from the same JSON):
+
+- (a) decoded MB peak within the budget in every run: **pass.** In all five budget runs and every leg: desktop 530.8 of 536.9 MB, iphone
+  and slowphone 166.6 of 167.8 MB. Legacy held 5,068 / 988 / 620 MB (median) on the same passes: a tenth to a quarter of it.
+- (b) return leg: 0 network frame requests and 0 refetches: **refetches pass, requests miss on the slow phone.** Refetches are 0 on every
+  budget leg of every run (legacy 992 / 896 / 835). Frame requests on the way back are 0 on desktop and iphone; on slowphone they are
+  139 to 164 (legacy about 1,000), all first fetches of frames the pass moved past before they arrived over the 9 Mbit/s link, not
+  refetches. The bytes were never held, so nothing could be served from them.
+- (c) exact draws and stale ticks on desktop and iphone no worse than legacy beyond the run-to-run range: **miss as measured, not
+  reproduced later.** Exact draws are inside legacy's range on both (desktop 98.8 vs 99.1 %, iphone 100 vs 100 %). Stale ticks:
+  desktop 2.2 vs 1.4 % (budget runs 2.2, 2.2, 0.2: two of three above legacy's 1.4 to 1.8), iphone median 0.3 vs 0.2 % but round 1
+  was an outlier (97 % exact, 2.3 % stale, 287 ms longest stale, with a load of 24 to 30). In the two later rounds budget was equal
+  or better (desktop stale 0.5 and 0.2 % vs legacy 2.0 and 1.6 %; iphone 0.2 and 0.4 % vs 0.2 and 0.4 %); over all five runs the
+  desktop median stale is 0.5 % (budget) vs 1.6 % (legacy). Three loaded runs cannot separate a real cost from noise; the later runs
+  say there is none worth measuring, but they were not the required three.
+- (d) slowphone, exact draws not lower, stale ticks not higher, longest stale not longer than legacy medians: **miss on stale ticks.**
+  Exact draws 82.1 vs 81.1 % (pass), longest stale 552 vs 566 ms (pass), stale ticks 34 vs 32 % (miss by 2 points, inside both
+  loaders' ranges; five runs 33.1 vs 32). Mean fallback distance 0.34 vs 0.30 frames. The slow phone is network-bound here (9 Mbit/s,
+  6 requests in flight, 1,100 requests): this stage changes where frames are decoded and kept, not how many are asked for or how
+  fast they arrive, and both loaders sit at about a third of ticks stale and 0.5 s of longest stale stretch against the plan's 100 ms.
+- (e) no console errors, no failed frames: **pass.** 0 console errors, 0 failed frames and 0 failed responses on every leg of
+  all ten runs.
+- (f) frames over 33 ms and long tasks not worse than legacy: **miss on the pass leg, better on the return leg.** Pass leg medians:
+  frames over 33 ms desktop 1 vs 0, iphone 3 vs 0, slowphone 1 vs 2; long tasks desktop one task (95 and 130 ms) in 2 of 3 runs vs none, slowphone
+  417 ms total vs 0 (budget one task in each run; legacy two in its loaded round 1). Return leg: desktop 106 vs 314 ms of long
+  tasks, slowphone 0 vs 271 ms, frames over 33 ms equal or fewer. Over five runs the pass-leg medians are level (long tasks 0 vs 0,
+  frames over 33 ms 1 vs 0 desktop, 2 vs 1 iphone, 0 vs 1 slowphone). The long tasks were not profiled; the source (worker start,
+  `createImageBitmap` hand-off, the page's own scripts) is not known.
+
+**What it shows.** The loader does what it was built for: decoded memory drops from 0.6 to 5.1 GB to the budget, a scroll back costs
+no refetch and, outside the slow link, no request, and the way back is exact (100 % exact, 0 stale) while decoding 800 to 1,370
+frames again from kept bytes (mean decode 1.5 to 6.7 ms in the worker, at most 3 decodes at once). Compressed bytes held peak at 27.5 MB
+(desktop) and 7 to 8 MB (phone profiles), far under the 160 / 48 MiB caps. It does not move the slow phone's delivery shortfall; that
+needs fewer, larger requests (the pack stage) and is the place to look for the plan's 100 ms and 4-frame targets.
+
+**What the lab cannot show.** A real iPhone's memory ceiling (the lab's 160 MiB is a figure, not a limit: Safari's tab-kill point and
+how it counts `ImageBitmap` memory against it differ from a Mac's), its decode speed (an M1 decodes a frame in 1.5 to 7 ms in the
+worker; an A-series phone under thermal pressure may be several times slower, which the 4x CPU throttle only approximates, and the
+decode cap of 2 at once was not tuned against it), and a real mobile network (the CDN is close to this machine). The first and the
+last of these need a phone on the page with `?hud=1&loader=budget` against `?loader=legacy`.

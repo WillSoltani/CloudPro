@@ -1,14 +1,19 @@
 import type { FilmManifest } from "@/components/film/filmCore";
+import type { ConnectionInfo } from "./network";
 
 /**
  * The seam between the film engine (components/film/FilmBackdrop.tsx) and the code that decides which frames exist in
  * memory. FilmBackdrop owns the clock, the draw call, the hold keys, the chrome and the registration; a FrameLoader
  * owns the requests, the decoded frames and their eviction. FilmBackdrop picks one loader per page load
- * (`createLegacyLoader` in ./legacy.ts today) and talks to it only through this interface, so another loader can be
+ * (`createBudgetLoader` in ./budget.ts by default, `createLegacyLoader` in ./legacy.ts; ./select.ts) and talks to it
+ * only through this interface, so another loader can be
  * dropped in without touching the clock, the hold keys, the breathing tails, the overlays or the choreography.
  *
  * A loader knows nothing of the page beyond Image, performance and navigator.connection (passed in `LoaderEnv`):
  * the canvas, the data attributes and `window.__filmStats` are written by FilmBackdrop, through the callbacks below.
+ *
+ * Shared rules, never re-implemented per loader: which frames a segment ever shows (`isUsable`, ./usable.ts) and the
+ * network class (Save-Data, slow connection, the timed hero frames: ./network.ts).
  */
 
 /** How a segment's frames are used on this page load, fixed while the segment is joined. */
@@ -25,7 +30,13 @@ export type JoinOptions = {
   tolerance: number;
 };
 
-/** What the clock wants now, handed to the loader on every clock tick. */
+/**
+ * What the clock wants now, handed to the loader on every clock tick.
+ *
+ * FilmBackdrop keeps ONE WantPlan for the page load and updates it in place before every `want()` call (no
+ * allocation per tick). A loader reads it during `want()` only and never keeps a reference to it, or to its
+ * `entry` function's results across ticks: copy the numbers it needs.
+ */
 export type WantPlan = {
   /** The segment the clock is in. */
   active: number;
@@ -40,7 +51,10 @@ export type WantPlan = {
   entry: (index: number) => number;
 };
 
-/** A decoded frame for draw(): the nearest one held to the frame asked for. */
+/**
+ * A decoded frame for draw(): the nearest one held to the frame asked for. A loader may hand out the same object on
+ * every call (the budget loader does): read it at once, never keep it.
+ */
 export type HeldFrame = {
   frame: number;
   image: CanvasImageSource;
@@ -51,19 +65,47 @@ export type HeldFrame = {
 
 /**
  * The loader's counters, reported to FilmBackdrop (which keeps `window.__filmStats`, components/film/filmStats.ts)
- * instead of written into the page's stats object, so every loader reports the same way.
+ * instead of written into the page's stats object, so every loader reports the same way. The adapter that turns
+ * these calls into `window.__filmStats` is `loaderStatsFor` in filmStats.ts.
+ *
+ * Two ways to report decodes:
+ * - legacy (a frame is held once it has decoded): `decoded(bytes)` when a decode lands, `dropped(bytes)` when it goes.
+ * - a budget loader (a decode reserves its bytes when it starts, and the reservation counts as held):
+ *   `decodeStarted(bytes, …)` when it starts, `decodeEnded(…)` when it settles, and `dropped(bytes)` when the frame
+ *   goes, or at once when the decode failed or landed for a frame no longer wanted. Such a loader never calls
+ *   `decoded`.
+ * The optional hooks are for loaders that have the thing they count; a loader without them leaves the counters at 0.
  */
 export type LoaderStats = {
-  /** A request started for `film` at tier `width`, frame `frame`; `inflight` is the number in flight after it. */
+  /**
+   * A network request started for `film` at tier `width`, frame `frame`; `inflight` is the number in flight after it.
+   * A loader that keeps compressed bytes calls it for real fetches only (a decode from kept bytes is not a request).
+   */
   requested(film: string, width: number, frame: number, inflight: number): void;
   /** A request's slot was freed (settled, or cancelled); `inflight` is the number in flight after it. */
   released(inflight: number): void;
   /** A frame finished decoding and is now held; `bytes` is its estimated decoded size (filmStats frameBytes). */
   decoded(bytes: number): void;
-  /** A held frame was let go (evicted, retiered, its segment left or the loader disposed). */
+  /** A held (or reserved) frame was let go (evicted, retiered, its segment left, the loader disposed, a decode failed). */
   dropped(bytes: number): void;
   /** A live request failed to load or decode (a cancelled one is not reported). */
   failed(): void;
+  /**
+   * A decode started and reserved `bytes` of the budget (counted as a frame held from now); `inflight` is the number
+   * of decodes running after it; `redecode` when this frame was decoded before on this page load (from kept bytes).
+   */
+  decodeStarted?(bytes: number, inflight: number, redecode: boolean): void;
+  /**
+   * A decode settled: `ok` when it produced a frame (`where` it ran, `ms` it took), else it failed; `inflight` is the
+   * number of decodes running after it.
+   */
+  decodeEnded?(ok: boolean, where: "worker" | "main", ms: number, inflight: number): void;
+  /** Compressed frame bytes held now (a gauge). */
+  bytesHeld?(bytes: number): void;
+  /** The decoded-frame budget of this page load, in bytes (reported once, or when it changes). */
+  budget?(bytes: number): void;
+  /** The loader actually running changed (`FrameLoader.mode`, e.g. a worker loader falling back to main-thread decodes). */
+  mode?(mode: string): void;
 };
 
 export type ImageLike = {
@@ -78,7 +120,7 @@ export type ImageLike = {
 export type LoaderEnv = {
   stats: LoaderStats;
   /** navigator.connection, where the browser has one (Save-Data, the network class). */
-  connection?: { saveData?: boolean; effectiveType?: string; rtt?: number; downlink?: number };
+  connection?: ConnectionInfo;
   /** The visitor has already engaged when the loader starts (reduced motion, a boot key, a restored scroll position). */
   engaged: boolean;
   /**
@@ -88,13 +130,21 @@ export type LoaderEnv = {
   tier(film: FilmManifest): number;
   /** A segment's count of decoded frames changed (FilmBackdrop writes it to the section's `data-loaded`). */
   onLoaded?(index: number, loaded: number): void;
+  /**
+   * A joined segment's tier width changed (a slow-network retier): FilmBackdrop re-sizes the canvas backing store,
+   * whose cap follows the widths in use. Not called for `join` (FilmBackdrop picked that width itself).
+   */
+  onWidth?(index: number, width: number): void;
   /** Injected for tests; default: the browser's Image and performance. */
   Image?: new () => ImageLike;
   timing?: { getEntriesByName(name: string): readonly { duration: number }[] };
 };
 
 export interface FrameLoader {
-  /** The loader's name, `window.__filmStats.mode`. */
+  /**
+   * The loader's name, `window.__filmStats.mode` ("legacy", "budget", "budget-main"). It may change at run time (a
+   * worker loader that falls back to decoding on the main thread); the loader then reports it through `stats.mode`.
+   */
   readonly mode: string;
   /** Segment `index` joins with its film at tier `width` (FilmBackdrop's tier()). */
   join(index: number, film: FilmManifest, width: number, opts: JoinOptions): void;
@@ -112,7 +162,7 @@ export interface FrameLoader {
   nearest(index: number, frame: number): HeldFrame | null;
   /** A frame within `tolerance` of `frame` may still arrive (queued or in flight), so it is worth waiting for. */
   isComing(index: number, frame: number, tolerance: number): boolean;
-  /** The frames this page load ever shows for segment `index`; the one rule shared by loading and by the counters. */
+  /** The frames this page load ever shows for segment `index` (`isUsable`, ./usable.ts): the one rule shared by loading and by the counters. */
   usable(index: number, frame: number): boolean;
   /** Decoded frames held for segment `index` (0 when it has not joined). */
   loaded(index: number): number;
@@ -122,6 +172,16 @@ export interface FrameLoader {
   onArrive(cb: (index: number, frame: number) => void): () => void;
   /** The network is slow (by navigator.connection, or by the timed first hero frames): the smallest tier, fewer requests. */
   isSlow(): boolean;
+  /**
+   * The document was hidden (true) or shown again (false). A loader may pause fetching and decoding while hidden;
+   * the legacy loader ignores it.
+   */
+  visibility(hidden: boolean): void;
+  /**
+   * The browser went offline (false) or came back online (true). A loader may retry failed fetches when the network
+   * returns; the legacy loader ignores it.
+   */
+  network(online: boolean): void;
   /** Let go of everything; nothing is requested afterwards. */
   dispose(): void;
 }

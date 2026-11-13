@@ -23,10 +23,8 @@ import { REEL_CHROME_EVENT, type ReelChrome } from "@/components/film/useReelChr
 import {
   aimAt,
   countDraw,
-  countRequest,
-  dropFrame,
   filmInstrument,
-  holdFrame,
+  loaderStatsFor,
   newEffectiveTarget,
   onTarget,
   recoverStale,
@@ -35,7 +33,20 @@ import {
 import { FilmHud } from "@/components/film/FilmHud";
 import { backingSize, growCap, MAX_DPR, wantsFullBacking } from "@/components/film/backing";
 import { createLegacyLoader } from "@/components/film/loader/legacy";
-import type { FrameLoader, LoaderStats, WantPlan } from "@/components/film/loader/types";
+import { createBudgetLoader } from "@/components/film/loader/budget";
+import { withLegacyFallback } from "@/components/film/loader/fallback";
+import { budgetOverrideBytes } from "@/components/film/loader/budget-bytes";
+import { readConnection, saveDataOn } from "@/components/film/loader/network";
+import { loaderFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
+import type { FrameLoader, LoaderEnv, WantPlan } from "@/components/film/loader/types";
+
+/**
+ * The frame loader a page load runs unless `?loader=legacy|budget|budget-main` names another (components/film/loader/
+ * select.ts). "budget": the budget loader, decoding in the film worker; it falls back to main-thread decodes on its own,
+ * and to the legacy loader if those cannot decode the frames either (loader/fallback.ts); the page runs the legacy
+ * loader from the start where it lacks fetch, Blob or createImageBitmap.
+ */
+const DEFAULT_LOADER: LoaderName = "budget";
 
 /**
  * One crop point for the whole reel (x, y in 0–1): segments share boundary frames, so a per-film focus
@@ -234,12 +245,14 @@ export function breathCurve(tau: number, tauRead: number): number {
  *
  * Frames: this component owns the clock, the draw call, the hold keys, the chrome and the registration; which
  * frames exist in memory is the frame loader's (components/film/loader: the FrameLoader interface in types.ts,
- * the legacy loader in legacy.ts). It is picked in one place in the effect (`const loader = createLegacyLoader(…)`).
+ * the budget loader in budget.ts, the legacy loader in legacy.ts). It is picked in one place in the effect
+ * (DEFAULT_LOADER, or `?loader=`).
  * Each segment joins it with the tier tier() picks from the canvas box (`data-width`, the backing cap and the
  * counters read the loader's width); every clock tick hands it what the clock wants (want: the active segment,
  * its target frame, the direction of travel, where the neighbours are entered); draw() paints `loader.nearest`
  * and waits while `loader.isComing` a nearer frame. The loader reports to `window.__filmStats` through a narrow
- * stats hook and to `data-loaded` through a callback, and knows nothing else of the page.
+ * stats hook (filmStats `loaderStatsFor`), to `data-loaded` and to the backing cap (a retier's `onWidth`) through
+ * callbacks, hears page visibility and online/offline, and knows nothing else of the page.
  *
  * Mount once, with no transformed/filtered ancestor (that would break `fixed`). Pass a stable reel.
  * Test hooks on the canvas: `data-segment` (film name), `data-frame`, `data-reel` (3 dp), `data-width`,
@@ -337,16 +350,15 @@ export function FilmBackdrop({
     // ?backing=full: the old canvas size rule for this page load (round(CSS size x dpr), no width cap), for an A/B on
     // a real phone. Read once here, never during render.
     const fullBacking = wantsFullBacking(window.location.search);
-    const connection = (
-      navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; rtt?: number; downlink?: number } }
-    ).connection;
-    const saveData = connection?.saveData === true;
+    const connection = readConnection(navigator);
+    const saveData = saveDataOn(connection);
     const coarse = window.matchMedia("(pointer: coarse)").matches;
     const n = reel.length;
     const portrait = pickFilmOrientation() === "portrait";
     const { drawnSegment: drawnSegmentMV, drawnFrame: drawnFrameMV } = api;
     // Measurement only (components/film/filmStats.ts, `window.__filmStats`): nothing below reads it back.
-    const { stats, clock: staleClock, requested } = filmInstrument();
+    const instrument = filmInstrument();
+    const { stats, clock: staleClock } = instrument;
     // What the counters score against: the frames the canvas can show for the current target (filmStats aimAt,
     // with the loader's own `usable` rule), refreshed with the target in onReel.
     const effective = newEffectiveTarget();
@@ -377,30 +389,13 @@ export function FilmBackdrop({
     const segments = new Map<number, Segment>();
     const byEl = new Map<Element, Segment>();
 
-    // The loader's counters, kept in `window.__filmStats` with the same meaning as before the seam (a refetch is a
-    // request for a film, width and frame already requested in this page load).
-    const loaderStats: LoaderStats = {
-      requested: (film, width, frame, inflight) => {
-        const key = `${film}/${width}/${frame}`;
-        const repeated = requested.has(key);
-        if (!repeated) requested.add(key);
-        countRequest(stats, repeated, inflight);
-      },
-      released: (inflight) => {
-        stats.inflight = inflight;
-      },
-      decoded: (bytes) => {
-        stats.decodes++;
-        holdFrame(stats, bytes);
-      },
-      dropped: (bytes) => dropFrame(stats, bytes),
-      failed: () => {
-        stats.failures++;
-      },
-    };
-    // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load.
-    const loader: FrameLoader = createLegacyLoader({
-      stats: loaderStats,
+    // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load
+    // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab). Its
+    // counters reach `window.__filmStats` through the one adapter in filmStats.ts.
+    const search = window.location.search;
+    const loaderName = runnableLoader(loaderFromQuery(search, DEFAULT_LOADER), pageCaps());
+    const loaderEnv: LoaderEnv = {
+      stats: loaderStatsFor(instrument),
       connection,
       // The idle gate opens at once when the page has already moved from the top (a hash jump, a restored position),
       // a boot key shows a hold, or under reduced motion. Save-Data visitors wait for the first scroll like everyone
@@ -411,7 +406,28 @@ export function FilmBackdrop({
         const s = segments.get(index);
         if (s) s.reg.el.dataset.loaded = String(loaded);
       },
-    });
+      // A retier changed a segment's width: the backing cap follows the widths in use. After the loader's call has
+      // returned (a retier runs inside want(), in the middle of a tick), and without a measure.
+      onWidth: () => {
+        queueMicrotask(() => {
+          if (!cancelled) sizeBacking();
+        });
+      },
+    };
+    // The budget loader hands the page to the legacy loader if it cannot decode the frames on the main thread either.
+    const loader: FrameLoader =
+      loaderName === "legacy"
+        ? createLegacyLoader(loaderEnv)
+        : withLegacyFallback(
+            loaderEnv,
+            (onUnusable) =>
+              createBudgetLoader(loaderEnv, {
+                mainThread: loaderName === "budget-main",
+                budgetBytes: budgetOverrideBytes(search) ?? undefined,
+                onUnusable,
+              }),
+            createLegacyLoader,
+          );
     stats.mode = loader.mode;
     let cancelled = false;
     let raf = 0;
@@ -991,7 +1007,8 @@ export function FilmBackdrop({
     // and dpr, not from the backing store, so this cannot feed back into the tier choice.
     const reelMaxWidth = reel.reduce((m, e) => Math.max(m, ...manifestFor(e, pickFilmOrientation()).widths), 0);
     let backingCap = 0;
-    const resize = () => {
+    // The canvas backing store from the CSS box and the widths in use; the key layers follow the box.
+    const sizeBacking = () => {
       let w: number;
       let h: number;
       if (fullBacking) {
@@ -1022,8 +1039,18 @@ export function FilmBackdrop({
         draw(); // …so repaint before the browser presents it
       }
       keyLayers.forEach((_, i) => layoutKey(i));
+    };
+    const resize = () => {
+      sizeBacking();
       update();
     };
+
+    // The loader may pause while the page is hidden and retry failed fetches when the network returns.
+    const onVisibility = () => loader.visibility(document.visibilityState === "hidden");
+    const onOnline = () => loader.network(true);
+    const onOffline = () => loader.network(false);
+    if (document.visibilityState === "hidden") loader.visibility(true);
+    if (navigator.onLine === false) loader.network(false);
 
     // The boot key is the first thing this page needs on a deep link: before any frame request.
     if (bootHold >= 0) loadKey(bootHold);
@@ -1038,6 +1065,9 @@ export function FilmBackdrop({
     window.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
     window.addEventListener("pagehide", saveBoot);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
     resync.current = sync;
     sync(); // ends with resize(): the canvas is sized once at load, after the segments have joined
 
@@ -1052,6 +1082,9 @@ export function FilmBackdrop({
       window.removeEventListener("resize", update);
       window.removeEventListener("pagehide", saveBoot);
       window.removeEventListener("load", onLoad);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
       window.clearTimeout(quietTimer);
       io.disconnect();
       ro.disconnect();

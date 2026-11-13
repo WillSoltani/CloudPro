@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { assertPlaceholdersPresent, horizontalOverflow, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, horizontalOverflow, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
 
 // The page loads and the film canvas paints at the sizes the site has to hold, and the document never scrolls
-// sideways (at the top, and at the end where the last chapter sits).
+// sideways (at the top, and at the end where the last chapter sits). With both frame loaders (LOADERS).
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
@@ -14,20 +14,21 @@ const SIZES = [
   { width: 1440, height: 900, touch: false },
 ] as const;
 
-for (const size of SIZES) {
-  const name = `${size.width}x${size.height}`;
+for (const loader of LOADERS) for (const size of SIZES) {
+  const name = `${loader.name} ${size.width}x${size.height}`;
   test.describe(name, () => {
     test.use({ viewport: { width: size.width, height: size.height }, hasTouch: size.touch, isMobile: size.touch, deviceScaleFactor: size.touch ? 2 : 1 });
 
     test(`loads, paints the film, has no horizontal scroll bar @viewports`, async ({ page, baseURL }) => {
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
-      await openHome(page);
+      await openHome(page, loaderQuery(loader));
       expect(await settle(page), "the first frame settles").toBe(true);
 
       const canvas = page.locator("canvas[data-segment]");
       await expect(canvas).toHaveAttribute("data-segment", /^(rack-00|rack-00-p)$/);
       const stats = (await readFilmStats(page))!;
       expect(stats.draws).toBeGreaterThan(0);
+      expect(stats.mode, "the loader running").toBe(loader.mode);
       expect(stats.paintedFilm).toBe(await canvas.getAttribute("data-segment"));
       // The backing store is sized to the viewport (not the 300x150 default), at device pixels but never wider than the
       // frames it shows (components/film/backing.ts): a portrait film's widest tier is 432..1080 px.

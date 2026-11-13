@@ -1,10 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { assertPlaceholdersPresent, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, LOADERS, loaderQuery, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
 
 // The canvas backing store (components/film/backing.ts): never wider than the widest frame tier in use, the DPR
 // capped at 2, the aspect of the box kept; ?backing=full restores the old size rule for the page load. The size is
 // allocated once at load (canvasResizes counts real reallocations only), and the painted frame read back from the
-// pixels is still the one `data-frame` names. No timing thresholds.
+// pixels is still the one `data-frame` names. No timing thresholds. With both frame loaders (LOADERS).
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
@@ -36,13 +36,13 @@ const canvasBox = (page: Page) =>
     return { w: c.width, h: c.height, cssW: c.clientWidth, cssH: c.clientHeight, dpr: window.devicePixelRatio };
   });
 
-for (const vp of VIEWPORTS) {
-  test.describe(vp.name, () => {
+for (const loader of LOADERS) for (const vp of VIEWPORTS) {
+  test.describe(`${loader.name} ${vp.name}`, () => {
     test.use({ viewport: { width: vp.w, height: vp.h }, deviceScaleFactor: vp.dpr, hasTouch: vp.touch, isMobile: vp.touch });
 
     test("the backing store is capped at the widest tier in use and allocated once @backing", async ({ page, baseURL }) => {
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
-      await openHome(page);
+      await openHome(page, loaderQuery(loader));
       expect(await settle(page), "the first frame settles").toBe(true);
 
       const tiers = await scrollAndSampleTiers(page);
@@ -64,6 +64,7 @@ for (const vp of VIEWPORTS) {
       expect([stats.backingW, stats.backingH]).toEqual([box.w, box.h]);
       expect(stats.canvasResizes, "reallocations after load and a short scroll").toBeLessThanOrEqual(2);
       expect(stats.canvasResizes).toBeGreaterThan(0);
+      expect(stats.mode, "the loader running").toBe(loader.mode);
 
       if (PLACEHOLDER_RUN) {
         const painted = await readPaintedFrame(page);
@@ -74,7 +75,7 @@ for (const vp of VIEWPORTS) {
     });
 
     test("?backing=full restores the old size rule for the page load @backing", async ({ page }) => {
-      await openHome(page, "?backing=full&hud=1");
+      await openHome(page, loaderQuery(loader, "backing=full&hud=1"));
       expect(await settle(page), "the first frame settles").toBe(true);
       const box = await canvasBox(page);
       const dpr = Math.min(box.dpr, 2);

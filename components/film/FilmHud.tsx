@@ -31,15 +31,21 @@ export function hudPositionLine(s: FilmStats): string {
   return `${film} · f${s.paintedFrame}/${s.targetFrame}${eff}${s.paintedSeg !== s.targetSeg ? ` (seg ${s.paintedSeg}/${s.targetSeg})` : ""} · ${s.width}w · canvas ${s.backingW}x${s.backingH} · ${s.mode}`;
 }
 
-/** Line 2: exact share of draws, stale share of ticks, longest stale ms, refetches, frames alive, decoded MB peak, in flight, canvas resizes. */
+/**
+ * Line 2: exact share of draws, stale share of ticks, longest stale ms, refetches, frames alive with their decoded MB
+ * (against the budget where the loader has one), decoded MB peak, then for a loader that keeps compressed bytes the
+ * bytes held and the redecodes, in flight, canvas resizes. The loader's name ends line 1.
+ */
 export function hudStatsLine(s: FilmStats): string {
+  const budget = s.budgetMB > 0 ? `/${s.budgetMB.toFixed(0)}` : "";
   return [
     `exact ${pct(s.exactDraws, s.draws)}%`,
     `stale ${pct(s.staleTicks, s.ticks)}%`,
     `max ${Math.round(s.staleMsMax)} ms`,
     `refetch ${s.refetches}`,
-    `alive ${s.framesAlive}`,
+    `alive ${s.framesAlive} (${s.decodedMB.toFixed(0)}${budget} MB)`,
     `peak ${s.decodedMBPeak.toFixed(0)} MB`,
+    ...(s.budgetMB > 0 || s.bytesHeldMB > 0 ? [`bytes ${s.bytesHeldMB.toFixed(1)} MB`, `redecode ${s.redecodes}`] : []),
     `fly ${s.inflight}`,
     `resize ${s.canvasResizes}`,
   ].join(" · ");
