@@ -526,6 +526,22 @@ describe("film packs: the plan", () => {
     assert.ok(t.stats.decodedMBPeak <= t.stats.budgetMB + 1e-9);
   });
 
+  it("on the first scroll the hero's rest is read at once, beside the next film's skeleton", async () => {
+    const counts = [97, 97];
+    const films = counts.map((c, i) => makeFilm(`e${i}`, c));
+    const t = setup(films, { env: { engaged: false }, server: { chunk: () => 30 } });
+    t.loader.want(plan(0, 0, 0, counts));
+    await flush(300);
+    assert.equal(t.packMessages().length, 1);
+    t.loader.engage();
+    t.loader.want(plan(0, 1, 1, counts));
+    await flush(1);
+    const opened = t.packMessages().slice(1);
+    assert.ok(opened.some((m) => m.url === films[0].url && m.from >= films[0].skeletonEnd), "the hero's rest");
+    assert.ok(opened.some((m) => m.url === films[1].url && m.from === 0), "the next film's skeleton");
+    assert.equal(t.loader.waitReason!(0, 1), "pack read open (pack known, read at frame 1)");
+  });
+
   it("at most two reads at once; the second only reads holds and skeletons", async () => {
     const counts = [97, 97, 97];
     const films = counts.map((c, i) => makeFilm(`q${i}`, c));

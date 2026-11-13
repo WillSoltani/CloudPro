@@ -326,6 +326,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
   const itemLevel = new Uint8Array(64);
   let itemLen = 0;
   const rankSeg = new Int32Array(2).fill(-1);
+  const levelScratch = new Uint8Array(2);
   /** What `nextPackOp` asks for (reused). `to` < 0: symbolic, the layout being unknown. */
   const packOp = { seg: -1, id: 0, from: 0, to: 0, hold: 0, est: -1, url: "" };
 
@@ -778,8 +779,9 @@ export function createBudgetPlanner(config: PlannerConfig) {
    * the skeleton of the film ahead in the direction of travel, the active film to its end, the film ahead to its end,
    * the skeleton of the film behind, the hold frames of farther near films, and last the film behind to its end. With
    * one read at a time (a slow network, Save-Data) the active film is read to its end before any other.
-   * Read 1 takes the first item's film and runs on through that film's later items as long as no other film's
-   * full read comes between; read 2 (when two may run) takes the first hold or skeleton item of another film.
+   * Reads go to films in list order, each running on through its film's later items; at most one of them reads past
+   * the skeleton, so with two reads the skeleton of the film ahead runs beside the active film's full read. With one
+   * read the list is followed strictly.
    */
   const buildPackPlan = () => {
     packDirty = false;
@@ -818,32 +820,36 @@ export function createBudgetPlanner(config: PlannerConfig) {
       addItem(behind, LEVEL_ALL);
     }
     if (!itemLen) return;
-    // Read 1.
-    const r1 = itemSeg[0];
-    let l1 = itemLevel[0];
-    for (let k = 1; k < itemLen; k++) {
-      if (itemSeg[k] === r1) l1 = Math.max(l1, itemLevel[k]);
-      else if (itemLevel[k] === LEVEL_ALL || maxPackReads <= 1) break;
-    }
-    rankSeg[0] = r1;
-    // Read 2: hold and skeleton reads of other films only, so full reads run one at a time, in order.
-    let r2 = -1;
-    let l2 = LEVEL_NONE;
-    if (maxPackReads >= 2) {
-      for (let k = 1; k < itemLen; k++) {
-        const sk = itemSeg[k];
-        if (sk === r1 || itemLevel[k] === LEVEL_ALL) continue;
-        if (r2 < 0) r2 = sk;
-        if (sk === r2) l2 = Math.max(l2, itemLevel[k]);
+    // The reads, in list order: a film gets a read when its first item comes up and a read is free, and its level grows
+    // with its later items; at most one read goes past the skeleton (full reads one at a time, in order), so the film
+    // ahead's skeleton runs beside the active film's full read, never two full reads at once.
+    let n = 0;
+    const lv = levelScratch;
+    lv[0] = lv[1] = LEVEL_NONE;
+    let full = -1;
+    for (let k = 0; k < itemLen; k++) {
+      const sk = itemSeg[k];
+      const l = itemLevel[k];
+      const r = rankSeg[0] === sk ? 0 : rankSeg[1] === sk ? 1 : -1;
+      if (l === LEVEL_ALL && full >= 0 && full !== r) {
+        if (maxPackReads <= 1) break;
+        continue;
       }
+      if (r >= 0) {
+        if (l > lv[r]) lv[r] = l;
+      } else if (n < maxPackReads && n < 2) {
+        rankSeg[n] = sk;
+        lv[n] = l;
+        n++;
+      } else continue;
+      if (l === LEVEL_ALL) full = rankSeg[0] === sk ? 0 : 1;
     }
-    rankSeg[1] = r2;
     for (let r = 0; r < 2; r++) {
       const t = seg(rankSeg[r]);
       if (!t) continue;
       const p = t.pack!;
       p.rank = r;
-      p.level = r === 0 ? l1 : l2;
+      p.level = lv[r];
       if (!rangeFor(t, p, p.level)) {
         p.rank = -1;
         rankSeg[r] = -1;
