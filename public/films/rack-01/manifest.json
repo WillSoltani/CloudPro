@@ -16,5 +16,25 @@
     "768": 1132,
     "1280": 2096,
     "1920": 3644
+  },
+  "packs": {
+    "768": {
+      "file": "pack-a59d766e.bin",
+      "bytes": 981134,
+      "header": 2052,
+      "skeletonEnd": 208196
+    },
+    "1280": {
+      "file": "pack-ac7c01b2.bin",
+      "bytes": 1945554,
+      "header": 2052,
+      "skeletonEnd": 412658
+    },
+    "1920": {
+      "file": "pack-a6a47f5f.bin",
+      "bytes": 3388950,
+      "header": 2052,
+      "skeletonEnd": 711988
+    }
   }
 }

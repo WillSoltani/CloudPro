@@ -32,7 +32,8 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
   await page.waitForTimeout(800);
   const s = (await readStats(page)) as FilmStats;
 
-  expect(s.requests).toBeGreaterThan(0);
+  // Film data requests: per-frame files, or pack reads (stage 7).
+  expect(s.requests + s.packRequests).toBeGreaterThan(0);
   expect(s.draws).toBeGreaterThan(0);
   expect(s.exactDraws + s.fallbackDraws).toBe(s.draws);
   expect(s.refetches).toBe(0);
@@ -41,9 +42,21 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
   expect(s.framesAlive).toBeLessThanOrEqual(s.decodes + s.decodeInFlight);
   expect(s.framesAlivePeak).toBeGreaterThanOrEqual(s.framesAlive);
   expect(s.decodedMBPeak).toBeGreaterThan(0);
-  // A frame decoded again from kept bytes (a redecode) needs no request.
-  expect(s.decodes - s.redecodes + s.failures).toBeLessThanOrEqual(s.requests);
-  if (loader.name === "budget") {
+  // A frame decoded again from kept bytes (a redecode) needs no request; a frame from a pack needed no request of its own.
+  expect(s.decodes - s.redecodes + s.failures).toBeLessThanOrEqual(s.requests + s.framesFromPacks);
+  if (loader.packs) {
+    // Every film reads its pack (the placeholder packs): no frame file, no pack given up.
+    expect(s.packRequests).toBeGreaterThan(0);
+    expect(s.packFilms).toBeGreaterThan(0);
+    expect(s.packFallbackFilms).toBe(0);
+    expect(s.framesFromPacks).toBeGreaterThan(0);
+    expect(s.framesFromFiles).toBe(0);
+    expect(s.requests).toBe(0);
+    expect(s.packBytesMB).toBeGreaterThan(0);
+  } else {
+    for (const k of ["packRequests", "packFilms", "packFallbackFilms", "framesFromPacks", "packBytesMB"] as const) expect(s[k], k).toBe(0);
+  }
+  if (loader.mode === "budget") {
     // Decoded in the film worker, inside the budget, from bytes kept since they were fetched.
     expect(s.workerDecodes).toBeGreaterThan(0);
     expect(s.mainThreadDecodes).toBe(0);
@@ -57,7 +70,8 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
   } else {
     for (const k of ["redecodes", "workerDecodes", "mainThreadDecodes", "decodeInFlightPeak", "budgetMB", "bytesHeldMB"] as const) expect(s[k], k).toBe(0);
   }
-  expect(s.inflightPeak).toBeGreaterThan(0);
+  // Per-frame file requests in flight (pack reads are not counted there: packRequests).
+  if (!loader.packs) expect(s.inflightPeak).toBeGreaterThan(0);
   expect(s.inflight).toBeGreaterThanOrEqual(0);
   expect(s.ticks).toBeGreaterThan(0);
   expect(s.staleTicks).toBeLessThanOrEqual(s.ticks);
@@ -85,7 +99,7 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
     window.__filmStatsReset!();
     return { gaugeBefore, after: { ...window.__filmStats! } };
   });
-  for (const k of ["requests", "refetches", "decodes", "redecodes", "workerDecodes", "mainThreadDecodes", "decodeMsTotal", "failures", "draws", "exactDraws", "fallbackDraws", "ticks", "staleTicks", "staleMs", "staleMsMax", "held", "canvasResizes", "measures"] as const) {
+  for (const k of ["requests", "refetches", "decodes", "redecodes", "workerDecodes", "mainThreadDecodes", "decodeMsTotal", "failures", "draws", "exactDraws", "fallbackDraws", "ticks", "staleTicks", "staleMs", "staleMsMax", "held", "canvasResizes", "measures", "packRequests", "packBytesMB", "packBytesRepeatedMB", "framesFromPacks", "framesFromFiles"] as const) {
     expect(after[k], k).toBe(0);
   }
   expect(after.framesAlive).toBe(gaugeBefore);
@@ -107,7 +121,9 @@ test("the HUD shows only with ?hud=1 @stats", async ({ page }) => {
   await expect(hud).toContainText("rack-00");
   await expect(hud).toContainText(/exact \d+%/);
   await expect(hud).toContainText(loader.mode);
-  if (loader.name === "budget") await expect(hud).toContainText(/alive \d+ \(\d+\/\d+ MB\).*bytes [\d.]+ MB · redecode \d+/);
+  if (loader.mode === "budget") await expect(hud).toContainText(/alive \d+ \(\d+\/\d+ MB\).*bytes [\d.]+ MB · redecode \d+/);
+  if (loader.packs) await expect(hud).toContainText(/packs \d+ · data req \d+ \(\d+ pack \+ 0 file\)/);
+  else await expect(hud).not.toContainText("packs ");
 });
 });
 

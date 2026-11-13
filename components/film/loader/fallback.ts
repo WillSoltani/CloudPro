@@ -96,6 +96,8 @@ export function withLegacyFallback(
     },
     nearest: (index, frame) => inner.nearest(index, frame),
     isComing: (index, frame, tolerance) => inner.isComing(index, frame, tolerance),
+    waitReason: (index, frame) => inner.waitReason?.(index, frame) ?? "",
+    debugState: (index, frame) => inner.debugState?.(index, frame) ?? { mode: inner.mode },
     usable: (index, frame) => inner.usable(index, frame),
     loaded: (index) => inner.loaded(index),
     width: (index) => inner.width(index),

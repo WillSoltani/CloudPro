@@ -106,6 +106,14 @@ export type LoaderStats = {
   budget?(bytes: number): void;
   /** The loader actually running changed (`FrameLoader.mode`, e.g. a worker loader falling back to main-thread decodes). */
   mode?(mode: string): void;
+  /** A pack read started (one request) for `film` at tier `width` (stage 7, a loader that reads packs). */
+  packRequested?(film: string, width: number): void;
+  /** Pack body bytes arrived: `bytes` in all, `repeated` of them held already (read twice). */
+  packBytes?(bytes: number, repeated: number): void;
+  /** Segments reading their frames from a pack now, and segments whose pack was given up (gauges). */
+  packFilms?(using: number, fallback: number): void;
+  /** `n` frames' bytes arrived, from a pack or as one file each. */
+  framesArrived?(fromPack: boolean, n: number): void;
 };
 
 export type ImageLike = {
@@ -184,4 +192,14 @@ export interface FrameLoader {
   network(online: boolean): void;
   /** Let go of everything; nothing is requested afterwards. */
   dispose(): void;
+  /**
+   * Why frame `frame` of segment `index` is not on the canvas yet, in words (the counters' stale-stretch locator, read
+   * once when a stale stretch starts); optional, the legacy loader has none.
+   */
+  waitReason?(index: number, frame: number): string;
+  /**
+   * The loader's state around frame `frame` of segment `index`, for the film specs' diagnostic when the film does not
+   * come to rest (FilmBackdrop's `window.__filmWhy`, e2e/film-frames.ts settle). Read-only; optional, the legacy loader has none.
+   */
+  debugState?(index: number, frame: number): Record<string, unknown>;
 }

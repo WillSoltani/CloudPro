@@ -1,6 +1,24 @@
 import type { JoinOptions } from "./types";
 import { isUsable } from "./usable";
 import { bytesCapFor, bytesDropOrder, maxDecodesFor, tierFrameBytes, wantedBytesOf } from "./budget-bytes";
+import {
+  B_DEAD,
+  B_FETCHING,
+  B_HELD,
+  B_NONE,
+  DIRECTION_FRAMES,
+  holdSlotsOf,
+  LEVEL_ALL,
+  LEVEL_HOLD,
+  LEVEL_NONE,
+  LEVEL_SKELETON,
+  PACK_RETRY_MS,
+  PACK_TRIES,
+  PackState,
+  REACH_SLOTS,
+  BEHIND_FRAMES,
+  type PackHintSizes,
+} from "./pack-plan";
 
 /**
  * The budget loader's planner: which frames' compressed bytes to fetch, in what order; which frames to decode, within
@@ -77,11 +95,7 @@ export const packJob = (seg: number, frame: number) => seg * FRAME_BITS + frame;
 export const jobSeg = (job: number) => Math.floor(job / FRAME_BITS);
 export const jobFrame = (job: number) => job % FRAME_BITS;
 
-// Compressed bytes of a frame.
-const B_NONE = 0;
-const B_FETCHING = 1;
-const B_HELD = 2;
-const B_DEAD = 3;
+// Compressed bytes of a frame: B_NONE, B_FETCHING, B_HELD, B_DEAD (./pack-plan.ts, shared with the pack plan).
 // Decoded frame.
 const D_NONE = 0;
 const D_DECODING = 1;
@@ -102,7 +116,41 @@ export type PlannerConfig = {
   onEvict?(seg: number, frame: number, bytes: number): void;
   /** Compressed bytes are let go (the cap, bad bytes, leave, retier): delete them. */
   onBytesDropped?(seg: number, frame: number, size: number): void;
+  /** Pack reads open at once at most (stage 7; default 2, 1 on a slow network or with Save-Data). */
+  maxPackReads?: number;
 };
+
+/** What `nextPackOp` asks the loader to do (outputs in `packOp`). */
+export const PACK_OPEN = 1;
+export const PACK_TO = 2;
+export const PACK_STOP = 3;
+export const PACK_FORGET = 4;
+/** How a pack read ended (`packEnded`). */
+export const READ_OK = 0;
+export const READ_CANCELLED = 1;
+export const READ_RETRY = 2;
+export const READ_FINAL = 3;
+/** `to` of a read while the layout is unknown (./frame-worker-protocol.ts PACK_TO_*). */
+const TO_SKELETON = -1;
+const TO_HOLD = -2;
+const TO_END = -3;
+
+/**
+ * Why a frame is not on the canvas yet (`waitReason`, the stale-stretch locator in the counters): from "decoded" (not
+ * waiting) to "not planned" (nothing will bring it).
+ */
+export const WAIT_REASONS = [
+  "decoded",
+  "decoding",
+  "bytes held, decode not started",
+  "file fetch running",
+  "file fetch queued",
+  "pack read open",
+  "pack read queued",
+  "not planned",
+  "given up",
+  "segment not joined",
+] as const;
 
 /** What the planner has done since it was created (tests, and the loader's counters). */
 export type PlannerCounters = {
@@ -118,6 +166,10 @@ export type PlannerCounters = {
   bytesDropped: number;
   /** Frames given up as missing (FETCH_TRIES tries spent). */
   missing: number;
+  /** Pack reads opened; frames whose bytes came from a pack; packs given up (their films load frame by frame). */
+  packReads: number;
+  packFrames: number;
+  packFailures: number;
 };
 
 class Seg {
@@ -139,6 +191,8 @@ class Seg {
   readonly last: number;
   decodedCount = 0;
   near = false;
+  /** The film's pack at this tier (stage 7), or null: frames are fetched one file each. */
+  pack: PackState | null = null;
   constructor(
     readonly index: number,
     readonly count: number,
@@ -189,7 +243,18 @@ export function createBudgetPlanner(config: PlannerConfig) {
 
   const segs: (Seg | undefined)[] = [];
   let epochs = 0;
-  const counters: PlannerCounters = { fetches: 0, refetches: 0, decodes: 0, redecodes: 0, evictions: 0, bytesDropped: 0, missing: 0 };
+  const counters: PlannerCounters = {
+    fetches: 0,
+    refetches: 0,
+    decodes: 0,
+    redecodes: 0,
+    evictions: 0,
+    bytesDropped: 0,
+    missing: 0,
+    packReads: 0,
+    packFrames: 0,
+    packFailures: 0,
+  };
 
   let used = 0; // decoded bytes held
   let reserved = 0; // decoded bytes reserved by decodes in flight
@@ -234,6 +299,27 @@ export function createBudgetPlanner(config: PlannerConfig) {
   let retryWake = Infinity;
   const dropScratch = new Int32Array(64);
   const segIndices: number[] = [];
+
+  // The pack plan (stage 7): which pack reads run, from where to where.
+  let maxPackReads = Math.max(1, config.maxPackReads ?? 2);
+  let packDirty = true;
+  /** Segments with a pack (failed or not): 0 means the pack plan never runs. */
+  let packSegs = 0;
+  /** The direction the pack plan reads ahead in, with hysteresis (DIRECTION_FRAMES), and where it was last confirmed. */
+  let packDir = 1;
+  let anchorSeg = -1;
+  let anchorFrame = 0;
+  /** The target leapt (a jump inside a segment, or more than one segment): the active film's read may re-aim. */
+  let packJumped = false;
+  let readSeq = 0;
+  // The plan's work list (segment, level), in priority order, and the two reads it ranks.
+  const itemSeg = new Int32Array(64);
+  const itemLevel = new Uint8Array(64);
+  let itemLen = 0;
+  const rankSeg = new Int32Array(2).fill(-1);
+  const levelScratch = new Uint8Array(2);
+  /** What `nextPackOp` asks for (reused). `to` < 0: symbolic, the layout being unknown. */
+  const packOp = { seg: -1, id: 0, from: 0, to: 0, hold: 0, est: -1, url: "" };
 
   const grow = (a: Int32Array, need: number): Int32Array => {
     if (a.length >= need) return a;
@@ -370,8 +456,11 @@ export function createBudgetPlanner(config: PlannerConfig) {
 
   // ---------------------------------------------------------------- the fetch order
 
+  /** The segment's frames come from its pack (it has one that has not been given up). */
+  const packed = (s: Seg) => s.pack !== null && !s.pack.failed;
+
   const pushOrder = (s: Seg, i: number) => {
-    if (i < 0 || i >= s.count || !s.usableMask[i] || s.orderStamp[i] === orderGen) return;
+    if (i < 0 || i >= s.count || !s.usableMask[i] || s.orderStamp[i] === orderGen || packed(s)) return;
     s.orderStamp[i] = orderGen;
     order[orderLen++] = packJob(s.index, i);
   };
@@ -474,6 +563,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
   /** The target frame `i` of the active segment is to be fetched before the order (the idle gate still applies). */
   const targetFirst = (s: Seg, i: number, now: number) =>
     i >= 0 &&
+    !packed(s) &&
     s.bytes[i] === B_NONE &&
     (engaged || i % ENGAGE_STRIDE === 0 || i === 0 || i === s.moveEnd || i === s.last) &&
     due(s, i, now);
@@ -602,6 +692,246 @@ export function createBudgetPlanner(config: PlannerConfig) {
     return true;
   };
 
+
+  // ---------------------------------------------------------------- the pack plan (stage 7)
+
+  /** A segment's pack when it may be read now: it has one, not given up, and the segment is near. */
+  const readablePack = (s: Seg | undefined): PackState | null => (s && s.near && s.pack && !s.pack.failed ? s.pack : null);
+
+  /** End byte of `level` (layout known). */
+  const levelEnd = (p: PackState, level: number) =>
+    level === LEVEL_HOLD ? p.holdEnd : level === LEVEL_SKELETON ? p.skeletonEnd : p.usableEnd;
+
+  /** Every frame up to `level` has its bytes (layout known; unknown: not done). */
+  const levelDone = (s: Seg, p: PackState, level: number) => p.known && p.firstMissingSlot(0, levelEnd(p, level), s.bytes) < 0;
+
+  const addItem = (s: Seg | undefined, level: number) => {
+    const p = readablePack(s);
+    if (!p || levelDone(s!, p, level) || itemLen >= itemSeg.length) return;
+    if (p.goal < level) p.goal = level;
+    itemSeg[itemLen] = s!.index;
+    itemLevel[itemLen] = level;
+    itemLen++;
+  };
+
+  /** The level a frame of `s` belongs to in its pack: the hold frames, the skeleton, or the rest (same rule as packOrder). */
+  const frameLevel = (s: Seg, i: number) =>
+    i === 0 || i === s.moveEnd || i === s.last ? LEVEL_HOLD : i < s.moveEnd && i % 4 === 0 ? LEVEL_SKELETON : LEVEL_ALL;
+
+  /** Where the rest of `s` is read from: the target in the active segment, else the end the visitor enters it from. */
+  const restFrom = (s: Seg): number => {
+    const p = s.pack!;
+    if (s.index === active) return p.restStart(target, dir !== 0 && packDir < 0 ? -1 : 1, s.bytes, s.usableMask);
+    return s.index > active ? p.restStart(0, 1, s.bytes, s.usableMask) : p.restStart(s.last, -1, s.bytes, s.usableMask);
+  };
+
+  /** The byte range the read of `s` should cover for `level` (into p.wantFrom / p.wantTo); false: nothing to read. */
+  const rangeFor = (s: Seg, p: PackState, level: number): boolean => {
+    if (!p.known) {
+      p.wantFrom = 0;
+      p.wantTo = level === LEVEL_HOLD ? TO_HOLD : level === LEVEL_SKELETON ? TO_SKELETON : TO_END;
+      return true;
+    }
+    const end = levelEnd(p, level);
+    if (p.rangeless) {
+      // The server sends the whole file from byte 0 whatever is asked: one read from 0, as far as the level goes.
+      p.wantFrom = 0;
+      p.wantTo = end;
+      return true;
+    }
+    // The hold frames and the skeleton first (they are the start of the file), then the rest from where it is needed.
+    let slot = p.firstMissingSlot(0, level === LEVEL_ALL ? p.skeletonEnd : end, s.bytes);
+    if (slot < 0 && level === LEVEL_ALL) {
+      const f = restFrom(s);
+      slot = f >= 0 ? p.frameSlot![f] : -1;
+    }
+    if (slot < 0) return false;
+    p.wantFrom = p.slotOff![slot];
+    p.wantTo = p.stopFor(slot, end, s.bytes);
+    return true;
+  };
+
+  /**
+   * The work list and the two reads it ranks (design E). Before the visitor engages: the active film through its
+   * skeleton only (the idle gate; the per-frame gate fetches the same frames). Once engaged: the active film's skeleton,
+   * the skeleton of the film ahead in the direction of travel, the active film to its end, the film ahead to its end,
+   * the skeleton of the film behind, the hold frames of farther near films, and last the film behind to its end. With
+   * one read at a time (a slow network, Save-Data) the active film is read to its end before any other.
+   * Reads go to films in list order, each running on through its film's later items; at most one of them reads past
+   * the skeleton, so with two reads the skeleton of the film ahead runs beside the active film's full read. With one
+   * read the list is followed strictly.
+   */
+  const buildPackPlan = () => {
+    packDirty = false;
+    itemLen = 0;
+    rankSeg[0] = rankSeg[1] = -1;
+    for (const t of segs) {
+      const p = t?.pack;
+      if (!p) continue;
+      p.goal = LEVEL_NONE;
+      p.rank = -1;
+      p.level = LEVEL_NONE;
+    }
+    const a = seg(active);
+    if (!a) return;
+    if (!engaged) {
+      addItem(a, LEVEL_SKELETON);
+    } else {
+      const ahead = seg(active + packDir);
+      const behind = seg(active - packDir);
+      if (maxPackReads <= 1) {
+        addItem(a, LEVEL_SKELETON);
+        addItem(a, LEVEL_ALL);
+        addItem(ahead, LEVEL_SKELETON);
+        addItem(ahead, LEVEL_ALL);
+      } else {
+        addItem(a, LEVEL_SKELETON);
+        addItem(ahead, LEVEL_SKELETON);
+        addItem(a, LEVEL_ALL);
+        addItem(ahead, LEVEL_ALL);
+      }
+      addItem(behind, LEVEL_SKELETON);
+      for (let d = 2; d < segs.length; d++) {
+        addItem(seg(active + packDir * d), LEVEL_HOLD);
+        addItem(seg(active - packDir * d), LEVEL_HOLD);
+      }
+      addItem(behind, LEVEL_ALL);
+    }
+    if (!itemLen) return;
+    // The reads, in list order: a film gets a read when its first item comes up and a read is free, and its level grows
+    // with its later items; at most one read goes past the skeleton (full reads one at a time, in order), so the film
+    // ahead's skeleton runs beside the active film's full read, never two full reads at once.
+    let n = 0;
+    const lv = levelScratch;
+    lv[0] = lv[1] = LEVEL_NONE;
+    let full = -1;
+    for (let k = 0; k < itemLen; k++) {
+      const sk = itemSeg[k];
+      const l = itemLevel[k];
+      const r = rankSeg[0] === sk ? 0 : rankSeg[1] === sk ? 1 : -1;
+      if (l === LEVEL_ALL && full >= 0 && full !== r) {
+        if (maxPackReads <= 1) break;
+        continue;
+      }
+      if (r >= 0) {
+        if (l > lv[r]) lv[r] = l;
+      } else if (n < maxPackReads && n < 2) {
+        rankSeg[n] = sk;
+        lv[n] = l;
+        n++;
+      } else continue;
+      if (l === LEVEL_ALL) full = rankSeg[0] === sk ? 0 : 1;
+    }
+    for (let r = 0; r < 2; r++) {
+      const t = seg(rankSeg[r]);
+      if (!t) continue;
+      const p = t.pack!;
+      p.rank = r;
+      p.level = lv[r];
+      if (!rangeFor(t, p, p.level)) {
+        p.rank = -1;
+        rankSeg[r] = -1;
+      }
+    }
+  };
+
+  /** The open read of `s` serves the plan as it is (else it stops, and a read opens where the plan wants it). */
+  const keepRead = (s: Seg, p: PackState): boolean => {
+    if (p.rank < 0) return false;
+    if (!p.known || p.rangeless) return true;
+    const cur = p.slotAt(p.readPos);
+    // Where the plan wants the read now: its start, moved past what has arrived since the plan was made (the read's
+    // own frames among it).
+    const start = p.firstMissingSlot(p.slotAt(p.wantFrom), p.bytes + 1, s.bytes);
+    if (start < 0) {
+      packDirty = true; // nothing left from there: the plan moves on at the next call
+      return true;
+    }
+    if (cur === start) {
+      if (s.index === active && p.level === LEVEL_ALL && p.readPos >= p.skeletonEnd) packJumped = false;
+      return true;
+    }
+    // A read a few slots short of where it should start, with nothing held between, reaches it anyway.
+    if (cur < start && start - cur <= REACH_SLOTS && !p.heldBetween(cur, start, s.bytes)) return true;
+    if (s.index !== active || p.level !== LEVEL_ALL || p.readPos < p.skeletonEnd) return false;
+    // The active film's rest: re-aimed only when the visitor goes up, has leapt, or has stopped. Moving forward the
+    // read keeps going in order (re-aiming would cost a request and win frames the visitor passes at once).
+    if (dir > 0 && packDir > 0 && !packJumped) return true;
+    // Going up, a read below the target serves the frames the visitor is about to reach: it runs until passed.
+    if (packDir < 0 && dir < 0 && !packJumped) {
+      const cf = p.slotFrame![Math.min(cur, p.count - 1)];
+      return cf <= target && cf >= target - BEHIND_FRAMES - REACH_SLOTS;
+    }
+    return false;
+  };
+
+  /**
+   * The pack plan's part of a clock tick (before `active`, `target` and `dir` take the new values): the direction it
+   * reads ahead in (flipped only after DIRECTION_FRAMES of travel against it), leaps, and whether the plan is rebuilt.
+   * Allocation-free.
+   */
+  const wantPacks = (act: number, f: number, d: number, s: Seg | undefined) => {
+    if (act !== active) {
+      packDirty = true;
+      if (active >= 0 && Math.abs(act - active) > 1) packJumped = true;
+    } else if (s && Math.abs(f - target) > 4 * s.opts.tolerance) {
+      packDirty = true;
+      packJumped = true;
+    }
+    if (d !== dir) packDirty = true;
+    if (d !== 0) {
+      if (d === packDir || anchorSeg < 0) {
+        anchorSeg = act;
+        anchorFrame = f;
+        if (packDir !== d) {
+          packDir = d;
+          packDirty = true;
+        }
+      } else {
+        const travel = act === anchorSeg ? f - anchorFrame : (act - anchorSeg) * 65536;
+        if (Math.sign(travel) === d && Math.abs(travel) >= DIRECTION_FRAMES) {
+          packDir = d;
+          anchorSeg = act;
+          anchorFrame = f;
+          packDirty = true;
+        }
+      }
+    }
+    // Going up, the active film's read has fallen below the target: see whether it should re-aim.
+    const p = s?.pack;
+    if (p && p.readId && p.known && d < 0 && !packDirty) {
+      const cf = p.slotFrame![Math.min(p.slotAt(p.readPos), p.count - 1)];
+      if (cf > f) packDirty = true;
+    }
+  };
+
+  /**
+   * Before the layout is known, the end a bounded read asks for, from the manifest's hints (the request's closed range;
+   * the read itself stops where the header says): the skeleton's end, or the hold frames' end at twice the mean frame.
+   * −1: to the end of the file (or no hints).
+   */
+  const estimateEnd = (s: Seg, p: PackState): number => {
+    const h = p.hint;
+    if (p.known || p.rangeless || !(h.bytes > 0) || p.wantTo === TO_END) return -1;
+    if (p.wantTo === TO_SKELETON) return h.skeletonEnd;
+    const mean = (h.bytes - h.header) / Math.max(1, s.count);
+    return Math.min(h.bytes, Math.max(h.header + 1, Math.ceil(h.header + p.holdSlots * 2 * mean)));
+  };
+
+  /** Give the pack of `s` up: its film loads frame by frame from now on (frames it delivered stay). */
+  const failPack = (s: Seg, reason: string) => {
+    const p = s.pack;
+    if (!p || p.failed) return;
+    p.failed = true;
+    p.failReason = reason;
+    p.forgetPending = true;
+    counters.packFailures++;
+    packDirty = true;
+    // Its missing frames join the per-frame fetch order now (not at the next leap or segment change).
+    orderDirty = true;
+    if (active >= 0) buildOrder();
+  };
+
   return {
     budgetBytes,
     wantedBytes,
@@ -644,6 +974,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
       segs[index] = s;
       ensureEntrySize(index);
       dirty();
+      packDirty = true;
     },
 
     /** Segment `index` leaves: its decoded frames and bytes go (onEvict, onBytesDropped); fetches in flight land stale. */
@@ -651,8 +982,10 @@ export function createBudgetPlanner(config: PlannerConfig) {
       const s = segs[index];
       if (!s) return;
       release(s);
+      if (s.pack) packSegs--;
       segs[index] = undefined;
       dirty();
+      packDirty = true;
     },
 
     /** Segment `index` moves to tier `width` (a slow-network retier): like leave and join at the new width. */
@@ -662,8 +995,10 @@ export function createBudgetPlanner(config: PlannerConfig) {
       release(s);
       const t = new Seg(index, s.count, width, s.aspect, s.opts, ++epochs);
       t.near = s.near;
+      if (s.pack) packSegs--;
       segs[index] = t;
       dirty();
+      packDirty = true;
     },
 
     setNear(index: number, near: boolean) {
@@ -671,6 +1006,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
       if (!s || s.near === near) return;
       s.near = near;
       orderDirty = true;
+      packDirty = true;
       if (active >= 0) buildOrder();
     },
 
@@ -679,6 +1015,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
       if (engaged) return;
       engaged = true;
       orderDirty = true;
+      packDirty = true;
       if (active >= 0) buildOrder();
     },
 
@@ -688,6 +1025,16 @@ export function createBudgetPlanner(config: PlannerConfig) {
 
     setMaxFetches(n: number) {
       maxFetches = n;
+    },
+
+    /** Pack reads open at once at most (1 on a slow network or with Save-Data). */
+    setMaxPackReads(n: number) {
+      maxPackReads = Math.max(1, n);
+      packDirty = true;
+    },
+
+    get maxPackReads() {
+      return maxPackReads;
     },
 
     /** The document is hidden: nothing starts until it is shown. */
@@ -710,9 +1057,15 @@ export function createBudgetPlanner(config: PlannerConfig) {
           s.decodeTries[i] = 0;
           s.retryAt[i] = 0;
         }
+        // A pack waiting out a retry tries again now (one given up stays given up: its frames come as files).
+        if (s.pack) {
+          s.pack.tries = 0;
+          s.pack.retryAt = 0;
+        }
       }
       retryWake = Infinity;
       orderDirty = true;
+      packDirty = true;
       if (active >= 0) buildOrder();
     },
 
@@ -720,6 +1073,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
     rerank() {
       active = -1;
       dirty();
+      packDirty = true;
     },
 
     /**
@@ -730,6 +1084,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
       const s = seg(act);
       const d = direction > 0 ? 1 : direction < 0 ? -1 : 0;
       const f = s ? Math.min(s.count - 1, Math.max(0, frame)) : frame;
+      if (packSegs > 0) wantPacks(act, f, d, s);
       if (act !== active) dirty();
       else if (d !== 0 && d !== rankedDir) orderDirty = true;
       else if (s && Math.abs(f - rankedAt) > 4 * s.opts.tolerance) orderDirty = true;
@@ -958,6 +1313,272 @@ export function createBudgetPlanner(config: PlannerConfig) {
       }
       decodeErrorStreak = 0;
       cursor = 0;
+      // The store that read the packs is gone with its bytes and reads: each pack is read again from byte 0.
+      for (const s of segs) s?.pack?.forgetLayout();
+      packDirty = true;
+    },
+
+
+    // ------------------------------------------------------------ packs (stage 7)
+
+    /**
+     * Segment `index` (joined) reads its frames from the pack at `url` (hints: the manifest's sizes), or, with null,
+     * one file per frame. Call after `join` and after `retier` (a new tier, a new pack).
+     */
+    setPack(index: number, url: string | null, hint: PackHintSizes | null = null) {
+      const s = segs[index];
+      if (!s) return;
+      if (s.pack) packSegs--;
+      s.pack = url ? new PackState(url, hint ?? { bytes: 0, header: 0, skeletonEnd: 0 }, holdSlotsOf(s.count, s.moveEnd)) : null;
+      if (s.pack) packSegs++;
+      dirty();
+      packDirty = true;
+    },
+
+    /** The pack op outputs (`nextPackOp`): the segment, the read id, the byte range, the hold slots, the pack URL. */
+    packOp,
+
+    /**
+     * The next thing to do about pack reads (PACK_OPEN, PACK_TO, PACK_STOP, PACK_FORGET) with its details in `packOp`,
+     * or NONE. Call until NONE after every change (a pump). Stops and moves come first, then the reads to open (at most
+     * `maxPackReads` open; none while hidden or offline; a pack waiting out a retry waits).
+     */
+    nextPackOp(now: number): number {
+      if (packSegs === 0) return NONE;
+      if (packDirty && active >= 0) buildPackPlan();
+      for (const s of segs) {
+        const p = s?.pack;
+        if (!p) continue;
+        if (p.readId) {
+          const stop = p.failed || !keepRead(s!, p);
+          // A read that reached its end finishes by itself in the store (its `pack-done` is on its way).
+          if (stop && !p.failed && p.known && p.readTo >= 0 && p.readPos >= p.readTo) continue;
+          if (stop || p.wantTo !== p.readTo) {
+            packOp.seg = s!.index;
+            packOp.id = p.readId;
+            packOp.url = p.url;
+            if (stop) {
+              p.readId = 0;
+              return PACK_STOP;
+            }
+            p.readTo = packOp.to = p.wantTo;
+            return PACK_TO;
+          }
+        } else if (p.forgetPending) {
+          p.forgetPending = false;
+          packOp.seg = s!.index;
+          packOp.url = p.url;
+          return PACK_FORGET;
+        }
+      }
+      if (paused || offline) return NONE;
+      let open = 0;
+      for (const s of segs) if (s?.pack?.readId) open++;
+      for (let r = 0; r < 2 && open < maxPackReads; r++) {
+        const s = seg(rankSeg[r]);
+        const p = s?.pack;
+        if (!s || !p || p.readId || p.rank !== r || p.failed) continue;
+        if (p.retryAt > now) {
+          if (p.retryAt < retryWake) retryWake = p.retryAt;
+          continue;
+        }
+        p.readId = ++readSeq;
+        p.readPos = p.wantFrom;
+        p.readTo = p.wantTo;
+        p.reads++;
+        counters.packReads++;
+        if (s.index === active && p.known && p.wantFrom >= p.skeletonEnd) packJumped = false;
+        packOp.seg = s.index;
+        packOp.id = p.readId;
+        packOp.from = p.wantFrom;
+        packOp.to = p.wantTo;
+        packOp.hold = p.holdSlots;
+        packOp.est = estimateEnd(s, p);
+        packOp.url = p.url;
+        return PACK_OPEN;
+      }
+      return NONE;
+    },
+
+    /**
+     * The pack's own header arrived for segment `index` in its life `epoch`. Null when it is taken (or stale), else why
+     * the pack does not fit the film (it is given up: report it once).
+     */
+    packLayout(
+      index: number,
+      epoch: number,
+      count: number,
+      header: number,
+      skeletonEnd: number,
+      bytes: number,
+      slotFrame: ArrayLike<number>,
+      slotOffset: ArrayLike<number>,
+    ): string | null {
+      const s = segs[index];
+      const p = s?.pack;
+      if (!s || s.epoch !== epoch || !p || p.failed || p.known) return null;
+      const err = p.setLayout(count, header, skeletonEnd, bytes, slotFrame, slotOffset, s.usableMask);
+      if (err) failPack(s, err);
+      packDirty = true;
+      return err;
+    },
+
+    /**
+     * Frame `frame` of segment `index` (life `epoch`) arrived from its pack with `size` bytes. False when it is not taken
+     * (the segment left or changed tier, or the frame's bytes are held or being fetched as a file already).
+     */
+    packFrame(index: number, epoch: number, frame: number, size: number): boolean {
+      const s = segs[index];
+      if (!s || s.epoch !== epoch || frame < 0 || frame >= s.count) return false;
+      const b = s.bytes[frame];
+      if (b !== B_NONE && b !== B_DEAD) return false;
+      s.bytes[frame] = B_HELD;
+      s.size[frame] = size;
+      s.fetchedEver[frame] = 1;
+      s.retryAt[frame] = 0;
+      s.tries[frame] = 0;
+      bytesHeld += size;
+      counters.packFrames++;
+      if (s.pack) {
+        s.pack.frames++;
+        s.pack.tries = 0;
+      }
+      enforceCap();
+      return true;
+    },
+
+    /** Read `id` of segment `index` has reached byte `pos`. */
+    packProgress(index: number, epoch: number, id: number, pos: number) {
+      const s = segs[index];
+      const p = s?.pack;
+      if (!s || s.epoch !== epoch || !p || p.readId !== id) return;
+      // Through the skeleton: the read may go on to where the rest is wanted, or re-aim.
+      if (p.known && p.readPos < p.skeletonEnd && pos >= p.skeletonEnd) packDirty = true;
+      p.readPos = pos;
+    },
+
+    /**
+     * Read `id` of segment `index` ended (READ_OK, READ_CANCELLED, READ_RETRY, READ_FINAL) at byte `pos`; `rangeless`
+     * when the server ignored Range. True when the pack is given up now (report it once): a final failure, or the
+     * PACK_TRIES-th failed read in a row without a frame. A failed read is tried again after PACK_RETRY_MS, then twice that.
+     */
+    packEnded(index: number, epoch: number, id: number, outcome: number, pos: number, now: number, rangeless = false, reason = ""): boolean {
+      const s = segs[index];
+      const p = s?.pack;
+      if (!s || s.epoch !== epoch || !p) return false;
+      if (rangeless) p.rangeless = true;
+      if (p.readId === id) {
+        p.readId = 0;
+        p.readPos = pos;
+      }
+      packDirty = true;
+      if (outcome === READ_OK || outcome === READ_CANCELLED || p.failed) return false;
+      if (outcome === READ_FINAL) {
+        failPack(s, reason || "final failure");
+        return true;
+      }
+      if (++p.tries >= PACK_TRIES) {
+        failPack(s, `${reason || "failed"}, ${p.tries} times`);
+        return true;
+      }
+      p.retryAt = now + PACK_RETRY_MS * 2 ** (p.tries - 1);
+      if (p.retryAt < retryWake) retryWake = p.retryAt;
+      return false;
+    },
+
+    /** Give the pack of segment `index` up now (the loader found it unusable). True when it was in use. */
+    failPack(index: number, reason: string): boolean {
+      const s = segs[index];
+      if (!s?.pack || s.pack.failed) return false;
+      failPack(s, reason);
+      return true;
+    },
+
+    /** The pack of segment `index` (tests, the HUD, the counters): null when it reads frame by frame from the start. */
+    pack: (index: number): PackState | null => segs[index]?.pack ?? null,
+
+    /** Pack reads open now. */
+    get packReadsOpen() {
+      let n = 0;
+      for (const s of segs) if (s?.pack?.readId) n++;
+      return n;
+    },
+
+    /**
+     * Why frame `i` of segment `index` is not on the canvas yet, as an index into WAIT_REASONS (the counters' stale
+     * locator; not for the hot path). `rebuild` false: a dirty pack plan is read as it stands (the specs' diagnostic,
+     * which must not change the plan).
+     */
+    waitReason(index: number, i: number, rebuild = true): number {
+      const s = segs[index];
+      if (!s) return 9;
+      if (i < 0 || i >= s.count) return 7;
+      if (s.dec[i] === D_HELD) return 0;
+      if (s.dec[i] === D_DECODING) return 1;
+      const b = s.bytes[i];
+      if (b === B_HELD) return 2;
+      if (b === B_FETCHING) return 3;
+      if (b === B_DEAD) return 8;
+      const p = packed(s) ? s.pack! : null;
+      if (p) {
+        if (rebuild && packDirty && active >= 0) buildPackPlan();
+        if (p.goal >= frameLevel(s, i)) return p.readId ? 5 : 6;
+        return 7;
+      }
+      return s.orderStamp[i] === orderGen ? 4 : 7;
+    },
+
+    /**
+     * The plan's state in one line per segment, for the specs' diagnostic when the film does not come to rest
+     * (e2e/film-frames.ts settle; read through FilmBackdrop's `window.__filmWhy`). Read-only: never rebuilds the plan,
+     * never read by the engine.
+     */
+    debugState(): Record<string, unknown> {
+      const packs: string[] = [];
+      for (const s of segs) {
+        const p = s?.pack;
+        if (!s) continue;
+        const head = `${s.index}${s.index === active ? "*" : ""}${s.near ? "" : " far"} dec ${s.decodedCount}`;
+        if (!p) {
+          packs.push(head);
+          continue;
+        }
+        let held = 0;
+        for (let i = 0; i < s.count; i++) if (s.bytes[i] === B_HELD) held++;
+        packs.push(
+          `${head} bytes ${held}/${s.count} pack ${p.failed ? `failed (${p.failReason})` : p.known ? "known" : "unknown"}` +
+            ` read ${p.readId ? `#${p.readId} at ${p.readPos} to ${p.readTo}` : "none"} rank ${p.rank} level ${p.level} goal ${p.goal}` +
+            ` want ${p.wantFrom}-${p.wantTo} tries ${p.tries}${p.retryAt ? ` retryAt ${Math.round(p.retryAt)}` : ""}${p.rangeless ? " rangeless" : ""}` +
+            ` reads ${p.reads} frames ${p.frames}${p.known ? ` skeletonEnd ${p.skeletonEnd} usableEnd ${p.usableEnd} bytes ${p.bytes}` : ""}`,
+        );
+      }
+      return {
+        active,
+        target,
+        targetLo,
+        targetHi,
+        dir,
+        packDir,
+        packDirty,
+        packJumped,
+        wantDirty,
+        orderDirty,
+        paused,
+        offline,
+        engaged,
+        wantLen,
+        decodesInFlight,
+        maxDecodes,
+        fetchesInFlight,
+        maxFetches,
+        maxPackReads,
+        usedMB: used / 1e6,
+        reservedMB: reserved / 1e6,
+        budgetMB: budgetBytes / 1e6,
+        orphans: orphans.size,
+        decodeErrorStreak,
+        segs: packs,
+      };
     },
 
     /** The epoch of segment `index` (changes on join and retier): pass it back with the job's arrival. */
@@ -994,11 +1615,15 @@ export function createBudgetPlanner(config: PlannerConfig) {
     isComing(index: number, at: number, tol: number): boolean {
       const s = segs[index];
       if (!s) return false;
+      const p = packed(s) ? s.pack! : null;
+      if (p && packDirty && active >= 0) buildPackPlan();
       for (let k = Math.max(0, at - tol); k <= Math.min(s.count - 1, at + tol); k++) {
         if (s.dec[k] === D_DECODING) return true;
         if (s.dec[k] !== D_NONE || !wanted(s, k)) continue;
         const b = s.bytes[k];
-        if (b === B_HELD || b === B_FETCHING || (b === B_NONE && s.orderStamp[k] === orderGen)) return true;
+        if (b === B_HELD || b === B_FETCHING) return true;
+        // From a pack: coming while a read of its level is open or queued.
+        if (b === B_NONE && (p ? p.goal >= frameLevel(s, k) : s.orderStamp[k] === orderGen)) return true;
       }
       return false;
     },

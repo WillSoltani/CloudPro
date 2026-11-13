@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { assertPlaceholdersPresent, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, settleNote, watchPage } from "./film-frames";
 
 // Reduced motion: the film shows stills (FilmBackdrop toIndex: a few frames per segment, 5 for the hero and the
 // bridge-style segments, 3 for a chapter) instead of scrubbing, and the page still scrolls to its end. With both frame
@@ -15,7 +15,7 @@ for (const loader of LOADERS) test(`${loader.name}: with reduced motion the canv
   await openHome(page, loaderQuery(loader));
   expect((await readFilmStats(page))!.mode, "the loader running").toBe(loader.mode);
   expect(await page.evaluate(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
-  expect(await settle(page), "the first still settles").toBe(true);
+  expect(await settle(page), `the first still settles${settleNote(page)}`).toBe(true);
 
   const perFilm = new Map<string, Set<number>>();
   const mismatches: string[] = [];
@@ -24,7 +24,7 @@ for (const loader of LOADERS) test(`${loader.name}: with reduced motion the canv
   expect(end).toBeGreaterThan(step * 10);
   for (let y = 0; ; y = Math.min(end, y + step)) {
     await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
-    expect(await settle(page), `settles at y=${y}`).toBe(true);
+    expect(await settle(page), `settles at y=${y}${settleNote(page)}`).toBe(true);
     // The hook and the pixels in one read (readPaintedFrame), so they describe the same paint.
     const px = PLACEHOLDER_RUN ? await readPaintedFrame(page) : null;
     const painted = px?.hook ?? (await page.evaluate(() => {

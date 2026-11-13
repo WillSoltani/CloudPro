@@ -13,7 +13,18 @@ export type FilmManifest = {
   base: string;
   poster: string;
   kb?: Record<string, number>;
+  /**
+   * The film's packs per width (stage 7, scripts/films/pack.mjs): one file per width next to the frames,
+   * `<base>/<width>/<file>` (filmBase packUrl), holding all its frames. `bytes` (whole file), `header` (fixed part
+   * plus table) and `skeletonEnd` (byte where the skeleton ends) are hints for planning and caps only: the reader
+   * takes every size and offset from the pack's own header. A film without an entry for a width loads that width
+   * frame by frame.
+   */
+  packs?: Record<string, FilmPack>;
 };
+
+/** One pack in a manifest's `packs` (see FilmManifest). */
+export type FilmPack = { file: string; bytes: number; header: number; skeletonEnd: number };
 
 /**
  * One segment of the reel (components/film/reel.ts): its landscape film and, optionally, an upright film
@@ -58,7 +69,7 @@ export type HoldKeys = {
 };
 
 // Pure and server-safe, so it lives with resolveFilm; re-exported here with the rest of the film core.
-export { frameUrl } from "@/components/film/filmBase";
+export { frameUrl, packFor, packUrl } from "@/components/film/filmBase";
 
 const REDUCED_QUERY = "(prefers-reduced-motion: reduce)";
 function subscribeReducedMotion(onChange: () => void) {

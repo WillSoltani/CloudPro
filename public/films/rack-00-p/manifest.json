@@ -16,5 +16,25 @@
     "432": 2312,
     "720": 3832,
     "1080": 6596
+  },
+  "packs": {
+    "432": {
+      "file": "pack-ce2f026a.bin",
+      "bytes": 1912716,
+      "header": 2628,
+      "skeletonEnd": 491142
+    },
+    "720": {
+      "file": "pack-6effb36d.bin",
+      "bytes": 3638898,
+      "header": 2628,
+      "skeletonEnd": 928968
+    },
+    "1080": {
+      "file": "pack-11252bbb.bin",
+      "bytes": 6349994,
+      "header": 2628,
+      "skeletonEnd": 1622586
+    }
   }
 }

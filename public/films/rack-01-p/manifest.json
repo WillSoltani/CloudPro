@@ -16,5 +16,25 @@
     "432": 1760,
     "720": 2928,
     "1080": 4852
+  },
+  "packs": {
+    "432": {
+      "file": "pack-d7453c44.bin",
+      "bytes": 1356472,
+      "header": 2052,
+      "skeletonEnd": 300294
+    },
+    "720": {
+      "file": "pack-1d60041f.bin",
+      "bytes": 2628860,
+      "header": 2052,
+      "skeletonEnd": 571330
+    },
+    "1080": {
+      "file": "pack-e43f85d8.bin",
+      "bytes": 4541470,
+      "header": 2052,
+      "skeletonEnd": 979488
+    }
   }
 }

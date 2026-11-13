@@ -142,6 +142,8 @@ const TAIL_MS = 3000; // after the film shows the target frame: late requests st
 const SETTLE_LIMIT_MS = 10_000;
 const SCROLL_LIMIT_MS = 300_000;
 const FRAME_RE = /\/\d+\/f_\d+\.(webp|avif|jpe?g|png)$/i;
+/** A film pack (stage 7): one file per film and width holding all its frames. */
+const PACK_RE = /\/\d+\/pack-[0-9a-f]+\.bin$/i;
 
 // ---- in the page -----------------------------------------------------------------------------------------
 
@@ -202,7 +204,7 @@ const round = (n, d = 1) => (n === null || n === undefined ? null : Math.round(n
 const pct = (part, whole) => (whole > 0 ? (100 * part) / whole : 0);
 
 /** Network figures of one leg, filled while the leg runs. */
-const newLeg = () => ({ requests: 0, aborted: 0, abortedFrames: 0, filmFrames: 0, bytes: 0, filmBytes: 0, netRefetches: 0, errors: [], failedResponses: 0 });
+const newLeg = () => ({ requests: 0, aborted: 0, abortedFrames: 0, filmFrames: 0, filmPacks: 0, bytes: 0, filmBytes: 0, packBytes: 0, netRefetches: 0, errors: [], failedResponses: 0 });
 
 async function bodyBytes(req) {
   try {
@@ -276,18 +278,28 @@ async function measureProfile(name) {
       const key = req.url();
       if (seenFrames.has(key)) leg.netRefetches++;
       seenFrames.add(key);
+    } else if (PACK_RE.test(path)) {
+      leg.filmPacks++;
     }
   });
-  page.on("requestfinished", (req) => {
+  // Film data bytes: frame files and packs (a pack read the page stopped ends as a failed request: its bytes count too).
+  const sized = (req) => {
     const leg = legOf.get(req);
     if (!leg) return;
-    const isFrame = FRAME_RE.test(new URL(req.url()).pathname);
+    const path = new URL(req.url()).pathname;
+    const isFrame = FRAME_RE.test(path);
+    const isPack = PACK_RE.test(path);
     sizeJobs.push(
       bodyBytes(req).then((b) => {
         leg.bytes += b;
-        if (isFrame) leg.filmBytes += b;
+        if (isFrame || isPack) leg.filmBytes += b;
+        if (isPack) leg.packBytes += b;
       }),
     );
+  };
+  page.on("requestfinished", sized);
+  page.on("requestfailed", (req) => {
+    if (PACK_RE.test(new URL(req.url()).pathname)) sized(req);
   });
   page.on("response", (res) => {
     if (res.status() >= 400) legBucket(legs, phase).failedResponses++;
@@ -356,9 +368,22 @@ async function measureProfile(name) {
       requests: n.requests - n.aborted,
       aborted: n.aborted,
       filmFrames: n.filmFrames - n.abortedFrames,
+      filmPacks: n.filmPacks,
       mb: round(n.bytes / 1e6, 2),
       filmMB: round(n.filmBytes / 1e6, 2),
+      packMB: round(n.packBytes / 1e6, 2),
       engineRequests: s.requests,
+      // stage 7: film data requests = pack reads + per-frame file requests (the page's own counts)
+      packRequests: s.packRequests ?? 0,
+      filmDataRequests: (s.packRequests ?? 0) + s.requests,
+      packBytesMB: round(s.packBytesMB ?? 0, 2),
+      packBytesRepeatedMB: round(s.packBytesRepeatedMB ?? 0, 3),
+      packFilms: s.packFilms ?? 0,
+      packFallbackFilms: s.packFallbackFilms ?? 0,
+      framesFromPacks: s.framesFromPacks ?? 0,
+      framesFromFiles: s.framesFromFiles ?? 0,
+      // where the longest stale stretch began and what the loader was waiting for
+      staleMaxAt: s.staleMaxSeg === undefined ? null : { seg: s.staleMaxSeg, film: s.staleMaxFilm, frame: s.staleMaxFrame, painted: s.staleMaxPainted, atMs: s.staleMaxAtMs, why: s.staleMaxWhy },
       refetches: s.refetches,
       netRefetches: n.netRefetches,
       exactShare: round(pct(s.exactDraws, draws), 1),
@@ -419,9 +444,13 @@ async function measureProfile(name) {
     load: {
       requests: loadLeg.requests,
       filmFrames: loadLeg.filmFrames,
+      filmPacks: loadLeg.filmPacks,
       mb: round(loadLeg.bytes / 1e6, 2),
       filmMB: round(loadLeg.filmBytes / 1e6, 2),
+      packMB: round(loadLeg.packBytes / 1e6, 2),
       engineRequests: before.stats.requests,
+      packRequests: before.stats.packRequests ?? 0,
+      filmDataRequests: (before.stats.packRequests ?? 0) + before.stats.requests,
       decodes: before.stats.decodes,
       consoleErrors: loadLeg.errors.length,
     },
@@ -442,16 +471,25 @@ function rowsFor(results) {
   add("canvas backing px", (r) => (r.backing ? r.backing.join("x") : "n/a"));
   add("load: requests (all)", (r) => r.load.requests);
   add("load: film frames", (r) => r.load.filmFrames);
+  add("load: film packs", (r) => r.load.filmPacks ?? 0);
   add("load: MB", (r) => r.load.mb);
+  add("load: film data MB", (r) => r.load.filmMB);
   add("load: engine requests", (r) => r.load.engineRequests);
+  add("load: film data requests", (r) => r.load.filmDataRequests ?? r.load.engineRequests);
   const leg = (key, tag) => {
     const has = (r) => r[key];
     const get = (fn) => (r) => (has(r) ? fn(r[key]) : "-");
     add(`${tag}: seconds scrolling`, get((l) => `${l.seconds}${l.complete ? "" : " (INCOMPLETE)"}`));
     add(`${tag}: requests (all)`, get((l) => l.requests));
     add(`${tag}: film frames`, get((l) => l.filmFrames));
+    add(`${tag}: film packs`, get((l) => l.filmPacks ?? 0));
     add(`${tag}: MB`, get((l) => l.mb));
+    add(`${tag}: film data MB`, get((l) => l.filmMB));
     add(`${tag}: engine requests`, get((l) => l.engineRequests));
+    add(`${tag}: film data requests`, get((l) => l.filmDataRequests));
+    add(`${tag}: pack MB (twice)`, get((l) => `${l.packBytesMB} (${l.packBytesRepeatedMB})`));
+    add(`${tag}: films pack/files`, get((l) => `${l.packFilms}/${l.packFallbackFilms}`));
+    add(`${tag}: frames pack/file`, get((l) => `${l.framesFromPacks}/${l.framesFromFiles}`));
     add(`${tag}: refetches`, get((l) => l.refetches));
     add(`${tag}: exact draws %`, get((l) => l.exactShare));
     add(`${tag}: stale ticks %`, get((l) => l.staleShare));
@@ -536,7 +574,14 @@ if (results.length) {
   }
   console.log("");
   printTable(results);
+  for (const r of results) {
+    for (const key of ["pass", "back"]) {
+      const a = r[key]?.staleMaxAt;
+      if (a && a.seg >= 0) console.log(`  ${r.name} ${key}: longest stale ${r[key].staleMsMax} ms began ${a.atMs} ms into the leg at ${a.film} f${a.frame} (seg ${a.seg}, painted f${a.painted}): ${a.why || "no reason given"}`);
+    }
+  }
   console.log("\nexact/stale/dist: from window.__filmStats after a reset right before the pass. Network: Playwright request events. MB = 10^6 bytes.");
+  console.log("film data requests: the page's pack reads + per-frame file requests. film data MB: frame files and packs on the network.");
 }
 
 let problems = [];

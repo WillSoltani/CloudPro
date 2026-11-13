@@ -11,6 +11,9 @@ import {
   newEffectiveTarget,
   newFilmStats,
   newStaleClock,
+  loaderStatsFor,
+  newInstrument,
+  noteStaleStart,
   onTarget,
   recoverStale,
   resetFilmStats,
@@ -76,6 +79,55 @@ describe("tickStale", () => {
     tickStale(s, c, false, 21);
     assert.equal(s.staleMs, 16);
     assert.equal(s.staleMsMax, 16);
+  });
+});
+
+describe("the longest stale stretch's place (noteStaleStart)", () => {
+  it("records where the longest stretch began and what the loader waited for, and keeps it over shorter ones", () => {
+    const s = newFilmStats();
+    const c = newStaleClock();
+    resetFilmStats(s, c, 1000);
+    tickStale(s, c, false, 1000);
+    noteStaleStart(c, 3, "rack-03-p", 40, 38, "pack read open");
+    tickStale(s, c, true, 1010);
+    tickStale(s, c, true, 1100);
+    tickStale(s, c, false, 1200); // 190 ms
+    noteStaleStart(c, 5, "rack-05-p", 2, -1, "file fetch queued");
+    tickStale(s, c, true, 1300);
+    recoverStale(s, c, 1350); // 50 ms: shorter, the first stays
+    assert.equal(s.staleMsMax, 190);
+    assert.deepEqual(
+      [s.staleMaxSeg, s.staleMaxFilm, s.staleMaxFrame, s.staleMaxPainted, s.staleMaxAtMs, s.staleMaxWhy],
+      [3, "rack-03-p", 40, 38, 10, "pack read open"],
+    );
+    noteStaleStart(c, 5, "rack-05-p", 2, -1, "file fetch queued");
+    tickStale(s, c, true, 1400);
+    recoverStale(s, c, 1700); // 300 ms: the new longest
+    assert.deepEqual([s.staleMaxSeg, s.staleMaxFrame, s.staleMaxPainted, s.staleMaxAtMs, s.staleMaxWhy], [5, 2, -1, 400, "file fetch queued"]);
+    resetFilmStats(s, c, 2000);
+    assert.deepEqual([s.staleMaxSeg, s.staleMaxFilm, s.staleMaxWhy, s.staleMaxAtMs], [-1, "", "", 0]);
+  });
+});
+
+describe("pack counters (loaderStatsFor)", () => {
+  it("counts pack reads, bytes, films and where frames came from; a reset zeroes the counters and keeps the gauges", () => {
+    const inst = newInstrument("budget");
+    const st = loaderStatsFor(inst);
+    st.packRequested!("rack-00", 432);
+    st.packRequested!("rack-01", 432);
+    st.packBytes!(500_000, 0);
+    st.packBytes!(250_000, 50_000);
+    st.packFilms!(7, 1);
+    st.framesArrived!(true, 40);
+    st.framesArrived!(false, 3);
+    const s = inst.stats;
+    assert.deepEqual(
+      [s.packRequests, s.packBytesMB, s.packBytesRepeatedMB, s.packFilms, s.packFallbackFilms, s.framesFromPacks, s.framesFromFiles],
+      [2, 0.75, 0.05, 7, 1, 40, 3],
+    );
+    resetFilmStats(s, inst.clock, 0);
+    assert.deepEqual([s.packRequests, s.packBytesMB, s.packBytesRepeatedMB, s.framesFromPacks, s.framesFromFiles], [0, 0, 0, 0, 0]);
+    assert.deepEqual([s.packFilms, s.packFallbackFilms], [7, 1]);
   });
 });
 

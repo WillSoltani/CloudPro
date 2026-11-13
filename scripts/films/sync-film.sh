@@ -11,12 +11,15 @@
 # --force — re-cuts get a new name (beacon-v2), never a reused path, because browsers never
 # re-fetch an immutable URL. --write-manifest copies the CDN manifest back over
 # public/films/<name>/manifest.json (only base/poster change) so the app imports the CDN URLs.
+# Packs: a new or re-cut film also needs its packs (npm run film:pack, docs/film-lab-gate.md "Packs"); this
+# script uploads only the *.webp frames, so the pack files are uploaded separately and checked with
+# `npm run film:pack -- --check-cdn <name>` before their manifest entries ship.
 #
 # Env: FILMS_BUCKET  FILMS_DOMAIN  FILMS_OUTPUTS=infra/cdk.out/films-outputs.json (flags win over env,
 #      env over the outputs file written by `cdk deploy CloudPortfolioFilms --outputs-file …`)
 set -euo pipefail
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
+usage() { sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 die() { echo "sync-film: $*" >&2; exit 1; }
 fsize() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1"; }
 

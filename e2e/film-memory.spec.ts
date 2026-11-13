@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { FilmStats } from "../components/film/filmStats";
-import { assertPlaceholdersPresent, filmNames, maxScroll, openHome, paintedNow, readFilmStats, settle, walkPage, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, filmNames, maxScroll, openHome, paintedNow, readFilmStats, settle, settleNote, unsettledAt, walkPage, watchPage } from "./film-frames";
 
 // The budget loader's memory rules (components/film/loader/budget.ts, docs/film-lab-gate.md "The budget loader"), on
 // placeholder frames. A placeholder frame is a few hundred bytes on the wire but has the real tier's pixel size, so the
@@ -24,17 +24,17 @@ const VIEWPORTS = [
 /** The compressed-byte cap that goes with a decoded budget (budget-bytes.ts bytesCapFor), in MB (10^6 bytes) like the counters. */
 const bytesCapMB = (budgetMB: number) => ((budgetMB * 1e6 < 256 * MiB ? 48 : 160) * MiB) / 1e6;
 
-type Leg = { name: string; stats: FilmStats; films: string[]; unsettled: number[]; mismatches: string[] };
+type Leg = { name: string; stats: FilmStats; films: string[]; unsettled: string[]; mismatches: string[] };
 
 /** One leg of the walk: counters reset first, read after; the films painted, where the film did not settle, where the pixels disagree with the hooks. */
 async function leg(page: Page, name: string, from: number, to: number, step: number): Promise<Leg> {
   await page.evaluate(() => window.__filmStatsReset!());
   const films = new Set<string>();
-  const unsettled: number[] = [];
+  const unsettled: string[] = [];
   const mismatches: string[] = [];
   await walkPage(page, from, to, step, async (y) => {
     if (!(await settle(page))) {
-      unsettled.push(y);
+      unsettled.push(unsettledAt(page, y));
       return;
     }
     const p = await paintedNow(page);
@@ -52,7 +52,7 @@ for (const vp of VIEWPORTS) {
       test.setTimeout(600_000);
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
       await openHome(page);
-      expect(await settle(page), "the first frame settles").toBe(true);
+      expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
       expect((await readFilmStats(page))!.mode, "the loader running").toBe("budget");
 
       const expected = filmNames().filter((n) => n.endsWith("-p") === vp.portrait);
@@ -103,7 +103,7 @@ for (const vp of VIEWPORTS) {
       test.setTimeout(600_000);
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
       await openHome(page, "?budget=96");
-      expect(await settle(page), "the first frame settles").toBe(true);
+      expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
       const first = (await readFilmStats(page))!;
       expect(first.mode).toBe("budget");
       expect(first.budgetMB).toBeCloseTo((96 * MiB) / 1e6, 3);

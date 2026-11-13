@@ -1,8 +1,14 @@
 // Types of ./frame-worker.js (plain JavaScript on purpose: the browser loads that file as it is, see its header).
 import type { FromWorker, ToWorker } from "./frame-worker-protocol";
 
-/** The part of a fetch Response the store reads. */
-export type ResponseLike = { ok: boolean; status: number; blob(): Promise<Blob> };
+/** The part of a fetch Response the store reads (`headers` and a streaming `body` for pack reads). */
+export type ResponseLike = {
+  ok: boolean;
+  status: number;
+  blob(): Promise<Blob>;
+  headers?: { get(name: string): string | null };
+  body?: ReadableStream<Uint8Array> | null;
+};
 export type FetchLike = (url: string, init: RequestInit) => Promise<ResponseLike>;
 /** The part of an ImageBitmap the loader uses (tests pass fakes). */
 export type BitmapLike = { readonly width: number; readonly height: number; close(): void };

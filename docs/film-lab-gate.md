@@ -20,6 +20,8 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Rules every loader shares (usable frames, network class), their unit tests | `components/film/loader/usable.ts`, `network.ts`, `shared.test.ts` |
 | The budget loader's pure planner and byte arithmetic, their unit tests | `components/film/loader/budget-plan.ts`, `budget-bytes.ts`, `budget-plan.test.ts`, `budget-bytes.test.ts` |
 | The budget loader (the default), its film worker and frame store, the message protocol, the loader choice; unit tests with a fake worker and fetch | `components/film/loader/budget.ts`, `frame-worker.js` (+ `frame-worker.d.ts`), `frame-worker-protocol.ts`, `select.ts`; `budget.test.ts` |
+| Film packs (stage 7): the format, writer and streaming reader shared by the scripts, the page and the worker; the builder; their unit tests | `components/film/loader/pack-format.mjs` (+ `.d.mts`), `scripts/films/pack.mjs`, `scripts/films/pack-lib.mjs`, the lab pack server `scripts/films/pack-serve.mjs` (`pack-serve.test.mjs`); `pack-format.test.ts`, `components/film/packs.test.ts`, `scripts/films/pack-lib.test.mjs` (see "Packs") |
+| Film packs at run time: the pack reads in the frame store, the pack plan in the planner, its byte arithmetic; unit tests with a fake server that streams packs in arbitrary chunks | `components/film/loader/frame-worker.js` (pack reads), `budget-plan.ts` (`nextPackOp`), `pack-plan.ts`; `pack-loader.test.ts`; spec `e2e/film-packs.spec.ts` (see "Packs at run time") |
 | CI job | `film` in `.github/workflows/ci.yml` ("Film specs (placeholder frames)") |
 
 ## Commands
@@ -31,6 +33,7 @@ npm run test:film-unit        # node:test, the counters' and the backing size's 
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
+npm run film:pack -- --from-cdn <film> --width <w> --out <dir>   # build a real pack from the CDN's frames (see "Packs")
 ```
 
 `npm run film:quality -- <options>` runs `scripts/films/scrub-quality.mjs` against a server you started (see "Scroll-pass
@@ -58,6 +61,144 @@ enough on a Mac. CI runs `npm install --no-save sharp@0.34.5` first; do the same
   If the production server was started earlier in another mode (placeholders or `FILM_FRAMES=cdn`), stop it:
   locally `reuseExistingServer` keeps it.
 
+## Packs
+
+Stage 7: one file per film directory and width holding all its frames, so a film arrives in one streaming read instead of
+one request per frame. Every manifest names its packs (built from the CDN's frames, see "Builder"); the budget loader reads
+them ("Packs at run time" below).
+
+**Format** (`components/film/loader/pack-format.mjs`, CFPK layout v1, ported from the sister project): a 24-byte fixed
+header (magic `CFPK`, version 1, frame count N, header length 24 + 12·N, skeleton end, total bytes), a table of N entries
+(frame index, absolute offset, length) in file order, then the frame files' bytes unchanged and contiguous. The reader takes
+everything from the pack's own header (`parsePackHeader` checks magic, version, every frame once, contiguous slices, the
+total and the skeleton end); `PackBytes` cuts frames out of bytes arriving in any chunk sizes at any offset (a read from 0, a
+Range read from the first byte not held), counts bytes read twice and never stores a hole. The file is plain `.mjs` with no
+imports: Node imports it, and so do the page and the worker (Turbopack bundles it into the worker's chunk; measured in a
+production build, see the file's header).
+
+**Frame order** (`packOrder(count, M)`): the hold frames 0, M and last; the skeleton (every 4th frame of the move, 4, 8, …
+below M); the rest of the move in frame order; the tail frames after M, even offsets from M first. M is the timeline's
+`segment` for the rack films (both cameras; `-p` plays its landscape film's timeline), else the last frame (the tower), the
+same rule as `reel.ts` `segmentOf` (checked by `components/film/packs.test.ts`). So a read from byte 0 yields the hold
+frames, then a scrub-able skeleton, then full detail.
+
+**Name and manifest.** `<base>/<width>/pack-<first 8 hex of the file's sha256>.bin`, next to the frames (the CDN caches it as
+immutable, so the name carries the content). A manifest names its packs in an optional `packs` field,
+`{ "<width>": { file, bytes, header, skeletonEnd } }` (`FilmManifest.packs`): hints for planning and caps only. `packUrl(film,
+width)` (`filmBase.ts`) gives the URL, or null when the manifest names none or a malformed one (a path in the name, impossible
+sizes); a width without an entry loads frame by frame. The name is relative to `base`, so packs follow `resolveFilm`'s
+`NEXT_PUBLIC_FILM_BASE` rewrite like the frames. `build-film.sh` writes a fresh manifest without `packs` (new frames need new
+packs); `sync-film.sh` keeps the field (it edits base and poster with jq).
+
+**Builder** (`npm run film:pack -- …`, `scripts/films/pack.mjs`; never uploads): `--from-cdn <films>|--all [--width w]
+[--out dir] [--write-manifest]` downloads the frames from the manifest's base (8 in flight, at most 12, retries, checks the
+count and that every body is WebP), builds the pack, writes it to `<out>/films/<name>/<width>/pack-<hash>.bin` (an older
+pack in that directory is removed; default `--out films-src/packs`, gitignored), reads it back from disk and compares every
+frame's bytes with the downloaded file both through the table and through `PackBytes`, prints its layout and with
+`--write-manifest` sets `packs[width]` in `public/films/<name>/manifest.json`, keeping the rest of the file byte for byte.
+`--verify` re-checks built packs against the CDN's frames; `--check-cdn [--full]` checks the pack a manifest names as the page
+will read it (HEAD: 200, size, `application/octet-stream`, CORS; the CORS preflight a browser may send before a Range read,
+OPTIONS with `Access-Control-Request-Headers: range`: 2xx, the origin allowed, GET and the Range header allowed (by name or `*`);
+a Range read of the header: 206, a readable Content-Range, the header parses and agrees with the entry and the frame count; the
+last 16 bytes; `--full` the content hash).
+
+**The preflight.** The worker's Range reads are cross-origin. Chromium 151 and WebKit 26.5 send no preflight for them: a single
+range (`bytes=a-b`, `bytes=a-`) is a CORS-safelisted request header (checked 2026-11-13 with a worker on 127.0.0.1:3006 fetching
+from 127.0.0.1:3007: GETs with `Range` went out directly, a control header was preflighted). A browser that does preflight needs
+an answer that allows Range, or every pack read fails as a network error, is retried three times and the film falls back to
+frame files after about 1.2 s; `--check-cdn` checks that answer. The film CDN answered the preflight for a pack path on
+2026-11-13 (before any pack was uploaded) with 200, `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Headers: *`,
+`Access-Control-Allow-Methods: GET,HEAD,OPTIONS`, max age 3600.
+
+**Shipping packs: upload first, deploy after.** A manifest that names a pack the CDN does not hold makes every first visit
+ask for it, get a 403 (the film CDN's answer for an object it does not hold; final after one request, as a 404 is) and fall back to one file per frame (correct, but slower than today's idle gate by one wasted request), so
+the order is: (1) build with `npm run film:pack -- --from-cdn <film>|--all --write-manifest` (the output goes to the `--out` tree,
+never into git; the manifest entries are the only committed change) and `--verify` it; (2) the packs are uploaded to the
+films bucket under the same path as the output tree (`films/<name>/<width>/pack-<hash>.bin`, `Cache-Control: public,
+max-age=31536000, immutable`, `Content-Type: application/octet-stream`; `sync-film.sh` uploads only `*.webp`, so this is a
+separate step done by whoever owns the bucket); (3) `npm run film:pack -- --check-cdn --all [--full]` against the CDN; (4) the
+gate in Chromium and WebKit against a local production build that reads the packs from the CDN (built without `NEXT_PUBLIC_FILM_BASE`, e.g.
+`NEXT_DIST_DIR=.next-film-cdn`; no `?packorigin=`): `npm run film:quality -- --profiles desktop,iphone,slowphone --assert
+scripts/films/packs-live.assert.json`, which fails unless every profile read packs before the first scroll and through the pass with
+no per-frame file request, no film fallen back to files, at most 30 film data requests and no console error (checked on
+2026-11-13 before the upload, desktop against the CDN: it failed as it should, all 8 films fallen back to 1,387 frame files);
+(5) only then merge the manifests and deploy. A new or re-cut film gets a new name (frames are immutable) and its packs built the same way;
+`build-film.sh` writes a manifest without `packs`, which is correct until the packs exist.
+
+**Measuring packs before they are uploaded (lab only).** `node scripts/films/pack-serve.mjs [--root <out tree>] [--port 3008]
+[--log f]` serves the built packs (`--root`, default `films-src/packs` under the repository root: the tree `npm run film:pack` writes by default) on 127.0.0.1 with the CDN's behaviour for them (`Access-Control-Allow-Origin: *`, the exposed
+headers, `Accept-Ranges`, 206 with `Content-Range`, strong ETag, `immutable`, a one hour preflight; nothing else is served). A page
+on `127.0.0.1` or `localhost` with **`?packorigin=http://127.0.0.1:3008`** reads its packs from there (same path, other origin)
+while the frames stay where the manifest puts them (`select.ts` `packOriginFromQuery`: ignored on any other page host and for any
+other origin; `rehostUrl`). In the gate: `--query "packorigin=http://127.0.0.1:3008"`. The gate throttles every request of the page, so
+on the slow-phone profile the local packs are throttled like the CDN's frames; on the other profiles they come over loopback, faster
+than the CDN would serve them. The server is HTTP/1.1 (Node), the CDN HTTP/2. Real-frame A/B and what it showed: "Stage 7: packs"
+in `docs/cinematic-homepage.md`.
+
+**Placeholder packs.** `npm run film:placeholder` also writes a pack for every film and width from the placeholder frames,
+in the real format and order, named as the manifest's `packs[width].file` when there is one (its sizes then differ from the
+hints, which the reader must tolerate), else `pack-<its own hash>.bin` (which nothing asks for: the page reads packs only for
+widths whose manifest names one). Adding an entry later and running the generator again writes the pack under the new name
+without touching the frames; a second run changes nothing. Packs live in the width directories, so they are gitignored with
+the frames and covered by CI's placeholder cache (keyed on the pack code and the timeline too).
+
+## Packs at run time
+
+The budget loader reads a segment's frames from its pack when the manifest names one for the segment's tier
+(`packUrl`), unless the page says **`?pack=0`** (read once in `FilmBackdrop`'s effect: every film then loads one file per frame,
+the per-frame path unchanged) or the segment plays reduced-motion stills (five frames do not need the film). The legacy loader
+never reads packs.
+
+**Who does what.** The planner (`budget-plan.ts`, `nextPackOp`; byte arithmetic in `pack-plan.ts`) decides which pack reads run
+and over which bytes; the frame store (`frame-worker.js`, in the worker or on the page) runs them and puts every frame it cuts
+out under the same key a per-frame fetch of it would use (`<epoch>/<frame>`), so the planner, the decodes, the byte cap and
+`isComing` see a frame's bytes arrive the same way from a pack or from a file. The decode side is unchanged. A frame of a
+segment reading its pack is never fetched as a file while the pack is in use; its bytes are held once.
+
+**Reading** (the store). One `PackBytes` per pack URL keeps the header and the bytes of frames still arriving; a complete
+frame is copied into the keyed store and released there. A read starts at the first byte not held. From byte 0 to the end of the
+file it is a plain GET without a Range header (a complete 200 can be stored by the HTTP cache); a read that ends earlier asks for
+a closed range (`bytes=n-m`; before the header is known, up to the end the manifest's hints give: the skeleton's end, or the hold
+frames' end at twice the mean frame size), because stopping an open-ended read costs whatever is in flight when the abort lands,
+the whole file on a fast link; continuing later is a Range read from the first byte not held. The read stops (abort) before the
+next byte held, at its end, or when the planner says. A 206 must carry a readable Content-Range naming the start asked for and
+the pack's total; where that header is unreadable, its Content-Length (or the bytes of a body read to its end) must match. A 200
+to a Range request is the whole file from byte 0: the bytes held already are counted as read twice and skipped, and the pack is
+read from byte 0 from then on. A 403 (the film CDN's answer for a pack it does not hold), 404, 410, 416 or another final status, a header that fails its check (`parsePackHeader`), a
+mismatched range or a body that cannot be streamed are final; a network error, a 408/429/5xx or a body that ends early is
+retried after 400 ms, then 800 ms. Three failed reads in a row with no frame delivered, or one final failure, give the pack up.
+
+**The plan** (design E). Before the visitor engages (the idle gate): one read of the hero pack, through its skeleton only (the
+same frames the per-frame idle gate fetches, plus the pack's header: 12 bytes a frame). Once engaged, in order: the active
+film's skeleton, the skeleton of the film ahead in the direction of travel, the active film to its end (from the target: the
+first missing frame at or after it; going up, a run from 64 frames below the highest missing frame at or below it), the film
+ahead to its end (from where the visitor enters it), the skeleton of the film behind, the hold frames (0, M, last) of farther near
+films, and last the film behind to its end (its frames are what a scroll back needs; the per-frame order reads it fully too).
+Read 1 takes the first film on that list and runs on through its later items unless another film's full read comes between;
+read 2 (two may run at once) takes only hold and skeleton items of other films, so full reads run one at a time, in order. On a
+slow network or with Save-Data one read at a time, and the active film is read to its end before any other. The plan is rebuilt
+on a segment change, a leap (more than 4 x the tolerance in one tick, or more than one segment), a change of the raw direction
+(including a stop), a direction flip of the plan itself (only after 8 frames of travel against it), the visitor engaging, a
+change of what is near, a read ending, a header arriving and a read crossing its skeleton's end. A read that no longer matters is
+stopped where it is (its bytes stay) and continued later from the first byte not held. The active film's read is re-aimed at the
+target only when the visitor goes up, has leapt or has stopped; moving down it reads on in frame order (a read up to 16 slots
+short of where the plan wants it, with nothing held between, reaches it anyway).
+
+`isComing` is true for a frame whose bytes a queued or open pack read will bring (its level, hold, skeleton or the rest, is on
+the plan), and false once the pack is given up and the frame's own file fetch is given up too. A pack given up leaves the frames
+it delivered in place; the film's missing frames join the per-frame order at once. Without `navigator.connection` the hero
+pack's first read decides "slow" the way the timed hero frames do (`network.ts` `packTimesSlow`: its first 8 frames slower than
+per-frame fetches of 400 ms each, 6 at a time).
+
+**Counters** (`window.__filmStats`): `packRequests` (pack reads started), `packBytesMB` and `packBytesRepeatedMB` (pack body bytes
+received, and of them bytes held already: a whole-file answer to a Range request, a frame read again after the byte cap dropped
+it, or the tail of a chunk that ran into bytes held), `packFilms` and `packFallbackFilms` (gauges: segments reading their pack,
+segments whose pack was given up), `framesFromPacks` and `framesFromFiles`. `requests` keeps meaning per-frame file requests, so
+the film's data requests are `packRequests + requests` (the gate script's "film data requests"). `inflight` counts file requests
+only. The HUD's third line shows them.
+
+**HTTP cache on a second visit.** See "Packs: second visit" in the "Lab gate" section of `docs/cinematic-homepage.md`.
+
 ## The frame loader
 
 Which frames exist in memory is decided by a frame loader behind one interface, `FrameLoader` in
@@ -73,7 +214,8 @@ registration. Two loaders implement it:
 URL says **`?loader=legacy`**, **`?loader=budget`** or **`?loader=budget-main`** (the budget loader decoding on the main
 thread from the start). The page falls back on its own (`select.ts` `runnableLoader`): without `Worker` it runs
 `budget-main`, without `fetch`, `Blob` or `createImageBitmap` the legacy loader. **`?budget=<MB>`** (MiB, 8 to 4096) forces the
-budget loader's decoded-frame budget for the page load, so a desktop browser can run with a phone's figure. A loader reports through the
+budget loader's decoded-frame budget for the page load, so a desktop browser can run with a phone's figure. **`?pack=0`** turns film packs
+off (see "Packs at run time"); the lab-only **`?packorigin=`** moves the packs to a local origin (see "Packs"). A loader reports through the
 narrow `LoaderStats` hook (requests with refetches, decodes, failures, in flight, frames alive and their bytes; for a loader
 that reserves decodes and keeps compressed bytes also decode start and end, bytes held, its budget and a change of name),
 turned into `window.__filmStats` by the one adapter `loaderStatsFor` in `filmStats.ts`, so the counters keep the same
@@ -106,10 +248,10 @@ frame's bytes (CORS, no credentials, so the canvas stays readable), keeps them, 
 and transfers the bitmap; at most 6 fetches (3 on a slow network or with Save-Data) and 2 decodes (3 on a budget of 256 MiB or
 more) at once, never aborting a fetch that has started. Without `navigator.connection` the worker times the first hero
 frames' fetches and the page decides "slow" from them, as the legacy loader does from resource timing. The worker is **plain
-JavaScript with no imports on purpose**: the same file also runs on the page when a worker cannot (below), and the loader's
-authors found Next 16.1's production build copying it to `/_next/static/media/frame-worker.<hash>.js`. Measured in the 2026-11-13
-build (Next 16.1.6): that copy is emitted, but the browser starts a `blob:` worker whose script `importScripts` hashed chunks
-under `/_next/static/chunks/` that hold the compiled store, so no stable URL names the worker's code. The specs that need the
+JavaScript** (types in `frame-worker.d.ts`): the same file also runs on the page when a worker cannot (below). Measured in the
+2026-11-13 build (Next 16.1.6): Next copies it to `/_next/static/media/frame-worker.<hash>.js`, but the browser starts a `blob:`
+worker whose script `importScripts` hashed chunks under `/_next/static/chunks/` that hold the compiled store and its import of
+`pack-format.mjs`, so no stable URL names the worker's code. The specs that need the
 worker to fail therefore replace `window.Worker` (`e2e/film-fallback.spec.ts`) instead of refusing a URL. The same
 file exports `createFrameStore`, which the page runs itself when a worker cannot: if the worker fails to start, lacks
 `createImageBitmap`, errors, does not answer within 10 s, or its `createImageBitmap` rejects 3 different frames in a row with no
@@ -134,7 +276,7 @@ falls as the window moves and never reaches the film's count on a phone. Checks 
 `components/film/FilmBackdrop.tsx` keeps `window.__filmStats` (type `FilmStats` in `components/film/filmStats.ts`)
 up to date where it already does the work; it only writes the object, never reads it back, so the film behaves
 exactly as without it. `mode` is the loader running now: `"budget"`, `"budget-main"` (it may switch to that at run time) or
-`"legacy"` (from the start, or at run time when the budget loader cannot decode the frames at all). Under the budget loader `requests` are network fetches of frame bytes, `refetches` fetches of a frame (film,
+`"legacy"` (from the start, or at run time when the budget loader cannot decode the frames at all). Under the budget loader `requests` are network fetches of one frame file each (pack reads are `packRequests`, see "Packs at run time"), `refetches` fetches of a frame (film,
 width, index) whose bytes were fetched before (0 while the bytes are kept), `decodes` frames decoded and kept, `redecodes`
 decodes of a frame decoded before (from kept bytes, no request), and `framesAlive` / `decodedMB` count the ImageBitmaps held,
 reserved decodes included, so `decodedMBPeak` never passes `budgetMB`. The budget loader's own counters (redecodes, worker and
@@ -159,7 +301,12 @@ draw() prefers; the rule is "as far from `targetFrame` as `effectiveFrame` is". 
 to the nearest effective frame. Stale means the canvas does not show the effective target of the target segment
 after a clock tick; a stretch ends at the tick, or the paint between ticks, that shows it again.
 
-Open the home page with `?hud=1` to see two lines of them, refreshed four times a second. The first line reads
+Where the longest stale stretch began: `staleMaxSeg`, `staleMaxFilm`, `staleMaxFrame` (the target then), `staleMaxPainted` (the
+frame on the canvas then, −1 when the canvas showed another segment), `staleMaxAtMs` (ms after the last reset) and `staleMaxWhy`
+(what the loader was waiting for, `FrameLoader.waitReason`, read once when a stretch opens: "file fetch queued", "pack read open
+(… read at frame N)", "bytes held, decode not started", …; empty under the legacy loader). The gate script prints them.
+
+Open the home page with `?hud=1` to see two lines of them (three with packs), refreshed four times a second. The first line reads
 `f<painted>/<target>`, followed by `eff <effective>` when the two targets differ, the tier width and `canvas <w>x<h>`
 (the backing store, see below).
 
@@ -188,7 +335,27 @@ All run on placeholder frames and have no timing thresholds: they scroll in half
 to rest (the canvas shows the effective target, or any frame of the target segment once nothing is in flight and nothing
 changes) before they look. The reel, stats, backing, viewports and reduced-motion specs run once per loader (`LOADERS` in
 `e2e/film-frames.ts`: the default, whose `mode` must be `"budget"`, so the worker was emitted by the build and runs in that
-browser, and `?loader=legacy`), the frame read back from the canvas pixels compared with `data-frame` for both.
+browser, reading the placeholder packs; the same with `?pack=0`, one file per frame; and `?loader=legacy`), the frame read back
+from the canvas pixels compared with `data-frame` for each. With packs the reel and stats specs also check that every frame came
+from a pack (no frame file, no pack given up); with `?pack=0` that no pack was read.
+
+**A stop that does not settle explains itself.** When `settle()` gives up (20 s of the page's own run time, below) it takes a
+snapshot in the same page call, logs it
+(`[settle] gave up …`) and the specs carry it into the failure message (`settleNote`, `unsettledAt`): the target, the effective
+frame, the painted segment and frame, `inflight`, the canvas `data-*` hooks, the loader mode and the pack counters; how many looks
+the window got, the run time and wall time it took, the longest gap between two looks and the frozen gaps, how often the key
+changed and the long tasks seen in the window (Chromium only); and the engine's own state through `window.__filmWhy()` (FilmBackdrop, read-only, for the specs): the wait reason
+for the target frame, the frames around it (`around`: D decoded, d decoding, B bytes held, x given up, `^` not wanted), the jobs in
+flight, the time since the store last answered, and the planner's line per segment (its pack read, rank, level, goal, range).
+Few looks with long gaps mean the page barely ran; many looks with nothing changing mean the engine stopped; a key that keeps
+changing means the target or the canvas never rests.
+
+**Run time, not wall time.** `settle()` counts only the time the page ran: a gap of more than a second between two of its looks
+(`FROZEN_MS`: a long task, the browser paged out) is not counted, and the resting looks start again after it, so "settled" means
+what it did. The wall clock bounds the wait at six times the limit. Why: on this shared machine (16 GB, about 13 GB of swap in
+use, load 45 to 104) a pack-mode pass on the phone recorded one long task of 107 s inside a stop's window; the wall-clock rule gave
+up after 2 looks, both on target, with nothing wrong in the engine (stage 7, 2026-11-13). A stop that settles after a freeze logs
+`[settle] page frozen …`.
 
 | Spec | What it checks |
 | --- | --- |
@@ -199,6 +366,7 @@ browser, and `?loader=legacy`), the frame read back from the canvas pixels compa
 | `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, the backing store is sized to the box (not the 300x150 default), no horizontal scroll bar at the top or at the end |
 | `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
 | `film-memory` | budget loader, 390x844 touch and 1440x900: a walk down the whole page and back up, twice (a stop every viewport height, each settled). After every leg decoded MB peak and the decoded MB held are within `budgetMB`, the compressed bytes peak is within the cap for that budget (48 MiB on a phone budget, 160 MiB otherwise), nothing failed and nothing was fetched twice; the two legs up make 0 frame requests and decode again (redecodes > 0), and so does the second leg down (0 requests); every film is painted. With `?budget=96` the film plays to the end (down and up, every stop settled, pixels equal `data-frame`) inside the 96 MiB budget |
+| `film-packs` | packs: a pass down and back at 390x844 touch and 1440x900, the film data requests recorded in the annotations (before the first scroll one pack read; down at most 40; back 0, by the page's count and on the network), no frame file, no byte read twice, within the budget, pixels equal `data-frame` at every stop. Fallbacks by routing the pack requests: a 404 (each film's pack asked once, the films load frame by frame), bytes that are not a pack (given up, frame by frame), and a server that ignores Range (every answer a whole-file 200, the first one cut short so the page must continue: the films still play from their packs, the bytes held already counted as read twice) |
 | `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on; with a `createImageBitmap` that rejects every frame (and no `Worker`) the page hands over to the legacy loader at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 
 ## Scroll-pass gate
@@ -317,3 +485,28 @@ Reading it:
 - Long tasks: the desktop return leg showed 0.3 to 2.7 s of long tasks in some runs with either loader (legacy 0 to 3.3 s
   over three runs, budget 0.35 to 2.7 s over three runs), with the page's own scripts a small share of a CPU profile; it is
   not specific to either loader and not investigated further here.
+
+## Stage 7 on placeholder frames
+
+The real-frame A/B (three alternating rounds against a lab server holding the real packs) is in "Stage 7: packs" under "Lab gate" in
+`docs/cinematic-homepage.md`. A first look on placeholder frames, one run each of
+`npm run film:quality -- --base http://127.0.0.1:3007 --profiles desktop,slowphone --back` with packs (`--query-slowphone "budget=160"`)
+and with `--query "pack=0" --query-slowphone "pack=0&budget=160"`, 2026-11-13, commit `e1bd0a6c` built as `.next-film`. The machine was
+loaded (1-minute load average 46 to 54). Cells: packs / `?pack=0`.
+
+| | desktop | slowphone |
+| --- | ---: | ---: |
+| before the first scroll: film data requests | 1 / 58 | 1 / 58 |
+| before the first scroll: film data MB | 0.13 / 0.03 | 0.06 / 0.01 |
+| pass: film data requests | 9 / 1370 | 11 / 1157 |
+| pass: exact draws % | 100 / 95.8 | 99.8 / 81.1 |
+| pass: stale ticks % | 0 / 7.1 | 0.4 / 28.2 |
+| pass: longest stale ms | 0 / 212 | 59 / 266 |
+| pass: decoded MB peak (budget) | 530.8 / 530.8 (536.9) | 166.6 / 166.6 (167.8) |
+| back: film data requests | 0 / 14 | 0 / 131 |
+| back: longest stale ms | 0 / 0 | 47 / 0 |
+| console errors | 0 / 0 | 0 / 0 |
+
+Placeholder packs are a few kilobytes while the manifests' hints are the real packs' sizes, so the first read's closed range covers
+the whole placeholder pack: the bytes before the first scroll are higher with packs here, not on real packs (0.49 vs 0.52 MB on a
+phone, 1.61 vs 1.67 MB desktop).

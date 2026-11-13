@@ -1,0 +1,12 @@
+{
+  "*": {
+    "load.packRequests": { "min": 1 },
+    "load.engineRequests": { "max": 0 },
+    "load.consoleErrors": { "max": 0 },
+    "pass.packFilms": { "min": 1 },
+    "pass.packFallbackFilms": { "max": 0 },
+    "pass.engineRequests": { "max": 0 },
+    "pass.filmDataRequests": { "max": 30 },
+    "pass.consoleErrors": { "max": 0 }
+  }
+}

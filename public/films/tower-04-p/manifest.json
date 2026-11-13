@@ -14,5 +14,19 @@
   "kb": {
     "432": 984,
     "499": 1220
+  },
+  "packs": {
+    "432": {
+      "file": "pack-c042790a.bin",
+      "bytes": 684466,
+      "header": 1764,
+      "skeletonEnd": 176814
+    },
+    "499": {
+      "file": "pack-2a4cd593.bin",
+      "bytes": 907440,
+      "header": 1764,
+      "skeletonEnd": 234896
+    }
   }
 }

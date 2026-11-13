@@ -73,7 +73,7 @@ jobs:
   film:
     name: Film specs (placeholder frames)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     env:
@@ -107,7 +107,7 @@ jobs:
             public/films/*/.placeholder.json
           # Keyed on what the generator reads: a hit holds exactly what it would write (and it is a no-op
           # when it finds them).
-          key: ${{ runner.os }}-film-placeholders-${{ hashFiles('public/films/*/manifest.json', 'scripts/films/placeholder.mjs', 'scripts/films/placeholder-layout.mjs', 'package-lock.json') }}
+          key: ${{ runner.os }}-film-placeholders-${{ hashFiles('public/films/*/manifest.json', 'scripts/films/placeholder.mjs', 'scripts/films/placeholder-layout.mjs', 'scripts/films/pack-lib.mjs', 'components/film/loader/pack-format.mjs', 'components/film/rack.timeline.json', 'package-lock.json') }}
 
       - name: Film engine unit tests (counters)
         run: npm run test:film-unit
@@ -171,7 +171,9 @@ jobs:
 
       - name: Film specs (Chromium)
         # playwright.config.ts builds with NEXT_PUBLIC_FILM_BASE=/films and starts `next start` on 127.0.0.1:3006.
-        timeout-minutes: 15
+        # One worker in CI, so the time grows with the number of tests: 38 tests took 11.8 minutes, the 57 with the
+        # pack specs need about 18.
+        timeout-minutes: 30
         run: npm run test:film
 
       - name: Upload Playwright report

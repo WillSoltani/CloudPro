@@ -372,3 +372,151 @@ how it counts `ImageBitmap` memory against it differ from a Mac's), its decode s
 worker; an A-series phone under thermal pressure may be several times slower, which the 4x CPU throttle only approximates, and the
 decode cap of 2 at once was not tuned against it), and a real mobile network (the CDN is close to this machine). The first and the
 last of these need a phone on the page with `?hud=1&loader=budget` against `?loader=legacy`.
+
+### Stage 7: packs
+One file per film directory and width holding all its frames (`docs/film-lab-gate.md`, "Packs" and "Packs at run time"), read by the
+budget loader with a few streaming reads instead of one request per frame. The per-frame path stays the fallback (`?pack=0`, and any
+film whose pack fails).
+
+**Note on the F column (added after review).** These runs used a per-frame fetch order that this stage had changed
+(commit `2275913d`: the head of the film ahead fetched before the active film's strides 2 and 1). That change touched the per-frame
+path, which is the stage-6 engine and the fallback, so it was reverted afterwards: the per-frame order is again stage 6's (strides
+16 to 1 of the active film, then the neighbours). The F column and the `?pack=0` figures below therefore measure the reverted order,
+not what `?pack=0` runs now; for the per-frame engine as it ships, read the stage 6 tables above (stale 30 to 34 %, longest stale
+0.5 to 0.8 s on the slow phone). The P and L columns are unaffected (packed films never use the per-frame order; legacy is a
+separate loader). The F column was not re-measured.
+
+**Setup.** Date 2026-11-13, the engine of commit `44d25688` plus the lab pack-origin switch added in this stage's last commit (nothing
+else in the engine changed). Machine: Apple M1 laptop (8 cores), macOS 26.5, Node 20.20.2, Playwright 1.62.1, Chromium 151, WebKit 26.5.
+The page is a production build with the manifests' own base (`NEXT_DIST_DIR=.next-film-cdn`, no `NEXT_PUBLIC_FILM_BASE`) on
+127.0.0.1:3006: **the frames come from the film CDN** (HTTP/2, CloudFront). The packs are built (`npm run film:pack -- --from-cdn --all`,
+46 packs, 96.3 MB, verified byte for byte against the CDN's frames) but not uploaded, so the pack variant reads them from
+`node scripts/films/pack-serve.mjs` on 127.0.0.1:3008 (the built tree, `?packorigin=http://127.0.0.1:3008`; Range answers as 206 with a
+Content-Range, strong ETag, `immutable`, CORS with the CDN's exposed headers; HTTP/1.1 from Node). The switch is lab only: it is honoured
+only on a localhost page and only for an `http` localhost origin (`select.ts` `packOriginFromQuery`, unit-tested). The gate throttles
+every request of the page, so on the slow phone the local pack origin is throttled exactly like the CDN's frames (9 Mbit/s, 165 ms);
+on the desktop and iphone profiles the packs come over loopback, **faster than the real CDN would serve them**, while the
+per-frame variants fetch over the real network: read those two profiles as "the engine with packs" and not as a delivery comparison.
+Three rounds, each round desktop, iphone, slowphone, each profile alternating packs (P: default), per-frame files (F: `?pack=0`) and
+legacy (L: `?loader=legacy`), `--back`; budget 160 MiB on the phone profiles for P and F. 27 runs, 1 to 1.5 minutes each; the 1-minute
+load average read 20 to 127 at the start of a run (first desktop and iphone runs 80 to 127, the later rounds 19 to 50; per run in the
+scratch log). Cells: median and, in brackets, min to max of the three runs.
+
+**Slow phone** (Chromium 390x844 touch, CPU 4x, 9 Mbit/s, 165 ms; load at start P 28 to 51, F 21 to 41, L 23 to 28)
+
+| | P packs | F `?pack=0` | L legacy |
+| --- | ---: | ---: | ---: |
+| before the first scroll: film data requests / MB | 1 / 0.49 | 58 / 0.54 | 58 / 0.54 |
+| pass: film data requests | **11** | 1139 (1125 to 1141) | 1103 (1099 to 1110) |
+| pass: film data MB | 7.72 | 7.06 (6.96 to 7.07) | 6.8 (6.78 to 6.87) |
+| pass: exact draws % | **99.7** (99.7 to 99.8) | 79.3 (79.1 to 82.2) | 82.8 (80.2 to 83.3) |
+| pass: stale ticks % | **0.5** (0.5 to 0.6) | 32.7 (29.4 to 33) | 32.9 (32 to 33.5) |
+| pass: longest stale ms | **100** (99 to 100) | 332 (296 to 547) | 550 (529 to 600) |
+| pass: settle ms after stop | 18 (17 to 19) | 16 (16 to 17) | 17 (16 to 17) |
+| pass: mean fallback distance | 0 | 0.34 (0.26 to 0.35) | 0.33 (0.3 to 0.38) |
+| pass: decoded MB peak (budget 167.8) | 166.6 | 166.6 | 600 (590 to 603) |
+| pass: compressed bytes held MB peak | 7.9 | 7.1 | n/a |
+| pass: frames over 33 ms / long tasks | 10 (3 to 18) / 5 (0 to 9) | 5 (4 to 9) / 2 (1 to 5) | 4 (3 to 5) / 1 (1 to 5) |
+| back: film data requests | **0** | 149 (147 to 163) | 1021 (1015 to 1022) |
+| back: exact draws % / stale ticks % / longest stale | 100 / 0 / 0 | 100 / 0 / 0 | 100 / 0 / 0 |
+| console errors | 0 | 0 | 0 |
+
+**Desktop** (Chromium 1440x900, unthrottled; load at start P 27 to 127, F 19 to 102, L 22 to 82)
+
+| | P packs | F `?pack=0` | L legacy |
+| --- | ---: | ---: | ---: |
+| before the first scroll: film data requests / MB | 1 / 1.61 | 58 / 1.7 | 58 / 1.7 |
+| pass: film data requests | **12** (11 to 12) | 1384 | 1384 |
+| pass: film data MB | 25.93 | 26.39 | 26.39 |
+| pass: exact draws % | 100 (97.5 to 100) | 99.2 (98.3 to 99.9) | 98.3 (89.2 to 99.2) |
+| pass: stale ticks % | 0 (0 to 2.8) | 1.3 (0.6 to 2.5) | 2.5 (1.7 to 13.8) |
+| pass: longest stale ms | 0 (0 to 84) | 64 (51 to 117) | 76 (52 to 352) |
+| pass: settle ms after stop | 16 (15 to 17) | 16 (16 to 17) | 17 (16 to 19) |
+| pass: mean fallback distance | 0 (0 to 0.03) | 0.01 (0 to 0.02) | 0.02 (0.01 to 0.12) |
+| pass: decoded MB peak (budget 536.9) | 530.8 | 530.8 | 4786 (4429 to 4944) |
+| pass: compressed bytes held MB peak | 27.5 | 27.5 | n/a |
+| pass: frames over 33 ms / long tasks | 6 (3 to 12) / 2 (1 to 4) | 7 (7 to 13) / 3 (2 to 5) | 7 (5 to 32) / 1 (0 to 2) |
+| back: film data requests | **0** | 0 | 992 |
+| back: stale ticks % / longest stale ms | 0 (0 to 0.8) / 0 (0 to 105) | 0.1 (0 to 0.8) / 16 (0 to 51) | 0 / 0 |
+| back: decoded MB peak | 530.8 | 530.8 | 5068 |
+| console errors | 0 | 0 | 0 |
+
+**iPhone** (WebKit 390x844 touch, unthrottled, 160 MiB window rule; load at start P 26 to 80, F 23 to 93, L 25 to 51)
+
+| | P packs | F `?pack=0` | L legacy |
+| --- | ---: | ---: | ---: |
+| before the first scroll: film data requests / MB | 1 / 0.49 | 58 / 0.52 | 58 / 0.52 |
+| pass: film data requests | **11** | 1288 | 1288 |
+| pass: film data MB | 7.71 | 7.35 | 7.35 |
+| pass: exact draws % | 100 (99.9 to 100) | 99.7 (97.7 to 99.9) | 100 (99.9 to 100) |
+| pass: stale ticks % | 0 (0 to 0.5) | 0.7 (0.5 to 2.4) | 0.4 (0.3 to 0.5) |
+| pass: longest stale ms | 0 (0 to 83) | 53 (38 to 93) | 46 (38 to 70) |
+| pass: settle ms after stop | 17 (16 to 17) | 17 (16 to 17) | 16 (10 to 19) |
+| pass: decoded MB peak (budget 167.8) | 166.6 | 166.6 | 987.5 |
+| pass: compressed bytes held MB peak | 8.2 | 7.9 | n/a |
+| pass: frames over 33 ms | 14 (11 to 20) | 11 (10 to 31) | 17 (10 to 21) |
+| back: film data requests (the page's count) | **0** | 0 | 896 |
+| back: stale ticks % / longest stale ms | 0 / 0 | 0 / 0 | 0 / 0 |
+| console errors | 0 | 0 | 0 |
+
+In WebKit the "MB transferred (all)" row counts each `createImageBitmap(Blob)` as a request (stage 4 note), so read "film data MB".
+Packs read about 0.4 to 0.7 MB more than per-frame files on a phone profile (7.72 against 7.06 MB): a pack holds every frame of a
+film, including the odd tail frames a coarse pointer never shows and frames per-frame mode never reaches before the pass ends.
+
+**Where the longest stale stretch begins** (the new stale locator, `staleMax*`). With one file per frame on the slow phone it began
+where one film hands over to the next: tower-01-p's last frames into tower-04-p (the bridge, 160 film frames per viewport), about
+28 s into the pass, in three of four runs before the fix below (rack-01-p's first frames in the fourth), with the next film's first
+frames still queued: the planner fetched the film ahead's entry frame only after every stride-2 and stride-1 frame of the active
+film. A change to the per-frame order (`NEXT_HEAD_FRAMES`, commit `2275913d`: the film ahead's entry, 0, M, last and every 4th of
+its first 32 frames right after the active film's coarse passes) shortened that stretch in the lab (slowphone `?pack=0` longest
+stretch 551 (517 to 757) to 384 (373 to 587) ms, stale ticks 32.9 to 30.5 %, between rounds on the same loaded machine), but it
+changed the per-frame path, which this stage must leave as stage 6 left it, and packs already remove the stretch. **It was
+reverted**: `?pack=0` and any film whose pack is given up run the stage-6 order again, with its longer hand-over stretch. A later
+stage may bring it back as a change of its own, measured against stage 6. With packs it began on the first scroll, at the hero's first
+frames: once the hero's skeleton was in, the next film's skeleton took the first read and the hero's own full read waited for it
+(116 to 161 ms). Fixed (at most one full read, assigned in list order; unit test); what remains (103 and 115 ms) is one round trip
+after the first scroll, the hero's rest being read only once the visitor engages. The one 721 ms pack run followed a 9.2 s stall.
+On the unthrottled profiles the longest stretches are "decoding" or "bytes held, decode not started": decode-bound, not network.
+
+In this gate's three rounds (with both changes, the per-frame one since reverted; frames from the CDN), the longest stale stretch of each slow-phone run: with one file per frame on the slow phone it began at the
+tower-01-p to tower-04-p hand-over in two of three runs (547 and 332 ms, "file fetch queued") and at rack-01-p's first frames in the
+third (296 ms); legacy in the tower films in all three (tower-04-p's first frame, tower-01-p f281 and f34; 529 to 600 ms). With packs it began, in all three slow-phone runs, on the
+first scroll at the hero's first frames (99 to 100 ms, "pack read open (read at frame 1)"): the one round trip between the visitor's
+first move and the hero's rest, which is read only once the visitor engages. On the unthrottled profiles the longest stretches
+(0 to 105 ms with packs) were "decoding" or "bytes held, decode not started": decode-bound.
+
+**Packs: second visit** (same browser context, page reloaded, the same scroll; checked against the lab server's log). Chromium served
+all 8 pack reads of the second visit from its HTTP cache, packs read whole and packs read in part alike (it caches the 206
+answers and rewrote an open-ended `bytes=n-` into a closed range for the server on the first visit); the per-frame control did the
+same (0 of 58 frames reached the server). Playwright's WebKit sent every request to the server again, the 206 reads, the plain
+200 GETs and, in the control, every per-frame file (58 of 58): its lab context does not serve these fetches from a cache across a
+reload, so what Safari on a phone does is not known from here.
+
+**Verdict per target** (medians of the three alternating runs; P against F and L):
+- Film data requests per pass, 30 or fewer on every profile: **pass** (11 slow phone, 12 desktop, 11 iphone; the per-frame variants
+  1,100 to 1,400).
+- Slow phone, stale ticks under 10 %: **pass** (0.5 %, range 0.5 to 0.6; F 32.7, L 32.9). Longest stale under 250 ms: **pass** (100 ms,
+  range 99 to 100; F 332, L 550), and better than legacy's 500 to 570 ms. Exact draws 99.7 % (F 79.3, L 82.8).
+- Exact frame within 1 s of stopping: **pass** (settle 15 to 19 ms on every profile and variant).
+- Desktop and iphone no worse than today: **pass** (desktop: stale 0 %, longest 0 ms against F 1.3 % and 64 ms, L 2.5 % and 76 ms; iphone:
+  0 % and 0 ms against F 0.7 % and 53 ms; the ranges overlap, so no gain is claimed there, only no loss). The packs came over loopback on these
+  two profiles, faster than the CDN would serve them, so this is the engine with packs, not a delivery measurement.
+- Decoded memory within the budget: **pass** (166.6 of 167.8 MB phone, 530.8 of 536.9 MB desktop, every run; legacy 0.6 to 5 GB).
+- Way back 0 requests: **pass** (0 in all nine P runs; F: 149 slow phone, 0 elsewhere; L 896 to 1,021).
+- Before the first scroll no more film bytes than today: **pass** (0.49 against 0.54 MB on the slow phone, 0.49 against 0.52 on iphone,
+  1.61 against 1.7 on desktop; one request instead of 58).
+- 0 console errors: **pass** (every run, every leg).
+
+No target missed. Not claimed: any difference inside the ranges (desktop and iphone pass legs, every frames-over-33-ms and long-task
+count), the pack runs' 0 to 105 ms stretches against the per-frame runs' 38 to 117 ms on the unthrottled profiles.
+
+**What the lab cannot show.** The packs were read from a local HTTP/1.1 server, not from the CDN (HTTP/2, edge caches, a real
+distance): on the unthrottled profiles that favours the packs; on the slow phone pack and frames are throttled alike. The CDN's behaviour
+with packs (a 206 from cache with an exposed Content-Range, the cache headers, the immutable name, the answer to a Range preflight) is
+checked by `npm run film:pack -- --check-cdn` once they are uploaded, and the gate must then be re-run against a page that reads them
+from the CDN without `?packorigin=`, with `--assert scripts/films/packs-live.assert.json` (it fails when any film falls back to frame
+files; `docs/film-lab-gate.md`, "Shipping packs"). Neither has run yet: no browser has read a pack from the CDN. The pack server
+answered preflights, but none were sent: Chromium 151 and WebKit 26.5 do not preflight a single-range `Range` header (checked
+separately), and the CDN's preflight answer for a pack path already allows any header (`docs/film-lab-gate.md`, "The preflight"). A real phone's decode speed, Safari's HTTP cache on a second visit, and a real mobile network are open, as in
+stage 4. How many bytes still arrive after the page aborts a pack read on the CDN's HTTP/2 connection (loopback has almost none in flight)
+is not measured; the closed range requests exist to bound it.
