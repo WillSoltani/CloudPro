@@ -38,6 +38,12 @@ You QA the homepage reel. Do not edit source files: report findings with numbers
   true in reel.ts): the last tail frame is the hold frame byte for byte, so key = frame M = the film's last frame.
   On coarse pointers only the even tail frames load by design, so `data-loaded` tops out at count − 24 for those four films
   (145 of 169, 121 of 145): any "wait for loaded === count" precondition needs that exception on touch viewports.
+- `data-loaded` depends on the frame loader (`window.__filmStats.mode`). Under the budget loader (the default: `budget`, or
+  `budget-main`) it means **decoded frames held** for the segment, bounded by the decoded-frame budget: it rises and falls as
+  the window around the target moves and never reaches count on a phone. Every check below that waits for
+  `data-loaded === count` (C3, C10, C18) runs with **`?loader=legacy`** (where it still means every usable frame decoded), or
+  instead waits for the canvas to rest on the target (`e2e/film-frames.ts` `settle`). See `docs/film-lab-gate.md`, "The budget
+  loader".
 - Move m = (M / pace)·svh (`moveVhOf`). Chapter section = the composition box (`min-h-svh`, plus a body) + an `aria-hidden` spacer of
   (moveVh + readVh)·svh; `readVh` 0.5 (Contact 0.6). The hero and the exit are legacy segments (section = move + one viewport).
 - Orientation is chosen once per load with `WIDE_QUERY` `(min-width: 64rem) and (orientation: landscape)`: wide plays landscape,
