@@ -20,6 +20,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Rules every loader shares (usable frames, network class), their unit tests | `components/film/loader/usable.ts`, `network.ts`, `shared.test.ts` |
 | The budget loader's pure planner and byte arithmetic, their unit tests | `components/film/loader/budget-plan.ts`, `budget-bytes.ts`, `budget-plan.test.ts`, `budget-bytes.test.ts` |
 | The budget loader (the default), its film worker and frame store, the message protocol, the loader choice; unit tests with a fake worker and fetch | `components/film/loader/budget.ts`, `frame-worker.js` (+ `frame-worker.d.ts`), `frame-worker-protocol.ts`, `select.ts`; `budget.test.ts` |
+| Film packs (stage 7): the format, writer and streaming reader shared by the scripts, the page and the worker; the builder; their unit tests | `components/film/loader/pack-format.mjs` (+ `.d.mts`), `scripts/films/pack.mjs`, `scripts/films/pack-lib.mjs`; `pack-format.test.ts`, `components/film/packs.test.ts`, `scripts/films/pack-lib.test.mjs` (see "Packs") |
 | CI job | `film` in `.github/workflows/ci.yml` ("Film specs (placeholder frames)") |
 
 ## Commands
@@ -31,6 +32,7 @@ npm run test:film-unit        # node:test, the counters' and the backing size's 
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
+npm run film:pack -- --from-cdn <film> --width <w> --out <dir>   # build a real pack from the CDN's frames (see "Packs")
 ```
 
 `npm run film:quality -- <options>` runs `scripts/films/scrub-quality.mjs` against a server you started (see "Scroll-pass
@@ -57,6 +59,51 @@ enough on a Mac. CI runs `npm install --no-save sharp@0.34.5` first; do the same
 - The page is built with `NEXT_PUBLIC_FILM_BASE=/films`, so frames and posters are served from `public/films`.
   If the production server was started earlier in another mode (placeholders or `FILM_FRAMES=cdn`), stop it:
   locally `reuseExistingServer` keeps it.
+
+## Packs
+
+Stage 7: one file per film directory and width holding all its frames, so a film arrives in one streaming read instead of
+one request per frame. Nothing at run time reads packs yet (this section grows when the loader does).
+
+**Format** (`components/film/loader/pack-format.mjs`, CFPK layout v1, ported from the sister project): a 24-byte fixed
+header (magic `CFPK`, version 1, frame count N, header length 24 + 12·N, skeleton end, total bytes), a table of N entries
+(frame index, absolute offset, length) in file order, then the frame files' bytes unchanged and contiguous. The reader takes
+everything from the pack's own header (`parsePackHeader` checks magic, version, every frame once, contiguous slices, the
+total and the skeleton end); `PackBytes` cuts frames out of bytes arriving in any chunk sizes at any offset (a read from 0, a
+Range read from the first byte not held), counts bytes read twice and never stores a hole. The file is plain `.mjs` with no
+imports: Node imports it, and so do the page and the worker (Turbopack bundles it into the worker's chunk; measured in a
+production build, see the file's header).
+
+**Frame order** (`packOrder(count, M)`): the hold frames 0, M and last; the skeleton (every 4th frame of the move, 4, 8, …
+below M); the rest of the move in frame order; the tail frames after M, even offsets from M first. M is the timeline's
+`segment` for the rack films (both cameras; `-p` plays its landscape film's timeline), else the last frame (the tower), the
+same rule as `reel.ts` `segmentOf` (checked by `components/film/packs.test.ts`). So a read from byte 0 yields the hold
+frames, then a scrub-able skeleton, then full detail.
+
+**Name and manifest.** `<base>/<width>/pack-<first 8 hex of the file's sha256>.bin`, next to the frames (the CDN caches it as
+immutable, so the name carries the content). A manifest names its packs in an optional `packs` field,
+`{ "<width>": { file, bytes, header, skeletonEnd } }` (`FilmManifest.packs`): hints for planning and caps only. `packUrl(film,
+width)` (`filmBase.ts`) gives the URL, or null when the manifest names none or a malformed one (a path in the name, impossible
+sizes); a width without an entry loads frame by frame. The name is relative to `base`, so packs follow `resolveFilm`'s
+`NEXT_PUBLIC_FILM_BASE` rewrite like the frames. `build-film.sh` writes a fresh manifest without `packs` (new frames need new
+packs); `sync-film.sh` keeps the field (it edits base and poster with jq).
+
+**Builder** (`npm run film:pack -- …`, `scripts/films/pack.mjs`; never uploads): `--from-cdn <films>|--all [--width w]
+[--out dir] [--write-manifest]` downloads the frames from the manifest's base (8 in flight, at most 12, retries, checks the
+count and that every body is WebP), builds the pack, writes it to `<out>/films/<name>/<width>/pack-<hash>.bin` (an older
+pack in that directory is removed; default `--out films-src/packs`, gitignored), reads it back from disk and compares every
+frame's bytes with the downloaded file both through the table and through `PackBytes`, prints its layout and with
+`--write-manifest` sets `packs[width]` in `public/films/<name>/manifest.json`, keeping the rest of the file byte for byte.
+`--verify` re-checks built packs against the CDN's frames; `--check-cdn [--full]` checks the pack a manifest names as the page
+will read it (HEAD: 200, size, `application/octet-stream`, CORS; a Range read of the header: 206, a readable Content-Range,
+the header parses and agrees with the entry and the frame count; the last 16 bytes; `--full` the content hash).
+
+**Placeholder packs.** `npm run film:placeholder` also writes a pack for every film and width from the placeholder frames,
+in the real format and order, named as the manifest's `packs[width].file` when there is one (its sizes then differ from the
+hints, which the reader must tolerate), else `pack-<its own hash>.bin` (which nothing asks for: the page reads packs only for
+widths whose manifest names one). Adding an entry later and running the generator again writes the pack under the new name
+without touching the frames; a second run changes nothing. Packs live in the width directories, so they are gitignored with
+the frames and covered by CI's placeholder cache (keyed on the pack code and the timeline too).
 
 ## The frame loader
 
