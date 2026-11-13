@@ -147,12 +147,15 @@ export const readFilmStats = (page: Page) => page.evaluate(() => (window.__filmS
 
 /**
  * The frame loaders the film specs run with (components/film/loader/select.ts): the default, the budget loader decoding
- * in the film worker (its `mode` must be "budget": the worker chunk was emitted by the build and runs in this browser),
- * and the legacy loader by `?loader=legacy`.
+ * in the film worker (its `mode` must be "budget": the worker chunk was emitted by the build and runs in this browser)
+ * and reading each film from its pack (stage 7; the placeholder packs, named as the manifests name them); the same
+ * loader with `?pack=0`, one file per frame (`packs` false: the specs check no pack is read); and the legacy loader by
+ * `?loader=legacy`.
  */
 export const LOADERS = [
-  { name: "budget", param: "", mode: "budget" },
-  { name: "legacy", param: "loader=legacy", mode: "legacy" },
+  { name: "budget", param: "", mode: "budget", packs: true },
+  { name: "budget-files", param: "pack=0", mode: "budget", packs: false },
+  { name: "legacy", param: "loader=legacy", mode: "legacy", packs: false },
 ] as const;
 export type SpecLoader = (typeof LOADERS)[number];
 

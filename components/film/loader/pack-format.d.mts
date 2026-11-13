@@ -80,5 +80,7 @@ export declare class PackBytes {
   firstMissing(from?: number, to?: number): number;
   nextHeld(from: number, to: number): number;
   dropFrame(index: number): number;
+  /** Hand a complete frame's bytes over and free them here; the frame stays counted as held. Null when not complete. */
+  release(index: number): Uint8Array | null;
   dropSlot(slot: number): number;
 }

@@ -30,6 +30,14 @@ export function runnableLoader(wanted: LoaderName, caps: LoaderCaps): LoaderName
   return wanted === "budget" && caps.worker ? "budget" : "budget-main";
 }
 
+/**
+ * Film packs (stage 7) for this page load: on unless the URL says `?pack=0` (every film then loads one file per frame,
+ * the per-frame path of the budget loader, unchanged). Read once, in FilmBackdrop's effect.
+ */
+export function packsFromQuery(search: string): boolean {
+  return new URLSearchParams(search).get("pack") !== "0";
+}
+
 /** The page's capabilities (client only). */
 export function pageCaps(): LoaderCaps {
   return {

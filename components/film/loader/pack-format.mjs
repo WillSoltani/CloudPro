@@ -294,6 +294,13 @@ export class PackBytes {
       const n = Math.min(data.length, s.length - rel);
       if (n <= 0) continue;
       const before = this._filled[si];
+      if (before === s.length) {
+        // A complete slot (possibly handed over by `release`): these bytes were read before.
+        this.repeatedBytes += n;
+        at += n;
+        data = data.subarray(n);
+        continue;
+      }
       let buf = this._bufs[si];
       if (!buf) buf = this._bufs[si] = new Uint8Array(s.length);
       this._filled[si] = this._writePrefix(buf, before, rel, data.subarray(0, n));
@@ -349,12 +356,32 @@ export class PackBytes {
     return s >= 0 ? this.dropSlot(s) : 0;
   }
 
-  /** Let the bytes of file slot `slot` go. Returns the bytes freed. */
+  /**
+   * Hand a complete frame's bytes over (the film worker copies them into its keyed byte store): returns them and frees
+   * this store's buffer, while the frame stays counted as held (`held`, `firstMissing`, `nextHeld` and a later read
+   * skip it; `frame` returns null). `heldBytes` drops by its length. Null when the frame is not complete.
+   */
+  release(index) {
+    const bytes = this.frame(index);
+    if (!bytes) return null;
+    const s = this.header.slotOf[index];
+    this._bufs[s] = null;
+    if (!this._released) this._released = new Uint8Array(this.header.slots.length);
+    this._released[s] = 1;
+    this.heldBytes -= bytes.length;
+    return bytes;
+  }
+
+  /** Let the bytes of file slot `slot` go (complete, partial, or handed over). Returns the bytes freed here. */
   dropSlot(slot) {
     const f = this._filled[slot] ?? 0;
     if (!f) return 0;
     this._filled[slot] = 0;
     this._bufs[slot] = null;
+    if (this._released?.[slot]) {
+      this._released[slot] = 0;
+      return 0;
+    }
     this.heldBytes -= f;
     return f;
   }

@@ -75,6 +75,14 @@ for (const loader of LOADERS) for (const vp of VIEWPORTS) {
       expect([...seen].sort(), "films painted").toEqual(expected);
       expect(down.refetches, "frames requested twice on the way down").toBe(0);
       expect(down.failures, "frames that failed").toBe(0);
+      if (loader.packs) {
+        // Stage 7: every film from its pack, no frame file, no pack given up.
+        expect(down.packRequests, "pack reads").toBeGreaterThan(0);
+        expect(down.packFallbackFilms, "packs given up").toBe(0);
+        expect(down.framesFromFiles, "frames fetched as files").toBe(0);
+      } else {
+        expect(down.packRequests, "pack reads with packs off").toBe(0);
+      }
 
       // ---- back up. Legacy: recorded, not asserted (it evicts what the visitor saw and fetches it again). Budget: the
       // compressed bytes are kept, so the way back never fetches a frame twice (frames never fetched on the way down,
@@ -88,8 +96,9 @@ for (const loader of LOADERS) for (const vp of VIEWPORTS) {
       testInfo.annotations.push({ type: "back", description: back });
       console.log(back);
       expect((await readFilmStats(page))!.mode, "the loader running at the end").toBe(loader.mode);
-      if (loader.name === "budget") {
+      if (loader.mode === "budget") {
         expect(up.refetches, "frames fetched again on the way back").toBe(0);
+        expect(up.packBytesRepeatedMB, "pack bytes read twice on the way back").toBe(0);
         expect(up.failures, "frames that failed on the way back").toBe(0);
         expect(Math.max(down.decodedMBPeak, up.decodedMBPeak), "decoded frames within the budget").toBeLessThanOrEqual(down.budgetMB + 1e-6);
       }

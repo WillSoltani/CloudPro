@@ -1,10 +1,32 @@
 import type { FilmManifest } from "../filmCore";
-import { frameUrl } from "../filmBase";
+import { frameUrl, packFor, packUrl } from "../filmBase";
 import { pickFrameBudgetBytes, tierFrameBytes } from "./budget-bytes";
-import { createBudgetPlanner, jobFrame, jobSeg, NONE } from "./budget-plan";
+import {
+  createBudgetPlanner,
+  jobFrame,
+  jobSeg,
+  NONE,
+  PACK_FORGET,
+  PACK_OPEN,
+  PACK_STOP,
+  PACK_TO,
+  READ_CANCELLED,
+  READ_FINAL,
+  READ_OK,
+  READ_RETRY,
+  WAIT_REASONS,
+} from "./budget-plan";
 import { createFrameStore, type BitmapLike, type FetchLike } from "./frame-worker";
 import type { FromWorker, ToWorker } from "./frame-worker-protocol";
-import { connectionSlow, heroTimesSlow, maxInflightFor, saveDataOn, SLOW_INFLIGHT, TIMED_FRAMES } from "./network";
+import {
+  connectionSlow,
+  heroTimesSlow,
+  maxInflightFor,
+  packTimesSlow,
+  saveDataOn,
+  SLOW_INFLIGHT,
+  TIMED_FRAMES,
+} from "./network";
 import type { FrameLoader, HeldFrame, LoaderEnv } from "./types";
 
 /**
@@ -28,6 +50,14 @@ import type { FrameLoader, HeldFrame, LoaderEnv } from "./types";
  * `loaded(index)` is the number of decoded frames held for the segment (FilmBackdrop's `data-loaded`).
  *
  * `nearest()` returns one HeldFrame object reused between calls: read it at once, never keep it.
+ *
+ * PACKS (stage 7). A segment whose manifest names a pack for its tier (filmBase packUrl) reads its frames from that one
+ * file instead of one file per frame, unless the page asked `?pack=0` (`packs: false`) or plays reduced-motion stills
+ * (five frames do not need the film). The planner says which pack reads run and over which bytes (budget-plan.ts
+ * `nextPackOp`); the store runs them (frame-worker.js) and puts each frame it cuts out under the same key a fetch of it
+ * would have used, so the planner, the decodes and the cap see a frame's bytes arrive either way. A pack that 404s,
+ * fails its header check or fails PACK_TRIES times is given up: that film's missing frames are then fetched as files,
+ * and the frames the pack delivered stay. Counters: `stats.packRequested`, `packBytes`, `packFilms`, `framesArrived`.
  */
 
 export type WorkerLike = {
@@ -54,6 +84,8 @@ export type BudgetOptions = {
   resolveUrl?: (url: string) => string;
   /** The worker must answer `ready` within this, or the loader decodes on the main thread. */
   readyTimeoutMs?: number;
+  /** Read films from their packs where the manifest names one (default true; `?pack=0` turns it off). */
+  packs?: boolean;
   /**
    * Main-thread decodes cannot decode the frames either (DECODE_FALLBACK_ERRORS frames failed in a row): this loader
    * cannot show the film here. Called once; the caller disposes it and runs the legacy loader (./fallback.ts).
@@ -76,6 +108,7 @@ function startBrowserWorker(): WorkerLike {
 
 type Rec = { film: FilmManifest; width: number; epoch: number; bytes: number; bitmaps: (BitmapLike | undefined)[] };
 type FetchJob = { seg: number; frame: number; epoch: number };
+type PackJob = { seg: number; epoch: number; heroTimed: boolean };
 type DecodeJob = { seg: number; frame: number; epoch: number; bytes: number };
 type Source = { where: "worker" | "main"; post(m: ToWorker): void; close(): void };
 
@@ -97,9 +130,13 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   let slow = connectionSlow(connection);
   const heroTimes: number[] = [];
   const budgetBytes = options.budgetBytes ?? pickFrameBudgetBytes();
+  const packsOn = options.packs !== false;
 
   const recs: (Rec | undefined)[] = [];
   const fetches = new Map<number, FetchJob>();
+  const packReads = new Map<number, PackJob>();
+  let heroPackFrames = 0;
+  let heroPackTimed = false;
   const decodes = new Map<number, DecodeJob>();
   const arrive = new Set<(index: number, frame: number) => void>();
   const loadedDirty = new Set<number>();
@@ -118,6 +155,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   const planner = createBudgetPlanner({
     budgetBytes,
     maxFetches: maxInflightFor(saveData, slow),
+    maxPackReads: saveData || slow ? 1 : 2,
     engaged: env.engaged,
     // A decoded frame leaves the store (to make room, or its segment left or changed tier): close it, report it.
     onEvict: (seg, frame, bytes) => {
@@ -212,6 +250,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     }
     for (const j of fetches.values()) planner.fetchCancelled(j.seg, j.frame, j.epoch);
     fetches.clear();
+    // Its pack reads went with it (the planner forgets every pack's layout below: each is read again from byte 0).
+    packReads.clear();
     stats.released(planner.fetchesInFlight);
     for (const j of decodes.values()) {
       planner.decodeCancelled(j.seg, j.frame, j.epoch);
@@ -252,13 +292,50 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
         if (m.ok) {
           stats.bytesHeld?.(m.held);
           if (!planner.fetched(j.seg, j.frame, j.epoch, m.size)) dropKeys.push(keyOf(j.epoch, j.frame)); // its segment left
-          else if (j.seg === 0) timeHeroFrame(m.ms);
+          else {
+            stats.framesArrived?.(false, 1);
+            if (j.seg === 0) timeHeroFrame(m.ms);
+          }
         } else if (m.cancelled) {
           planner.fetchCancelled(j.seg, j.frame, j.epoch);
         } else if (planner.fetchFailed(j.seg, j.frame, j.epoch, now(), !m.retryable)) {
           stats.failed(); // given up: its neighbours cover it
         }
         stats.released(planner.fetchesInFlight);
+        return pump();
+      }
+      case "pack-header": {
+        const r = packReads.get(m.id);
+        if (!r) return;
+        const err = planner.packLayout(r.seg, r.epoch, m.count, m.header, m.skeletonEnd, m.bytes, m.slotFrame, m.slotOffset);
+        if (err) packGivenUp();
+        return pump();
+      }
+      case "pack-frames": {
+        const r = packReads.get(m.id);
+        stats.bytesHeld?.(m.held);
+        stats.packBytes?.(m.got, m.repeated);
+        if (!r) return;
+        let took = 0;
+        for (let k = 0; k < m.frames.length; k++) {
+          if (planner.packFrame(r.seg, r.epoch, m.frames[k], m.sizes[k])) took++;
+          // Its segment left or changed tier: the store lets these bytes go. (A frame held or being fetched as a file
+          // already keeps the one entry under its key.)
+          else if (planner.epoch(r.seg) !== r.epoch) dropKeys.push(keyOf(r.epoch, m.frames[k]));
+        }
+        if (took) stats.framesArrived?.(true, took);
+        planner.packProgress(r.seg, r.epoch, m.id, m.pos);
+        if (r.heroTimed) timeHeroPack(m.ms, took);
+        return pump();
+      }
+      case "pack-done": {
+        const r = packReads.get(m.id);
+        stats.bytesHeld?.(m.held);
+        if (m.got) stats.packBytes?.(m.got, m.repeated);
+        if (!r) return;
+        packReads.delete(m.id);
+        const outcome = m.ok ? READ_OK : m.cancelled ? READ_CANCELLED : m.failure === "final" ? READ_FINAL : READ_RETRY;
+        if (planner.packEnded(r.seg, r.epoch, m.id, outcome, m.pos, now(), !!m.rangeless, m.reason ?? "")) packGivenUp();
         return pump();
       }
       case "decoded": {
@@ -327,12 +404,62 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     stats.decodeStarted?.(rec.bytes, planner.decodesInFlight, redecode);
   };
 
+  // What the planner says about pack reads: open, move the end of, stop, or forget a pack.
+  const packOps = (t: number) => {
+    const op = planner.packOp;
+    for (let kind: number; (kind = planner.nextPackOp(t)) !== NONE; ) {
+      const rec = recs[op.seg];
+      if (kind === PACK_OPEN) {
+        if (!rec) continue;
+        const heroTimed = op.seg === 0 && !connection && !slow && !heroPackTimed;
+        heroPackTimed ||= heroTimed;
+        packReads.set(op.id, { seg: op.seg, epoch: rec.epoch, heroTimed });
+        source.post({
+          t: "pack",
+          id: op.id,
+          url: op.url,
+          prefix: `${rec.epoch}/`,
+          from: op.from,
+          to: op.to,
+          hold: op.hold,
+          est: op.est,
+          type: `image/${rec.film.ext}`,
+        });
+        stats.packRequested?.(rec.film.name, rec.width);
+      } else if (kind === PACK_TO) {
+        source.post({ t: "pack-to", id: op.id, to: op.to });
+      } else if (kind === PACK_STOP) {
+        source.post({ t: "pack-stop", id: op.id });
+      } else if (kind === PACK_FORGET) {
+        source.post({ t: "pack-forget", url: op.url });
+      }
+    }
+  };
+
+  // Gauges of the films reading packs and of those whose pack was given up.
+  const packGauges = () => {
+    let using = 0;
+    let fallback = 0;
+    for (let i = 0; i < recs.length; i++) {
+      const p = recs[i] ? planner.pack(i) : null;
+      if (!p) continue;
+      if (p.failed) fallback++;
+      else using++;
+    }
+    stats.packFilms?.(using, fallback);
+  };
+  const packGivenUp = () => {
+    stats.failed();
+    packGauges();
+  };
+
   // Fetch, then decode, as far as the planner allows; then the batched drops, data-loaded, and the retry timer.
   function pump() {
     if (disposed) return;
     const t = now();
     let job: number;
     while ((job = planner.nextFetch(t)) !== NONE) startFetch(job);
+    packOps(t);
     for (;;) {
       const before = planner.counters.redecodes;
       job = planner.nextDecode(t);
@@ -369,16 +496,37 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     if (heroTimesSlow(heroTimes)) {
       slow = true;
       planner.setMaxFetches(SLOW_INFLIGHT);
+      planner.setMaxPackReads(1);
       source.post({ t: "limits", maxFetches: SLOW_INFLIGHT, maxDecodes: planner.maxDecodes });
     }
   };
 
-  // Jobs of segment `index` in its life `epoch` that have not started in the store are cancelled there.
+  // Where the hero's frames come from its pack: the first read's pace decides the same way (network.ts packTimesSlow).
+  const timeHeroPack = (ms: number, frames: number) => {
+    if (connection || slow || heroPackFrames >= TIMED_FRAMES) return;
+    heroPackFrames += frames;
+    if (heroPackFrames < TIMED_FRAMES || !packTimesSlow(ms, heroPackFrames)) return;
+    slow = true;
+    planner.setMaxFetches(SLOW_INFLIGHT);
+    planner.setMaxPackReads(1);
+    source.post({ t: "limits", maxFetches: SLOW_INFLIGHT, maxDecodes: planner.maxDecodes });
+  };
+
+  // Jobs of segment `index` in its life `epoch` that have not started in the store are cancelled there; its pack read
+  // stops (frames still on their way land stale and are dropped).
   const cancelJobs = (index: number, epoch: number) => {
     const ids: number[] = [];
     for (const [id, j] of fetches) if (j.seg === index && j.epoch === epoch) ids.push(id);
     for (const [id, j] of decodes) if (j.seg === index && j.epoch === epoch) ids.push(id);
     if (ids.length) source.post({ t: "cancel", ids });
+    for (const [id, r] of packReads) if (r.seg === index && r.epoch === epoch) source.post({ t: "pack-stop", id });
+  };
+
+  // The pack segment `index` reads at `width`, if any (not with `?pack=0`, not for reduced-motion stills).
+  const choosePack = (index: number, film: FilmManifest, width: number, stills: boolean) => {
+    const url = packsOn && !stills ? packUrl(film, width) : null;
+    planner.setPack(index, url ? resolveUrl(url) : null, url ? packFor(film, width) : null);
+    packGauges();
   };
 
   const newRec = (index: number, film: FilmManifest, width: number): Rec => ({
@@ -400,6 +548,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
       cancelJobs(i, rec.epoch);
       planner.retier(i, width);
       recs[i] = newRec(i, rec.film, width);
+      choosePack(i, rec.film, width, !!stillsOf[i]);
       loadedDirty.delete(i);
       env.onLoaded?.(i, 0);
       env.onWidth?.(i, width);
@@ -408,6 +557,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
 
   const held: HeldFrame = { frame: -1, image: null as unknown as CanvasImageSource, width: 0, height: 0 };
   let active = -1;
+  /** Segments playing reduced-motion stills (no pack for them). */
+  const stillsOf: boolean[] = [];
 
   return {
     get mode() {
@@ -419,6 +570,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
       if (old) cancelJobs(index, old.epoch);
       planner.join(index, film.count, width, film.aspect, opts);
       recs[index] = newRec(index, film, width);
+      stillsOf[index] = !!opts.reducedStills;
+      choosePack(index, film, width, stillsOf[index]);
     },
 
     leave(index) {
@@ -428,6 +581,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
       planner.leave(index);
       recs[index] = undefined;
       loadedDirty.delete(index);
+      packGauges();
       pump();
     },
 
@@ -470,6 +624,14 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     },
 
     isComing: (index, at, tolerance) => planner.isComing(index, at, tolerance),
+    waitReason: (index, at) => {
+      const why = WAIT_REASONS[planner.waitReason(index, at)];
+      const p = planner.pack(index);
+      if (!p) return why;
+      if (p.failed) return `${why} (pack given up: ${p.failReason})`;
+      const read = p.readId && p.known ? `, read at frame ${p.slotFrame![Math.min(p.slotAt(p.readPos), p.count - 1)]}` : "";
+      return `${why} (pack ${p.known ? "known" : "header not yet read"}${read})`;
+    },
     usable: (index, i) => planner.usable(index, i),
     loaded: (index) => planner.loaded(index),
     width: (index) => planner.width(index),
@@ -509,6 +671,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
       if (decodes.size) stats.decodeEnded?.(false, source.where, 0, 0);
       decodes.clear();
       fetches.clear();
+      for (const id of packReads.keys()) source.post({ t: "pack-stop", id });
+      packReads.clear();
       stats.released(0);
       // Every decoded frame is closed and reported (onEvict).
       for (let i = 0; i < recs.length; i++) if (recs[i]) planner.leave(i);
