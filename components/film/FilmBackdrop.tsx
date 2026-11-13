@@ -34,6 +34,7 @@ import { FilmHud } from "@/components/film/FilmHud";
 import { backingSize, growCap, MAX_DPR, wantsFullBacking } from "@/components/film/backing";
 import { createLegacyLoader } from "@/components/film/loader/legacy";
 import { createBudgetLoader } from "@/components/film/loader/budget";
+import { withLegacyFallback } from "@/components/film/loader/fallback";
 import { budgetOverrideBytes } from "@/components/film/loader/budget-bytes";
 import { readConnection, saveDataOn } from "@/components/film/loader/network";
 import { loaderFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
@@ -42,7 +43,8 @@ import type { FrameLoader, LoaderEnv, WantPlan } from "@/components/film/loader/
 /**
  * The frame loader a page load runs unless `?loader=legacy|budget|budget-main` names another (components/film/loader/
  * select.ts). "budget": the budget loader, decoding in the film worker; it falls back to main-thread decodes on its own,
- * and the page runs the legacy loader where it lacks fetch, Blob or createImageBitmap.
+ * and to the legacy loader if those cannot decode the frames either (loader/fallback.ts); the page runs the legacy
+ * loader from the start where it lacks fetch, Blob or createImageBitmap.
  */
 const DEFAULT_LOADER: LoaderName = "budget";
 
@@ -412,13 +414,20 @@ export function FilmBackdrop({
         });
       },
     };
+    // The budget loader hands the page to the legacy loader if it cannot decode the frames on the main thread either.
     const loader: FrameLoader =
       loaderName === "legacy"
         ? createLegacyLoader(loaderEnv)
-        : createBudgetLoader(loaderEnv, {
-            mainThread: loaderName === "budget-main",
-            budgetBytes: budgetOverrideBytes(search) ?? undefined,
-          });
+        : withLegacyFallback(
+            loaderEnv,
+            (onUnusable) =>
+              createBudgetLoader(loaderEnv, {
+                mainThread: loaderName === "budget-main",
+                budgetBytes: budgetOverrideBytes(search) ?? undefined,
+                onUnusable,
+              }),
+            createLegacyLoader,
+          );
     stats.mode = loader.mode;
     let cancelled = false;
     let raf = 0;

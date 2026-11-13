@@ -6,12 +6,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { FilmManifest } from "../filmCore";
 import { frameBytes, loaderStatsFor, newInstrument } from "../filmStats";
-import { createBudgetLoader, type BudgetOptions, type WorkerLike } from "./budget";
+import { createBudgetLoader, DECODE_FALLBACK_ERRORS, type BudgetOptions, type WorkerLike } from "./budget";
+import { withLegacyFallback } from "./fallback";
 import { RETRY_BASE_MS } from "./budget-plan";
 import { createFrameStore, type BitmapLike, type FetchLike } from "./frame-worker";
 import type { FromWorker, ToWorker } from "./frame-worker-protocol";
+import { createLegacyLoader } from "./legacy";
 import { loaderFromQuery, runnableLoader } from "./select";
-import type { FrameLoader, JoinOptions, LoaderEnv, WantPlan } from "./types";
+import type { FrameLoader, ImageLike, JoinOptions, LoaderEnv, WantPlan } from "./types";
 
 const W = 768;
 const ASPECT = 16 / 9;
@@ -62,7 +64,24 @@ type SetupOptions = {
   env?: Partial<LoaderEnv>;
   /** Answer for a fetch: a status, "error" (network error), or undefined for 200. */
   answer?: (url: string, attempt: number) => number | "error" | undefined;
+  /** createImageBitmap rejects this frame here (an engine that cannot decode it). */
+  decodeFails?: (site: "worker" | "main", url: string) => boolean;
+  /** Build the loader as FilmBackdrop does: behind withLegacyFallback, the legacy loader on a fake Image. */
+  withFallback?: boolean;
 };
+
+/** A stand-in for the browser's Image for the legacy loader: every decode works at once. */
+class AutoImage implements ImageLike {
+  decoding = "";
+  crossOrigin: string | null = null;
+  src = "";
+  naturalWidth = 0;
+  naturalHeight = 0;
+  async decode() {
+    this.naturalWidth = W;
+    this.naturalHeight = Math.round(W / ASPECT);
+  }
+}
 
 function setup(o: SetupOptions = {}) {
   let clock = 0;
@@ -89,6 +108,7 @@ function setup(o: SetupOptions = {}) {
   const decodeIn = (site: "worker" | "main") => async (blob: Blob) => {
     decodeSites.push(site);
     const url = await blob.text();
+    if (o.decodeFails?.(site, url)) throw new DOMException("cannot decode", "InvalidStateError");
     if (holdDecodes) await new Promise<void>((res) => heldDecodes.push(res));
     const bm = new FakeBitmap(W, Math.round(W / ASPECT), url);
     bitmaps.push(bm);
@@ -163,7 +183,19 @@ function setup(o: SetupOptions = {}) {
     },
     resolveUrl: (u) => u,
   };
-  const loader = createBudgetLoader(env, budget);
+  let unusable = 0;
+  const loader = o.withFallback
+    ? withLegacyFallback(
+        env,
+        (onUnusable) => createBudgetLoader(env, { ...budget, onUnusable }),
+        (e) => createLegacyLoader({ ...e, Image: AutoImage, timing: { getEntriesByName: () => [] } }),
+      )
+    : createBudgetLoader(env, {
+        ...budget,
+        onUnusable: () => {
+          unusable++;
+        },
+      });
   const advance = async (ms: number) => {
     clock += ms;
     for (;;) {
@@ -181,6 +213,7 @@ function setup(o: SetupOptions = {}) {
   };
   return {
     loader,
+    unusable: () => unusable,
     stats: inst.stats,
     fetched,
     bitmaps,
@@ -473,6 +506,59 @@ describe("budget loader: main-thread fallback", () => {
     t.loader.want(plan(0, 0));
     await flush();
     assert.equal(t.loader.loaded(0), 16);
+  });
+});
+
+describe("budget loader: a decoder that cannot decode the frames", () => {
+  it("moves to the main thread when the worker's createImageBitmap rejects the frames, without spending fetch tries", async () => {
+    const t = setup({ decodeFails: (site) => site === "worker" });
+    joinAll(t.loader, [32]);
+    t.loader.want(plan(0, 0));
+    await flush();
+    assert.equal(t.loader.mode, "budget-main");
+    assert.equal(t.stats.mode, "budget-main");
+    assert.equal(t.workers[0].terminated, true);
+    assert.ok(t.decodeSites.filter((s) => s === "worker").length >= DECODE_FALLBACK_ERRORS);
+    t.loader.want(plan(0, 0));
+    await flush();
+    assert.equal(t.loader.loaded(0), 32, "every frame decoded on the main thread");
+    assert.equal(t.stats.failures, 0, "no frame given up");
+    assert.equal(t.unusable(), 0);
+  });
+
+  it("hands the page to the legacy loader when main-thread decodes reject the frames too", async () => {
+    const t = setup({ decodeFails: () => true, withFallback: true });
+    const counts = [32, 32];
+    joinAll(t.loader, counts);
+    t.loader.want(plan(0, 0, 1, counts));
+    await flush();
+    await flush();
+    assert.equal(t.loader.mode, "legacy");
+    assert.equal(t.stats.mode, "legacy");
+    // The budget loader's frames are all let go and reported; the legacy loader holds its own.
+    assert.ok(t.bitmaps.every((b) => b.closed));
+    // At rest, with no further tick: the last plan was replayed, so the legacy loader requested and decoded frames.
+    assert.ok(t.loader.loaded(0) > 0, "the legacy loader shows the film");
+    assert.equal(t.loader.nearest(0, 0)?.frame, 0);
+    assert.equal(t.loader.width(0), W);
+    // A small failure count: the first loader stopped after a handful of frames, not three tries of every frame.
+    assert.ok(t.stats.failures < 32, `failures ${t.stats.failures}`);
+  });
+
+  it("a decode error is not a fetch try: the bytes are kept and the decode retried; one bad frame moves nothing", async () => {
+    const bad = "/films/f0/768/f_0006.webp";
+    const t = setup({ decodeFails: (_site, url) => url === bad });
+    joinAll(t.loader, [32]);
+    t.loader.want(plan(0, 0));
+    await flush();
+    for (let k = 0; k < 6; k++) await t.advance(RETRY_BASE_MS * 2);
+    assert.equal(t.loader.mode, "budget");
+    assert.equal(t.unusable(), 0);
+    assert.equal(t.fetched.filter((u) => u === bad).length, 1, "fetched once: the decode was retried from the kept bytes");
+    assert.equal(t.stats.refetches, 0);
+    assert.equal(t.stats.failures, 1, "given up after its decode tries");
+    assert.equal(t.loader.loaded(0), 31);
+    assert.equal(t.loader.isComing(0, 5, 0), false);
   });
 });
 

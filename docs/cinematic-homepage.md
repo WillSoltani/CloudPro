@@ -280,6 +280,11 @@ therefore larger than in the stage 1 baseline (legacy slowphone exact draws 74.3
 round 1, the loaded one). Two more alternating rounds were run afterwards (loads 7.5 and 3.8 at their start, but the machine
 spiked to 87 during round 4's budget run); they are not in the table, only quoted below.
 
+**Later fixes not in these numbers.** Every row below predates two failure-path fixes to the budget loader (failed fetches of
+frames other than the target are retried; a decoder that rejects the frames moves to main-thread decodes, then to the legacy
+loader). Both act only when a fetch or a decode fails, and these runs had 0 failed frames and 0 failed responses on every leg,
+so they were not re-run.
+
 **Pass down**
 
 | | desktop legacy | desktop budget | iphone legacy | iphone budget | slowphone legacy | slowphone budget |

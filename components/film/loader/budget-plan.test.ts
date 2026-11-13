@@ -87,7 +87,7 @@ function harness(frames: number, specs: Spec[], cfg: Partial<PlannerConfig> = {}
       fetching.push({ job: j, epoch: p.epoch(jobSeg(j)) });
       network.push(key(j));
     }
-    while ((j = p.nextDecode()) !== NONE) {
+    while ((j = p.nextDecode(now)) !== NONE) {
       const k = key(j);
       assert.ok(!held.has(k), `decoded ${k} while it is held`);
       decoding.push({ job: j, epoch: p.epoch(jobSeg(j)) });
@@ -485,6 +485,36 @@ describe("budget planner: the fetch order", () => {
     assert.equal(h.network.filter((k) => k === `0#${f}`).length, FETCH_TRIES);
     assert.ok(h.p.isMissing(0, f));
     assert.equal(h.p.isComing(0, f, 0), false, "a frame given up is not waited for");
+  });
+
+  it("a failed decode keeps its bytes and spends no fetch try; the streak counts frames, and a decode that works ends it", () => {
+    const h = harness(20, [{ count: 16 }]);
+    h.want(0, 5, 1);
+    h.land(Infinity, 0); // bytes only
+    const first = h.decoding().splice(0, 2);
+    for (const d of first) assert.equal(h.p.decodeFailed(0, jobFrame(d.job), d.epoch, 0), false);
+    assert.equal(h.p.decodeErrorStreak, 2);
+    for (const d of first) assert.ok(h.p.hasBytes(0, jobFrame(d.job)), "bytes kept");
+    h.pump();
+    h.land(0, 1);
+    assert.equal(h.p.decodeErrorStreak, 0, "a decode that works ends the streak");
+    h.settle();
+    assert.ok(!h.p.isDecoded(0, jobFrame(first[0].job)), "not retried before its backoff");
+    h.setNow(RETRY_BASE_MS);
+    h.pump();
+    const again = h.decoding().find((d) => d.job === first[0].job)!;
+    assert.ok(again, "decode retried after the backoff");
+    h.decoding().splice(h.decoding().indexOf(again), 1);
+    h.p.decodeFailed(0, jobFrame(again.job), again.epoch, RETRY_BASE_MS);
+    assert.equal(h.p.decodeErrorStreak, 0, "the same frame failing again is not another frame");
+    h.setNow(10 * RETRY_BASE_MS);
+    h.pump();
+    h.settle();
+    assert.ok(h.p.isDecoded(0, jobFrame(first[0].job)), "its third try worked");
+    assert.equal(h.p.counters.refetches, 0);
+    assert.equal(h.network.filter((k) => k === key(first[0].job)).length, 1, "never fetched again");
+    h.p.forgetBytes();
+    assert.equal(h.p.decodeErrorStreak, 0);
   });
 
   it("starts nothing while paused (the document is hidden)", () => {

@@ -112,13 +112,17 @@ build (Next 16.1.6): that copy is emitted, but the browser starts a `blob:` work
 under `/_next/static/chunks/` that hold the compiled store, so no stable URL names the worker's code. The specs that need the
 worker to fail therefore replace `window.Worker` (`e2e/film-fallback.spec.ts`) instead of refusing a URL. The same
 file exports `createFrameStore`, which the page runs itself when a worker cannot: if the worker fails to start, lacks
-`createImageBitmap`, errors or does not answer within 10 s, its jobs are cancelled (no try spent), the bytes it held are
-forgotten and fetched again (they count as refetches), decoded frames stay, and `mode` becomes `"budget-main"`.
+`createImageBitmap`, errors, does not answer within 10 s, or its `createImageBitmap` rejects 3 different frames in a row with no
+decode working in between, its jobs are cancelled (no try spent), the bytes it held are forgotten and fetched again (they count
+as refetches), decoded frames stay, and `mode` becomes `"budget-main"`. If main-thread decodes then reject 3 different frames in a
+row too, the page hands over to the legacy loader at run time (`loader/fallback.ts`: the budget loader is disposed, the legacy
+one joins the same segments and gets the last plan) and `mode` becomes `"legacy"`.
 
 **Lifetimes.** Every job carries its segment's epoch (a new one on join and on a retier): a fetch or decode that lands after its
 segment left or changed tier, or after `dispose`, is closed and never kept. Every ImageBitmap that leaves the store is
-`close()`d and reported. A failed fetch is retried after 400 ms and 800 ms (3 tries), a 404 at once given up; a missing frame is
-covered by its neighbours. Hidden page: nothing new starts. Offline: no fetch starts; back online, frames given up get fresh
+`close()`d and reported. A failed fetch (of any frame, not only the target) is retried after 400 ms and 800 ms (3 tries), a 404
+at once given up; a failed decode keeps its bytes and is retried the same way without spending a fetch try; a missing frame is
+covered by its neighbours and is no longer waited for. Hidden page: nothing new starts. Offline: no fetch starts; back online, frames given up get fresh
 tries.
 
 **`data-loaded` under the budget loader means "decoded frames held"** for the segment, bounded by the budget: it rises and
@@ -130,7 +134,7 @@ falls as the window moves and never reaches the film's count on a phone. Checks 
 `components/film/FilmBackdrop.tsx` keeps `window.__filmStats` (type `FilmStats` in `components/film/filmStats.ts`)
 up to date where it already does the work; it only writes the object, never reads it back, so the film behaves
 exactly as without it. `mode` is the loader running now: `"budget"`, `"budget-main"` (it may switch to that at run time) or
-`"legacy"`. Under the budget loader `requests` are network fetches of frame bytes, `refetches` fetches of a frame (film,
+`"legacy"` (from the start, or at run time when the budget loader cannot decode the frames at all). Under the budget loader `requests` are network fetches of frame bytes, `refetches` fetches of a frame (film,
 width, index) whose bytes were fetched before (0 while the bytes are kept), `decodes` frames decoded and kept, `redecodes`
 decodes of a frame decoded before (from kept bytes, no request), and `framesAlive` / `decodedMB` count the ImageBitmaps held,
 reserved decodes included, so `decodedMBPeak` never passes `budgetMB`. The budget loader's own counters (redecodes, worker and
@@ -195,7 +199,7 @@ browser, and `?loader=legacy`), the frame read back from the canvas pixels compa
 | `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, the backing store is sized to the box (not the 300x150 default), no horizontal scroll bar at the top or at the end |
 | `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
 | `film-memory` | budget loader, 390x844 touch and 1440x900: a walk down the whole page and back up, twice (a stop every viewport height, each settled). After every leg decoded MB peak and the decoded MB held are within `budgetMB`, the compressed bytes peak is within the cap for that budget (48 MiB on a phone budget, 160 MiB otherwise), nothing failed and nothing was fetched twice; the two legs up make 0 frame requests and decode again (redecodes > 0), and so does the second leg down (0 requests); every film is painted. With `?budget=96` the film plays to the end (down and up, every stop settled, pixels equal `data-frame`) inside the 96 MiB budget |
-| `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
+| `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on; with a `createImageBitmap` that rejects every frame (and no `Worker`) the page hands over to the legacy loader at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 
 ## Scroll-pass gate
 

@@ -42,13 +42,15 @@ import { bytesCapFor, bytesDropOrder, maxDecodesFor, tierFrameBytes, wantedBytes
  * - Per clock tick: `want(active, frame, direction, entry)` (the WantPlan's fields; the planner calls `entry` for the
  *   two neighbours during the call and keeps nothing), then pump.
  * - Pump (after a tick and after every arrival or failure): `while ((job = nextFetch(now)) !== NONE)` start a fetch
- *   of `jobSeg(job)`, `jobFrame(job)` and remember `epoch(seg)` with it; `while ((job = nextDecode()) !== NONE)` start
+ *   of `jobSeg(job)`, `jobFrame(job)` and remember `epoch(seg)` with it; `while ((job = nextDecode(now)) !== NONE)` start
  *   a decode from the held bytes, remembering the epoch. `nextDecode` may evict: it calls `onEvict(seg, frame, bytes)`
  *   synchronously for each frame let go (close its ImageBitmap, report `dropped`).
  * - Per arrival: `fetched(seg, frame, epoch, size)` (false: the segment left or retiered, discard the bytes);
  *   `decoded(seg, frame, epoch)` (false: close the bitmap, it is stale); then notify the canvas and pump.
  * - Per failure: `fetchFailed` / `decodeFailed` (true when the frame is now missing for good: report it once); when
- *   `nextRetryAt()` is finite, set one timer to pump then.
+ *   `nextRetryAt()` is finite, set one timer to pump then. A failed decode keeps the bytes and is retried the same
+ *   way (no fetch try spent); `decodeErrorStreak` counts the frames that failed since the last decode that worked,
+ *   so the loader can tell a decoder that cannot decode at all and move to another (`forgetBytes` starts it afresh).
  * - The cap: `fetched` may drop other segments' bytes and calls `onBytesDropped(seg, frame, size)` for each (the
  *   store, or the worker, deletes them).
  * - Reads for draw(): `nearestDecoded`, `isComing`, `loaded`, `width`, `usable`.
@@ -123,7 +125,10 @@ class Seg {
   readonly bytes: Uint8Array;
   readonly size: Uint32Array;
   readonly tries: Uint8Array;
+  /** Fetch retries while the bytes are not held; decode retries while they are (fetched() clears it). */
   readonly retryAt: Float64Array;
+  /** Decodes of the bytes held that failed (not fetch tries: the bytes arrived). */
+  readonly decodeTries: Uint8Array;
   readonly dec: Uint8Array;
   readonly fetchedEver: Uint8Array;
   readonly decodedEver: Uint8Array;
@@ -148,6 +153,7 @@ class Seg {
     this.size = new Uint32Array(count);
     this.tries = new Uint8Array(count);
     this.retryAt = new Float64Array(count);
+    this.decodeTries = new Uint8Array(count);
     this.dec = new Uint8Array(count);
     this.fetchedEver = new Uint8Array(count);
     this.decodedEver = new Uint8Array(count);
@@ -192,6 +198,8 @@ export function createBudgetPlanner(config: PlannerConfig) {
   let decodesInFlight = 0;
   let paused = false;
   let offline = false;
+  /** Frames whose decode failed (each counted once) since the last decode that worked. */
+  let decodeErrorStreak = 0;
   /** Reservations of decodes whose segment left or retiered meanwhile, by `epoch/frame`. */
   const orphans = new Map<string, number>();
 
@@ -619,6 +627,13 @@ export function createBudgetPlanner(config: PlannerConfig) {
     get decodesInFlight() {
       return decodesInFlight;
     },
+    /**
+     * Distinct frames whose decode failed since the last decode that worked (a frame's retries are not counted again):
+     * the loader's sign that the decoder itself cannot decode these frames (budget.ts DECODE_FALLBACK_ERRORS).
+     */
+    get decodeErrorStreak() {
+      return decodeErrorStreak;
+    },
 
     /** Segment `index` joins: `count` frames of `aspect` at tier `width`, used as `opts` says. */
     join(index: number, count: number, width: number, aspect: number, opts: JoinOptions) {
@@ -692,6 +707,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
         for (let i = 0; i < s.count; i++) {
           if (s.bytes[i] === B_DEAD) s.bytes[i] = B_NONE;
           s.tries[i] = 0;
+          s.decodeTries[i] = 0;
           s.retryAt[i] = 0;
         }
       }
@@ -823,14 +839,16 @@ export function createBudgetPlanner(config: PlannerConfig) {
     /**
      * The next decode to start (a job), or NONE: the first wanted frame whose bytes are held and that is neither
      * decoded nor decoding, if its decoded size fits (evicting outside the wanted set; onEvict is called for each).
+     * `now` decides which failed decodes are due for a retry.
      */
-    nextDecode(): number {
+    nextDecode(now: number): number {
       if (paused || decodesInFlight >= maxDecodes) return NONE;
       for (let k = 0; k < wantLen; k++) {
         const job = wantList[k];
         const s = segs[jobSeg(job)];
         const i = jobFrame(job);
         if (!s || s.dec[i] !== D_NONE || s.bytes[i] !== B_HELD) continue;
+        if (s.decodeTries[i] > 0 && !due(s, i, now)) continue;
         if (!reserve(s.frameBytes)) return NONE;
         s.dec[i] = D_DECODING;
         reserved += s.frameBytes;
@@ -849,19 +867,41 @@ export function createBudgetPlanner(config: PlannerConfig) {
       if (settleOrphan(s, frame, epoch)) return false;
       s!.dec[frame] = D_HELD;
       s!.decodedEver[frame] = 1;
+      s!.decodeTries[frame] = 0;
+      decodeErrorStreak = 0;
       s!.decodedCount++;
       reserved -= s!.frameBytes;
       used += s!.frameBytes;
       return true;
     },
 
-    /** A decode failed: its bytes are dropped (bad) and it counts as a try. True when the frame is now missing. */
-    decodeFailed(segIndex: number, frame: number, epoch: number, now: number): boolean {
+    /**
+     * A decode failed. True when the frame is now missing: report it once.
+     * - The decoder rejected the bytes (`bytesLost` false): no fetch try is spent and the bytes are kept; the decode is
+     *   retried after RETRY_BASE_MS, then twice that, and after FETCH_TRIES failed decodes the bytes go and the frame
+     *   is missing (its neighbours cover it), as a frame the legacy loader cannot decode. The frame's first failure
+     *   adds to `decodeErrorStreak`.
+     * - The store no longer had the bytes (`bytesLost`): they are fetched again, and that counts as a fetch try.
+     */
+    decodeFailed(segIndex: number, frame: number, epoch: number, now: number, bytesLost = false): boolean {
       decodesInFlight--;
       const s = segs[segIndex];
       if (settleOrphan(s, frame, epoch)) return false;
       s!.dec[frame] = D_NONE;
       reserved -= s!.frameBytes;
+      if (!bytesLost) {
+        const n = ++s!.decodeTries[frame];
+        if (n === 1) decodeErrorStreak++;
+        if (n >= FETCH_TRIES) {
+          dropBytes(s!, frame);
+          s!.bytes[frame] = B_DEAD;
+          counters.missing++;
+          return true;
+        }
+        s!.retryAt[frame] = now + RETRY_BASE_MS * 2 ** (n - 1);
+        if (s!.retryAt[frame] < retryWake) retryWake = s!.retryAt[frame];
+        return false;
+      }
       dropBytes(s!, frame);
       const tries = ++s!.tries[frame];
       if (tries >= FETCH_TRIES) {
@@ -905,8 +945,18 @@ export function createBudgetPlanner(config: PlannerConfig) {
     forgetBytes() {
       for (const s of segs) {
         if (!s) continue;
-        for (let i = 0; i < s.count; i++) if (s.dec[i] !== D_DECODING) dropBytes(s, i);
+        for (let i = 0; i < s.count; i++) {
+          if (s.dec[i] !== D_DECODING) dropBytes(s, i);
+          // Another decoder from now on: past decode failures say nothing about it (a frame given up for them is
+          // fetched again).
+          if (s.decodeTries[i] > 0) {
+            s.decodeTries[i] = 0;
+            if (s.bytes[i] === B_DEAD) s.bytes[i] = B_NONE;
+            if (s.bytes[i] === B_NONE) s.retryAt[i] = 0;
+          }
+        }
       }
+      decodeErrorStreak = 0;
       cursor = 0;
     },
 

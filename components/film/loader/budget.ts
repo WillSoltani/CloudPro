@@ -18,7 +18,9 @@ import type { FrameLoader, HeldFrame, LoaderEnv } from "./types";
  * Fetches and decodes run in the film worker (./frame-worker.js: fetch, keep the bytes, createImageBitmap, transfer the
  * bitmap). If the worker cannot start, lacks createImageBitmap or fails, the loader moves to the same frame store on the
  * main thread (createFrameStore from the same ./frame-worker.js) and its name becomes "budget-main"; decoded frames already held stay, bytes the worker
- * held are fetched again. FilmBackdrop picks the legacy loader where the page itself lacks fetch, Blob or
+ * held are fetched again. The same move happens when the worker's createImageBitmap keeps rejecting the frames
+ * (DECODE_FALLBACK_ERRORS); if main-thread decodes reject them too, `onUnusable` hands the page to the legacy loader
+ * (./fallback.ts). FilmBackdrop picks the legacy loader from the start where the page itself lacks fetch, Blob or
  * createImageBitmap (./select.ts).
  *
  * Every bitmap that leaves the store is close()d and reported (`stats.dropped`); one that arrives after its segment has
@@ -52,10 +54,21 @@ export type BudgetOptions = {
   resolveUrl?: (url: string) => string;
   /** The worker must answer `ready` within this, or the loader decodes on the main thread. */
   readyTimeoutMs?: number;
+  /**
+   * Main-thread decodes cannot decode the frames either (DECODE_FALLBACK_ERRORS frames failed in a row): this loader
+   * cannot show the film here. Called once; the caller disposes it and runs the legacy loader (./fallback.ts).
+   */
+  onUnusable?: () => void;
 };
 
 /** The film worker must say it is ready within this (ms). */
 export const READY_TIMEOUT_MS = 10_000;
+/**
+ * This many different frames failing to decode with no decode working in between means the decoder cannot decode
+ * them (an engine whose createImageBitmap rejects WebP, or rejects under memory pressure), not that the frames are bad:
+ * the worker's decodes move to the main thread, and main-thread decodes to the legacy loader (`onUnusable`).
+ */
+export const DECODE_FALLBACK_ERRORS = 3;
 
 function startBrowserWorker(): WorkerLike {
   return new Worker(new URL("./frame-worker.js", import.meta.url), { type: "module" }) as unknown as WorkerLike;
@@ -98,6 +111,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   let retryAt = Infinity;
   let readyTimer: unknown = null;
   let worker: WorkerLike | null = null;
+  let unusable = false;
 
   const keyOf = (epoch: number, frame: number) => `${epoch}/${frame}`;
 
@@ -181,7 +195,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   source.post({ t: "init", maxFetches: planner.maxFetches, maxDecodes: planner.maxDecodes });
 
   /**
-   * The worker cannot run (it failed to start, lacks createImageBitmap, crashed or never answered): every job it had is
+   * The worker cannot run (it failed to start, lacks createImageBitmap, crashed, never answered, or its
+   * createImageBitmap rejects the frames): every job it had is
    * cancelled (no try is spent), the bytes it held are forgotten, and the same store runs on the main thread.
    */
   function toMainThread() {
@@ -272,10 +287,18 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
           stats.dropped(j.bytes);
           stats.decodeEnded?.(false, source.where, 0, planner.decodesInFlight);
         } else {
-          const missing = planner.decodeFailed(j.seg, j.frame, j.epoch, now());
+          // "missing": the store lost the bytes (fetch them again); "error": the decoder rejected them.
+          const missing = planner.decodeFailed(j.seg, j.frame, j.epoch, now(), m.reason === "missing");
           stats.dropped(j.bytes);
           stats.decodeEnded?.(false, source.where, 0, planner.decodesInFlight);
           if (missing) stats.failed();
+          if (planner.decodeErrorStreak >= DECODE_FALLBACK_ERRORS) {
+            if (source.where === "worker") return toMainThread();
+            if (!unusable && options.onUnusable) {
+              unusable = true;
+              return options.onUnusable();
+            }
+          }
         }
         return pump();
       }
@@ -312,7 +335,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     while ((job = planner.nextFetch(t)) !== NONE) startFetch(job);
     for (;;) {
       const before = planner.counters.redecodes;
-      job = planner.nextDecode();
+      job = planner.nextDecode(t);
       if (job === NONE) break;
       startDecode(job, planner.counters.redecodes > before);
     }

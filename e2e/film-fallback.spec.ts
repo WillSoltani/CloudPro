@@ -5,7 +5,8 @@ import { assertPlaceholdersPresent, filmNames, maxScroll, openHome, paintedNow, 
 // capabilities taken away by an init script before any script of the page runs:
 //  - no Worker: the budget loader decodes on the main thread (mode "budget-main");
 //  - no Worker and no createImageBitmap: the legacy loader (mode "legacy");
-//  - the worker failing at start (a script that does not run): the budget loader switches to main-thread decodes at run time.
+//  - the worker failing at start (a script that does not run): the budget loader switches to main-thread decodes at run time;
+//  - createImageBitmap rejecting every frame: the page hands over to the legacy loader at run time.
 // In each the film plays down the page frame for frame (pixels equal data-frame) with no console errors.
 
 test.beforeAll(() => assertPlaceholdersPresent());
@@ -104,4 +105,34 @@ test("when the worker script does not run the film plays on the main thread @fal
   expect(watch.failed, "4xx/5xx answers").toEqual([]);
   // The browser logs the broken worker script's error (the marker in its message); nothing else may be an error.
   expect(watch.consoleErrors.filter((e) => !e.includes("film-test-broken-worker")), "console errors").toEqual([]);
+});
+
+test("when createImageBitmap rejects every frame the page hands over to the legacy loader at run time @fallback", async ({ page, baseURL }) => {
+  test.setTimeout(300_000);
+  const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
+  // No Worker (so the budget loader decodes on the main thread from the start) and a createImageBitmap that exists but
+  // rejects, as an engine that cannot decode these frames: after a few frames the page must move to the legacy loader.
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "Worker", { value: undefined, configurable: true, writable: true });
+    (window as unknown as { __bitmapCalls: number }).__bitmapCalls = 0;
+    Object.defineProperty(window, "createImageBitmap", {
+      value: () => {
+        (window as unknown as { __bitmapCalls: number }).__bitmapCalls++;
+        return Promise.reject(new DOMException("film-test cannot decode", "InvalidStateError"));
+      },
+      configurable: true,
+      writable: true,
+    });
+  });
+  await openHome(page);
+  await expect.poll(async () => (await readFilmStats(page))?.mode, { timeout: 30_000 }).toBe("legacy");
+  expect(await page.evaluate(() => (window as unknown as { __bitmapCalls: number }).__bitmapCalls), "decodes tried first").toBeGreaterThan(0);
+  expect(await settle(page), "the first frame settles").toBe(true);
+  await playDown(page);
+  const s = (await readFilmStats(page))!;
+  expect(s.mode).toBe("legacy");
+  expect(s.decodes, "decodes").toBeGreaterThan(0);
+  expect(s.failures, "no frame given up").toBe(0);
+  expect(watch.failed, "4xx/5xx answers").toEqual([]);
+  expect(watch.consoleErrors, "console errors").toEqual([]);
 });
