@@ -26,7 +26,6 @@ import {
   countRequest,
   dropFrame,
   filmInstrument,
-  frameBytes,
   holdFrame,
   newEffectiveTarget,
   onTarget,
@@ -35,6 +34,8 @@ import {
 } from "@/components/film/filmStats";
 import { FilmHud } from "@/components/film/FilmHud";
 import { backingSize, growCap, MAX_DPR, wantsFullBacking } from "@/components/film/backing";
+import { createLegacyLoader } from "@/components/film/loader/legacy";
+import type { FrameLoader, LoaderStats, WantPlan } from "@/components/film/loader/types";
 
 /**
  * One crop point for the whole reel (x, y in 0–1): segments share boundary frames, so a per-film focus
@@ -46,8 +47,6 @@ export const REEL_OBJECT_POSITION = `${REEL_FOCUS[0] * 100}% ${REEL_FOCUS[1] * 1
 
 // Critically damped: smooths wheel steps without a slow tail.
 const SPRING = { stiffness: 140, damping: 24, mass: 1, restDelta: 0.0005 } as const;
-// Coarse-to-fine: every 16th frame first, so a segment scrubs long before it has fully loaded.
-const STRIDES = [16, 8, 4, 2, 1];
 // A segment starts loading once it is within ~1.5 viewports.
 const NEAR = "150% 0px";
 // Hold keys: segment i's end key fades in over the last KEY_IN_PX of its scroll (the hero keeps its
@@ -67,17 +66,6 @@ const LANDED = 8;
 const FIRST_PAINT_MS = 250;
 // After load, measures keep landing instead of scrubbing for this long (the browser restores scroll).
 const SETTLE_MS = 500;
-// Until the visitor engages (scrolls, or arrives on a hash or a restored position), the active segment
-// fetches only its stride-ENGAGE_STRIDE skeleton (plus 0, M and last) and the next segment its 0, M and
-// last: an idle phone no longer downloads two films before the first scroll.
-const ENGAGE_STRIDE = 4;
-// A slow network (navigator.connection's effectiveType, or the timed first hero frames where there is none):
-// the smallest tier, and at most this many requests in flight.
-const SLOW_INFLIGHT = 3;
-// Without navigator.connection: the first this-many hero frames are timed; a median above SLOW_FRAME_MS
-// moves every segment not yet started to the smallest tier (at the next segment boundary).
-const TIMED_FRAMES = 8;
-const SLOW_FRAME_MS = 400;
 // A tier may be up to this much narrower than the need (a 390 px phone at DPR 3 needs 438.75 px: 432 is 1.6 % short).
 const TIER_SLACK = 0.02;
 // The raw clock has no direction of travel once it has been still this long (the follower below).
@@ -180,10 +168,9 @@ export function useFilmBackdrop(): BackdropApi {
   return backdrop;
 }
 
+// The clock's view of a joined segment. Its frames (tier width, requests, decoded frames) are the loader's.
 type Segment = {
   reg: SegmentRegistration;
-  /** Frame width tier, fixed when the segment joins. */
-  width: number;
   /** The camera move m in px (legacy: section height − viewport), refreshed on every measure. */
   range: number;
   /** Everything after the move until the next segment starts (or the page ends), q = D − m, in px. */
@@ -194,19 +181,6 @@ type Segment = {
   read: number;
   /** The next segment starts where this section ends (no hold panel or body between them). */
   adjacent: boolean;
-  /** Request order: the target, last, 0, then strides 16/8/4/2/1 nearest-first (or the reduced stills). */
-  order: number[];
-  cursor: number;
-  /** The frame `order` was ranked around. */
-  rankedAt: number;
-  /** Frames that appear in `order` (all of them, or the reduced-motion stills). */
-  inOrder: Uint8Array;
-  /** Per frame: 0 idle · 1 requested (a failed frame stays here: not retried) · 2 decoded. */
-  status: Uint8Array;
-  frames: (HTMLImageElement | undefined)[];
-  /** In-flight requests; `release` frees the request's loader slot exactly once (see request). */
-  pending: Map<number, { img: HTMLImageElement; release: () => void }>;
-  loaded: number;
   /** Within NEAR of the viewport. */
   near: boolean;
 };
@@ -257,6 +231,15 @@ export function breathCurve(tau: number, tauRead: number): number {
  *
  * Cover fit: draw() and the key layers both place the picture with filmBase coverRect() at REEL_FOCUS,
  * the same call PerspectivePlate uses, so no overlay can drift from the canvas.
+ *
+ * Frames: this component owns the clock, the draw call, the hold keys, the chrome and the registration; which
+ * frames exist in memory is the frame loader's (components/film/loader: the FrameLoader interface in types.ts,
+ * the legacy loader in legacy.ts). It is picked in one place in the effect (`const loader = createLegacyLoader(…)`).
+ * Each segment joins it with the tier tier() picks from the canvas box (`data-width`, the backing cap and the
+ * counters read the loader's width); every clock tick hands it what the clock wants (want: the active segment,
+ * its target frame, the direction of travel, where the neighbours are entered); draw() paints `loader.nearest`
+ * and waits while `loader.isComing` a nearer frame. The loader reports to `window.__filmStats` through a narrow
+ * stats hook and to `data-loaded` through a callback, and knows nothing else of the page.
  *
  * Mount once, with no transformed/filtered ancestor (that would break `fixed`). Pass a stable reel.
  * Test hooks on the canvas: `data-segment` (film name), `data-frame`, `data-reel` (3 dp), `data-width`,
@@ -358,17 +341,7 @@ export function FilmBackdrop({
       navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; rtt?: number; downlink?: number } }
     ).connection;
     const saveData = connection?.saveData === true;
-    // A slow network by the browser's own class (2g, slow-2g, 3g). Not by downlink: Chrome's first estimate
-    // reads 1.45–1.75 Mb/s on fast connections too (and never moves for localhost), so it sent desktops to
-    // the smallest tier.
-    // Slow: a 2g/3g class, or a 4g link that is both laggy and thin (Chrome reports rtt 0 and a low early
-    // downlink estimate on fast links, so downlink alone must never decide).
-    let slow =
-      !!connection &&
-      (["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "") ||
-        ((connection.rtt ?? 0) >= 100 && (connection.downlink ?? Infinity) < 2));
     const coarse = window.matchMedia("(pointer: coarse)").matches;
-    let maxInflight = saveData || slow ? SLOW_INFLIGHT : 6;
     const n = reel.length;
     const portrait = pickFilmOrientation() === "portrait";
     const { drawnSegment: drawnSegmentMV, drawnFrame: drawnFrameMV } = api;
@@ -377,13 +350,6 @@ export function FilmBackdrop({
     // What the counters score against: the frames the canvas can show for the current target (filmStats aimAt,
     // with the loader's own `usable` rule), refreshed with the target in onReel.
     const effective = newEffectiveTarget();
-    // Estimated decoded size of one of a segment's frames at its current tier.
-    const bytesOf = (s: Segment) => frameBytes(s.width, s.reg.film.aspect);
-    // A segment lets go of every decoded frame it holds (retier, dispose, teardown).
-    const dropAll = (s: Segment) => {
-      const bytes = bytesOf(s);
-      for (let k = 0; k < s.frames.length; k++) if (s.frames[k]) dropFrame(stats, bytes);
-    };
 
     // Hold-key layers (rendered below), indexed by segment. Each loads on approach (decoded first, then
     // set as the layer's background, sized and placed with coverRect); `keyReady[i]` once it is on the
@@ -410,10 +376,45 @@ export function FilmBackdrop({
 
     const segments = new Map<number, Segment>();
     const byEl = new Map<Element, Segment>();
+
+    // The loader's counters, kept in `window.__filmStats` with the same meaning as before the seam (a refetch is a
+    // request for a film, width and frame already requested in this page load).
+    const loaderStats: LoaderStats = {
+      requested: (film, width, frame, inflight) => {
+        const key = `${film}/${width}/${frame}`;
+        const repeated = requested.has(key);
+        if (!repeated) requested.add(key);
+        countRequest(stats, repeated, inflight);
+      },
+      released: (inflight) => {
+        stats.inflight = inflight;
+      },
+      decoded: (bytes) => {
+        stats.decodes++;
+        holdFrame(stats, bytes);
+      },
+      dropped: (bytes) => dropFrame(stats, bytes),
+      failed: () => {
+        stats.failures++;
+      },
+    };
+    // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load.
+    const loader: FrameLoader = createLegacyLoader({
+      stats: loaderStats,
+      connection,
+      // The idle gate opens at once when the page has already moved from the top (a hash jump, a restored position),
+      // a boot key shows a hold, or under reduced motion. Save-Data visitors wait for the first scroll like everyone
+      // else (they get the smallest tier, not more bytes at idle).
+      engaged: reduced || bootHold >= 0 || window.scrollY !== 0,
+      tier: (film) => tier(film),
+      onLoaded: (index, loaded) => {
+        const s = segments.get(index);
+        if (s) s.reg.el.dataset.loaded = String(loaded);
+      },
+    });
+    stats.mode = loader.mode;
     let cancelled = false;
     let raf = 0;
-    let inflight = 0;
-    let active = -1;
     let reelAt = 0;
     let clockAt = 0;
     let tailAt = 0;
@@ -424,12 +425,6 @@ export function FilmBackdrop({
     let painted = false;
     let measured = false;
     let settleUntil = document.readyState === "complete" ? performance.now() + SETTLE_MS : Infinity;
-    // The idle gate (ENGAGE_STRIDE): open once the page has moved from the top (a scroll, a hash jump, a
-    // restored position) or a boot key shows a hold. Never applied under reduced motion or Save-Data.
-    // Save-Data visitors wait for the first scroll like everyone else (they get the smallest tier, not more bytes at idle).
-    let engaged = reduced || bootHold >= 0 || window.scrollY !== 0;
-    // Hero frame timings (ms), when there is no navigator.connection to ask.
-    const heroTimes: number[] = [];
     let savedHold: string | null = null;
     let chromeKey = "";
     // With tail frames on, the boot key stays up until the canvas has landed on a frame once.
@@ -463,19 +458,6 @@ export function FilmBackdrop({
     const stillSteps = (s: Segment) => Math.max(2, s.reg.reducedSteps);
     const still = (s: Segment, k: number) => Math.round((k / (stillSteps(s) - 1)) * moveEnd(s));
 
-    // The frames this page load ever requests, so the only ones the canvas can show: the move (0…M); tail frames
-    // (after M) only while tails play, and only the even ones on coarse pointers; under reduced motion only the
-    // stills. rank() requests by it, and the counters score against it (aimAt), so a frame never loaded by design
-    // is never counted as lag.
-    const usable = (s: Segment, i: number) => {
-      const end = moveEnd(s);
-      if (reduced) {
-        for (let k = 0; k < stillSteps(s); k++) if (still(s, k) === i) return true;
-        return false;
-      }
-      return i <= end || (tailCount(s) > 0 && (!coarse || (i - end) % 2 === 0));
-    };
-
     // Move progress → frame (0…M); under reduced motion the stills.
     const toIndex = (s: Segment, frac: number) => {
       const end = moveEnd(s);
@@ -487,11 +469,11 @@ export function FilmBackdrop({
     // Frame tier, by pixel count so landscape (768/1280/1920) and portrait (432/720/1080) manifests are
     // judged alike: the smallest tier with the pixels the cover-fitted frame needs at (capped) device
     // resolution; coarse pointers top out at COARSE_MAX_PIXELS (the 1280 landscape tier or the 720
-    // portrait tier), Save-Data takes the smallest.
+    // portrait tier), Save-Data and a slow network (the loader's isSlow) take the smallest.
     const tier = (film: FilmManifest) => {
       const sorted = [...film.widths].sort((a, b) => a - b);
       const pixels = (w: number) => (w * w) / film.aspect;
-      const pool = saveData || slow
+      const pool = saveData || loader.isSlow()
         ? [sorted[0]]
         : coarse
           ? sorted.filter((w) => pixels(w) <= COARSE_MAX_PIXELS)
@@ -505,67 +487,18 @@ export function FilmBackdrop({
     /** Widest gap tolerated between the painted frame and the target while something else is on screen. */
     const tolerance = (s: Segment) => Math.max(LANDED, Math.round(s.reg.film.count / 32));
 
-    // Request order around `target`: the target itself, M, last and 0 (always resident), then each
-    // coarse-to-fine pass nearest-first, so the frames that matter now arrive first. Only usable frames.
-    const rank = (s: Segment, target: number) => {
-      const count = s.reg.film.count;
-      const end = moveEnd(s);
-      const seen = new Uint8Array(count);
-      const order: number[] = [];
-      const push = (i: number) => {
-        if (i >= 0 && i < count && !seen[i] && usable(s, i)) {
-          seen[i] = 1;
-          order.push(i);
-        }
-      };
-      const nearest = (a: number, b: number) => Math.abs(a - target) - Math.abs(b - target);
-      push(target);
-      push(end);
-      push(count - 1);
-      push(0);
-      if (reduced) {
-        const stills: number[] = [];
-        for (let k = 0; k < stillSteps(s); k++) stills.push(still(s, k));
-        stills.sort(nearest).forEach(push);
-      } else {
-        for (const stride of STRIDES) {
-          const pass: number[] = [];
-          for (let i = 0; i < count; i += stride) pass.push(i);
-          pass.sort(nearest).forEach(push);
-        }
-      }
-      s.order = order;
-      s.inOrder = seen;
-      s.cursor = 0;
-      s.rankedAt = target;
-    };
-
-    // Where a segment's frames are wanted from: the target while active, else the end the scroll
-    // will enter it from.
-    const entryFrame = (s: Segment) =>
-      s.reg.index === active
-        ? targetFrame
-        : s.reg.index > active
-          ? 0
-          : tailCount(s) > 0
-            ? s.reg.film.count - 1
-            : moveEnd(s);
-
-    const nearestLoaded = (s: Segment, i: number) => {
-      for (let d = 0; d < s.reg.film.count; d++) {
-        if (s.frames[i - d]) return i - d;
-        if (s.frames[i + d]) return i + d;
-      }
-      return -1;
-    };
-
-    // A frame within `tol` of `i` may still arrive (queued or in flight), so it is worth waiting for.
-    const nearerComing = (s: Segment, i: number, tol: number) => {
-      const count = s.reg.film.count;
-      for (let k = Math.max(0, i - tol); k <= Math.min(count - 1, i + tol); k++) {
-        if (s.pending.has(k) || (s.status[k] === 0 && s.inOrder[k])) return true;
-      }
-      return false;
+    // What the clock wants, handed to the loader on every tick (one object, updated in place). `entry`: where the
+    // scroll will enter a segment other than the active one, 0 ahead of it, and behind it its last frame (M without
+    // tail frames).
+    const plan: WantPlan = {
+      active: -1,
+      frame: 0,
+      direction: 0,
+      entry: (i) => {
+        const s = segments.get(i);
+        if (!s || i > plan.active) return 0;
+        return tailCount(s) > 0 ? s.reg.film.count - 1 : moveEnd(s);
+      },
     };
 
     const markDrawn = (index: number) => {
@@ -587,35 +520,36 @@ export function FilmBackdrop({
       canvas.dataset.tail = tailAt.toFixed(3);
       const s = segments.get(targetSeg);
       if (!s) return;
-      const i = nearestLoaded(s, targetFrame);
-      if (i < 0 || (targetSeg === drawnSeg && i === drawnFrame)) return;
+      const held = loader.nearest(targetSeg, targetFrame);
+      if (!held || (targetSeg === drawnSeg && held.frame === drawnFrame)) return;
+      const i = held.frame;
       const gap = Math.abs(i - targetFrame);
       const poster = posterUp();
       const covered = poster || keyUp() || drawnSeg >= 0;
       // While something is on screen (the poster, a key, the previous frame), never paint a frame far
       // from the target: wait for a nearer one rather than flash an unrelated moment of the film.
       const tol = poster ? LANDED : tolerance(s);
-      if (covered && gap > tol && nearerComing(s, targetFrame, tol)) {
+      if (covered && gap > tol && loader.isComing(targetSeg, targetFrame, tol)) {
         stats.held++;
         return;
       }
-      const img = s.frames[i]!;
-      const rect = coverRect(canvas.width, canvas.height, img.naturalWidth / img.naturalHeight, REEL_FOCUS);
-      ctx.drawImage(img, rect.left, rect.top, rect.width, rect.height);
+      const rect = coverRect(canvas.width, canvas.height, held.width / held.height, REEL_FOCUS);
+      ctx.drawImage(held.image, rect.left, rect.top, rect.width, rect.height);
       drawnSeg = targetSeg;
       drawnFrame = i;
       countDraw(stats, i, effective);
       stats.paintedSeg = targetSeg;
       stats.paintedFilm = s.reg.film.name;
       stats.paintedFrame = i;
-      stats.width = s.width;
+      const width = loader.width(targetSeg);
+      stats.width = width;
       if (staleClock.since >= 0 && onTarget(effective, drawnSeg, i, targetSeg)) recoverStale(stats, staleClock, performance.now());
       // Overlays follow the painted frame (frame first: a listener on the segment then reads both).
       drawnFrameMV.set(i);
       drawnSegmentMV.set(targetSeg);
       canvas.dataset.segment = s.reg.film.name;
       canvas.dataset.frame = String(i);
-      canvas.dataset.width = String(s.width);
+      canvas.dataset.width = String(width);
       if (!painted) {
         painted = true;
         // Under the poster or a key the canvas can appear at once; on open page base it fades in.
@@ -641,162 +575,10 @@ export function FilmBackdrop({
       if (!raf && !cancelled) raf = requestAnimationFrame(draw);
     };
 
-    const request = (s: Segment, k: number) => {
-      const img = new Image();
-      img.decoding = "async";
-      // CORS mode (the CDN sends `Access-Control-Allow-Origin: *`; same-origin is unaffected), so the
-      // canvas stays readable (getImageData) with frames from CloudFront.
-      img.crossOrigin = "anonymous";
-      img.src = frameUrl(s.reg.film, s.width, k);
-      s.status[k] = 1;
-      const key = `${s.reg.film.name}/${s.width}/${k}`;
-      const repeated = requested.has(key);
-      if (!repeated) requested.add(key);
-      // Frees this request's slot once. Called when decode() settles AND wherever the request is
-      // cancelled (evict, dispose, teardown): in Chromium a decode() whose src was cleared mid-flight
-      // never settles, so relying on it alone would leak the slot and eventually wedge the loader.
-      let released = false;
-      const release = () => {
-        if (released) return;
-        released = true;
-        inflight--;
-        stats.inflight = inflight;
-        pump();
-      };
-      s.pending.set(k, { img, release });
-      inflight++;
-      countRequest(stats, repeated, inflight);
-      img
-        .decode()
-        .then(() => {
-          if (cancelled || s.pending.get(k)?.img !== img) return; // evicted or torn down meanwhile
-          s.frames[k] = img;
-          s.status[k] = 2;
-          stats.decodes++;
-          holdFrame(stats, bytesOf(s));
-          s.reg.el.dataset.loaded = String(++s.loaded);
-          if (s.reg.index === 0 && !connection) timeHeroFrame(img.src);
-          if (s.reg.index === targetSeg) schedule();
-        })
-        .catch(() => {
-          // A missing frame is covered by its neighbours. Counted only for a live request (not one cancelled).
-          if (!cancelled && s.pending.get(k)?.img === img && s.frames[k] !== img) stats.failures++;
-        })
-        .finally(() => {
-          if (s.pending.get(k)?.img === img) s.pending.delete(k);
-          release();
-        });
-    };
-
-    // The active segment first, then its neighbours. Segments further away only fetch the two
-    // frames that are always kept (0, M and last). Before the visitor engages, only the active segment's
-    // skeleton and the next segment's 0, M and last (ENGAGE_STRIDE); engage() re-ranks for the rest.
-    const nextJob = (): [Segment, number] | null => {
-      const ranked = [...segments.values()].sort(
-        (a, b) => Math.abs(a.reg.index - active) - Math.abs(b.reg.index - active),
-      );
-      for (const s of ranked) {
-        if (!s.near) continue;
-        const ahead = s.reg.index - active;
-        if (!engaged && ahead !== 0 && ahead !== 1) continue;
-        const far = Math.abs(ahead) > 1;
-        const last = s.reg.film.count - 1;
-        const end = moveEnd(s);
-        while (s.cursor < s.order.length) {
-          const k = s.order[s.cursor];
-          const kept = k === 0 || k === end || k === last;
-          const idleSkip = !engaged && !kept && (ahead !== 0 || k % ENGAGE_STRIDE !== 0);
-          if (s.status[k] !== 0 || (far && !kept) || idleSkip) {
-            s.cursor++;
-            continue;
-          }
-          s.cursor++;
-          return [s, k];
-        }
-      }
-      return null;
-    };
-
-    // The visitor has engaged: lift the idle gate and rank every segment again (the gate skipped frames).
-    const engage = () => {
-      if (engaged) return;
-      engaged = true;
-      for (const t of segments.values()) rank(t, entryFrame(t));
-      pump();
-    };
-
-    // No navigator.connection (Safari): time the first TIMED_FRAMES hero frames from resource timing. A slow
-    // median moves the segments not yet started to the smallest tier at the next segment boundary (retier),
-    // never mid-segment, so a segment's own frames, and its joins, stay one tier.
-    const timeHeroFrame = (url: string) => {
-      if (slow || heroTimes.length >= TIMED_FRAMES) return;
-      const entry = performance.getEntriesByName(url).at(-1);
-      if (!entry || !(entry.duration > 0)) return;
-      heroTimes.push(entry.duration);
-      if (heroTimes.length < TIMED_FRAMES) return;
-      const sorted = [...heroTimes].sort((a, b) => a - b);
-      const mid = sorted.length / 2;
-      if ((sorted[mid - 1] + sorted[mid]) / 2 > SLOW_FRAME_MS) {
-        slow = true;
-        maxInflight = SLOW_INFLIGHT;
-      }
-    };
-    const retier = (after: number) => {
-      const released: (() => void)[] = [];
-      for (const t of segments.values()) {
-        if (t.reg.index <= after) continue;
-        const width = tier(t.reg.film);
-        if (width === t.width) continue;
-        dropAll(t);
-        for (const req of t.pending.values()) {
-          req.img.src = "";
-          released.push(req.release);
-        }
-        t.pending.clear();
-        t.frames = new Array(t.reg.film.count);
-        t.status = new Uint8Array(t.reg.film.count);
-        t.loaded = 0;
-        t.width = width;
-        t.reg.el.dataset.loaded = "0";
-      }
-      for (const release of released) release();
-    };
-
-    function pump() {
-      while (!cancelled && inflight < maxInflight) {
-        const job = nextJob();
-        if (!job) return;
-        request(job[0], job[1]);
-      }
-    }
-
-    // Segments more than one index from the active one release their decoded frames except 0, M and
-    // last (CDN frames are immutable, so coming back is a cache hit).
-    const evict = () => {
-      for (const s of segments.values()) {
-        if (Math.abs(s.reg.index - active) <= 1) continue;
-        const last = s.reg.film.count - 1;
-        const end = moveEnd(s);
-        let changed = false;
-        for (const [k, req] of s.pending) {
-          if (k === 0 || k === end || k === last) continue;
-          s.pending.delete(k);
-          s.status[k] = 0;
-          req.img.src = "";
-          req.release();
-          changed = true;
-        }
-        for (let k = 1; k < last; k++) {
-          if (!s.frames[k] || k === end) continue;
-          dropFrame(stats, bytesOf(s));
-          s.frames[k] = undefined;
-          s.status[k] = 0;
-          s.loaded--;
-          changed = true;
-        }
-        if (changed) s.reg.el.dataset.loaded = String(s.loaded);
-      }
-    };
+    // A frame of the target segment has arrived: paint it at the next animation frame.
+    loader.onArrive((index) => {
+      if (index === targetSeg) schedule();
+    });
 
     // Size and place a key layer's background exactly where draw() would paint a frame of its aspect.
     const layoutKey = (i: number) => {
@@ -962,7 +744,7 @@ export function FilmBackdrop({
           o[attr] = Math.round(Number(getComputedStyle(el).opacity) * 1000) / 1000;
         }
         const tailFrame = drawnSeg === hold && tailCount(s) > 0 && drawnFrame > moveEnd(s);
-        const f = tailFrame ? frameUrl(s.reg.film, s.width, drawnFrame) : undefined;
+        const f = tailFrame ? frameUrl(s.reg.film, loader.width(hold), drawnFrame) : undefined;
         // The held key's push (the tower's breath), as [scale, origin x px, origin y px].
         const layer = keyLayers[hold];
         const scale = layer?.style.transform.startsWith("scale(") ? parseFloat(layer.style.transform.slice(6)) : 1;
@@ -1008,7 +790,7 @@ export function FilmBackdrop({
 
     const update = () => {
       if (!segments.size) return;
-      if (!engaged && window.scrollY !== 0) engage();
+      if (window.scrollY !== 0) loader.engage(); // the idle gate lifts once (idempotent)
       const c = measure();
       const leap = Math.abs(c - spring.get());
       steer(c - scrolled.get());
@@ -1063,11 +845,8 @@ export function FilmBackdrop({
       return shownClock;
     };
 
-    // `usable` for the target segment, for aimAt (one closure for the effect, not one per tick).
-    const usableAtTarget = (i: number) => {
-      const t = segments.get(targetSeg);
-      return !!t && usable(t, i);
-    };
+    // The loader's `usable` for the target segment, for aimAt (one closure for the effect, not one per tick).
+    const usableAtTarget = (i: number) => loader.usable(targetSeg, i);
 
     const onReel = (spr: number) => {
       const c = follow(spr);
@@ -1136,16 +915,10 @@ export function FilmBackdrop({
         keyShown[i] = o;
         layer.style.opacity = String(o);
       });
-      if (ph.seg !== active) {
-        active = ph.seg;
-        if (slow) retier(active + 1);
-        evict();
-        for (const t of segments.values()) rank(t, entryFrame(t));
-        pump();
-      } else if (s && Math.abs(targetFrame - s.rankedAt) > 4 * tolerance(s)) {
-        rank(s, targetFrame); // the target leapt: bring the frames around it forward
-        pump();
-      }
+      plan.active = ph.seg;
+      plan.frame = targetFrame;
+      plan.direction = rawDir;
+      loader.want(plan);
       // Paint in this tick (the spring's frame), not the next one: the picture never trails the clock by a frame.
       if (raf) cancelAnimationFrame(raf);
       draw();
@@ -1154,27 +927,24 @@ export function FilmBackdrop({
 
     const io = new IntersectionObserver(
       (entries) => {
+        const changes: [number, boolean][] = [];
         for (const e of entries) {
           const s = byEl.get(e.target);
-          if (s) s.near = e.isIntersecting;
+          if (!s) continue;
+          s.near = e.isIntersecting;
+          changes.push([s.reg.index, s.near]);
         }
-        loadKeys();
-        pump();
+        loadKeys(); // the keys' requests go out before the frames'
+        loader.setNear(changes);
       },
       { rootMargin: NEAR },
     );
 
     const dispose = (s: Segment) => {
-      dropAll(s);
       io.unobserve(s.reg.el);
       byEl.delete(s.reg.el);
-      const cancelledReqs = [...s.pending.values()];
-      s.pending.clear();
       segments.delete(s.reg.index);
-      for (const req of cancelledReqs) {
-        req.img.src = "";
-        req.release();
-      }
+      loader.leave(s.reg.index);
     };
 
     // Reconcile with the registry (mount, a late segment, StrictMode's re-registration).
@@ -1196,31 +966,20 @@ export function FilmBackdrop({
       }
       for (const reg of registered.values()) {
         if (segments.has(reg.index)) continue;
-        const count = reg.film.count;
-        const s: Segment = {
-          reg,
-          width: tier(reg.film),
-          range: 0,
-          after: 0,
-          mu: 1,
-          read: 0,
-          adjacent: false,
-          order: [],
-          cursor: 0,
-          rankedAt: 0,
-          inOrder: new Uint8Array(count),
-          status: new Uint8Array(count),
-          frames: new Array(count),
-          pending: new Map(),
-          loaded: 0,
-          near: false,
-        };
+        const s: Segment = { reg, range: 0, after: 0, mu: 1, read: 0, adjacent: false, near: false };
         segments.set(reg.index, s);
         byEl.set(reg.el, s);
+        loader.join(reg.index, reg.film, tier(reg.film), {
+          moveEnd: moveEnd(s),
+          tailFrames: tailCount(s),
+          evenTailOnly: coarse,
+          reducedStills: reduced ? Array.from({ length: stillSteps(s) }, (_, k) => still(s, k)) : null,
+          tolerance: tolerance(s),
+        });
         io.observe(reg.el);
       }
       update();
-      active = -1; // re-rank every segment around the (new) target
+      loader.rerank(); // re-rank every segment around the (new) target
       onReel(position.get());
       resize(); // a segment that joined with a wider tier than any before it may enlarge the canvas (once)
     };
@@ -1240,7 +999,7 @@ export function FilmBackdrop({
         h = Math.round(canvas.clientHeight * dpr);
       } else {
         let inUse = 0;
-        for (const t of segments.values()) inUse = Math.max(inUse, t.width);
+        for (const t of segments.values()) inUse = Math.max(inUse, loader.width(t.reg.index));
         backingCap = growCap(backingCap, inUse, reelMaxWidth);
         ({ w, h } = backingSize(canvas.clientWidth, canvas.clientHeight, dpr, backingCap));
       }
@@ -1298,14 +1057,7 @@ export function FilmBackdrop({
       ro.disconnect();
       layout.disconnect();
       if (raf) cancelAnimationFrame(raf);
-      for (const s of segments.values()) {
-        dropAll(s);
-        for (const req of s.pending.values()) {
-          req.img.src = "";
-          req.release(); // pump() is a no-op once cancelled
-        }
-        s.pending.clear();
-      }
+      loader.dispose();
     };
   }, [api, reel, keys, reduced, scrolled, spring]);
 
