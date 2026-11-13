@@ -97,8 +97,18 @@ pack in that directory is removed; default `--out films-src/packs`, gitignored),
 frame's bytes with the downloaded file both through the table and through `PackBytes`, prints its layout and with
 `--write-manifest` sets `packs[width]` in `public/films/<name>/manifest.json`, keeping the rest of the file byte for byte.
 `--verify` re-checks built packs against the CDN's frames; `--check-cdn [--full]` checks the pack a manifest names as the page
-will read it (HEAD: 200, size, `application/octet-stream`, CORS; a Range read of the header: 206, a readable Content-Range,
-the header parses and agrees with the entry and the frame count; the last 16 bytes; `--full` the content hash).
+will read it (HEAD: 200, size, `application/octet-stream`, CORS; the CORS preflight a browser may send before a Range read,
+OPTIONS with `Access-Control-Request-Headers: range`: 2xx, the origin allowed, GET and the Range header allowed (by name or `*`);
+a Range read of the header: 206, a readable Content-Range, the header parses and agrees with the entry and the frame count; the
+last 16 bytes; `--full` the content hash).
+
+**The preflight.** The worker's Range reads are cross-origin. Chromium 151 and WebKit 26.5 send no preflight for them: a single
+range (`bytes=a-b`, `bytes=a-`) is a CORS-safelisted request header (checked 2026-11-13 with a worker on 127.0.0.1:3006 fetching
+from 127.0.0.1:3007: GETs with `Range` went out directly, a control header was preflighted). A browser that does preflight needs
+an answer that allows Range, or every pack read fails as a network error, is retried three times and the film falls back to
+frame files after about 1.2 s; `--check-cdn` checks that answer. The film CDN answered the preflight for a pack path on
+2026-11-13 (before any pack was uploaded) with 200, `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Headers: *`,
+`Access-Control-Allow-Methods: GET,HEAD,OPTIONS`, max age 3600.
 
 **Shipping packs: upload first, deploy after.** A manifest that names a pack the CDN does not hold makes every first visit
 ask for it, get a 404 and fall back to one file per frame (correct, but slower than today's idle gate by one wasted request), so
@@ -106,8 +116,12 @@ the order is: (1) build with `npm run film:pack -- --from-cdn <film>|--all --wri
 never into git; the manifest entries are the only committed change) and `--verify` it; (2) the packs are uploaded to the
 films bucket under the same path as the output tree (`films/<name>/<width>/pack-<hash>.bin`, `Cache-Control: public,
 max-age=31536000, immutable`, `Content-Type: application/octet-stream`; `sync-film.sh` uploads only `*.webp`, so this is a
-separate step done by whoever owns the bucket); (3) `npm run film:pack -- --check-cdn --all [--full]` against the CDN; (4) only
-then merge the manifests and deploy. A new or re-cut film gets a new name (frames are immutable) and its packs built the same way;
+separate step done by whoever owns the bucket); (3) `npm run film:pack -- --check-cdn --all [--full]` against the CDN; (4) the
+gate in Chromium and WebKit against a local production build that reads the packs from the CDN (built without `NEXT_PUBLIC_FILM_BASE`, e.g.
+`NEXT_DIST_DIR=.next-film-cdn`; no `?packorigin=`): `npm run film:quality -- --profiles desktop,iphone,slowphone --assert
+scripts/films/packs-live.assert.json`, which fails unless every profile read packs before the first scroll and through the pass with
+no per-frame file request, no film fallen back to files, at most 30 film data requests and no console error; (5) only then merge
+the manifests and deploy. A new or re-cut film gets a new name (frames are immutable) and its packs built the same way;
 `build-film.sh` writes a manifest without `packs`, which is correct until the packs exist.
 
 **Measuring packs before they are uploaded (lab only).** `node scripts/films/pack-serve.mjs [--root <out tree>] [--port 3008]

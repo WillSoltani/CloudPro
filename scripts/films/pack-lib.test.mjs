@@ -49,8 +49,14 @@ const manifest = (over = {}) => ({
 });
 const noWait = async () => {};
 
+/** The CDN's answer to a CORS preflight (OPTIONS), as CloudFront gave it on 2026-11-13. */
+const CDN_PREFLIGHT = {
+  status: 200,
+  headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,HEAD,OPTIONS", "access-control-allow-headers": "*", "access-control-max-age": "3600" },
+};
+
 /** A fake fetch serving `files` (url → bytes), with optional per-url failures before success. */
-function fakeFetch(files, { failures = {}, headers = () => ({}) } = {}) {
+function fakeFetch(files, { failures = {}, headers = () => ({}), preflight = CDN_PREFLIGHT } = {}) {
   const calls = [];
   const left = { ...failures };
   const fn = async (url, init = {}) => {
@@ -61,6 +67,7 @@ function fakeFetch(files, { failures = {}, headers = () => ({}) } = {}) {
       if (f === "throw") throw new TypeError("network down");
       return new Response(null, { status: f });
     }
+    if (init.method === "OPTIONS") return new Response(null, preflight);
     const body = files.get(url);
     if (!body) return new Response("missing", { status: 404 });
     const h = { "content-type": "application/octet-stream", ...headers(url) };
@@ -191,7 +198,7 @@ test("withPackEntry adds packs as the last member and keeps the rest of the mani
   assert.equal(withPackEntry(two, 432, e432), two, "the same entry changes nothing");
 });
 
-test("checkCdnPack: a pack served right passes; a wrong size, a hidden Content-Range or a wrong type is reported", async () => {
+test("checkCdnPack: a pack served right passes; a wrong size, a hidden Content-Range, a wrong type or a refused Range preflight is reported", async () => {
   const f = frames(19);
   const p = buildFilmPack(f, 12);
   const m = manifest({ packs: { 432: packEntry(p) } });
@@ -210,6 +217,26 @@ test("checkCdnPack: a pack served right passes; a wrong size, a hidden Content-R
   assert.ok(r3.problems.some((l) => /content-length/.test(l)));
   const none = await checkCdnPack(manifest(), 432, { fetchImpl: ok.fn });
   assert.match(none.problems[0], /names no pack/);
+  // The CORS preflight a browser may send before a Range read: asked as a browser asks it, and its answer checked.
+  const pre = ok.calls.find((c) => c.init.method === "OPTIONS");
+  assert.ok(pre, "a preflight was sent");
+  const ph = new Headers(pre.init.headers);
+  assert.equal(ph.get("access-control-request-method"), "GET");
+  assert.equal(ph.get("access-control-request-headers"), "range");
+  const listed = fakeFetch(new Map([[url, p.data]]), {
+    headers: () => cors,
+    preflight: { status: 204, headers: { "access-control-allow-origin": "https://soltani.org", "access-control-allow-headers": "Range, If-None-Match" } },
+  });
+  assert.deepEqual((await checkCdnPack(m, 432, { fetchImpl: listed.fn, wait: noWait })).problems, [], "Range listed by name passes");
+  const refused = fakeFetch(new Map([[url, p.data]]), { headers: () => cors, preflight: { status: 403 } });
+  assert.ok((await checkCdnPack(m, 432, { fetchImpl: refused.fn, wait: noWait })).problems.some((l) => /preflight .*answered 403/.test(l)));
+  const noRange = fakeFetch(new Map([[url, p.data]]), {
+    headers: () => cors,
+    preflight: { status: 200, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, HEAD", "access-control-allow-headers": "If-None-Match" } },
+  });
+  assert.ok((await checkCdnPack(m, 432, { fetchImpl: noRange.fn, wait: noWait })).problems.some((l) => /does not allow the Range header/.test(l)));
+  const noCors = fakeFetch(new Map([[url, p.data]]), { headers: () => cors, preflight: { status: 200, headers: { "access-control-allow-headers": "*" } } });
+  assert.ok((await checkCdnPack(m, 432, { fetchImpl: noCors.fn, wait: noWait })).problems.some((l) => /preflight access-control-allow-origin/.test(l)));
   // The header the check reads back parses.
   assert.ok(parsePackHeader(p.data.subarray(0, p.header)));
 });

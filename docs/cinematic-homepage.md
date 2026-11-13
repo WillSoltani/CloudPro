@@ -511,8 +511,11 @@ count), the pack runs' 0 to 105 ms stretches against the per-frame runs' 38 to 1
 
 **What the lab cannot show.** The packs were read from a local HTTP/1.1 server, not from the CDN (HTTP/2, edge caches, a real
 distance): on the unthrottled profiles that favours the packs; on the slow phone pack and frames are throttled alike. The CDN's behaviour
-with packs (a 206 from cache with an exposed Content-Range, the cache headers, the immutable name) is checked by
-`npm run film:pack -- --check-cdn` once they are uploaded, and the gate should then be re-run against a page that reads them from the CDN
-without `?packorigin=`. A real phone's decode speed, Safari's HTTP cache on a second visit, and a real mobile network are open, as in
+with packs (a 206 from cache with an exposed Content-Range, the cache headers, the immutable name, the answer to a Range preflight) is
+checked by `npm run film:pack -- --check-cdn` once they are uploaded, and the gate must then be re-run against a page that reads them
+from the CDN without `?packorigin=`, with `--assert scripts/films/packs-live.assert.json` (it fails when any film falls back to frame
+files; `docs/film-lab-gate.md`, "Shipping packs"). Neither has run yet: no browser has read a pack from the CDN. The pack server
+answered preflights, but none were sent: Chromium 151 and WebKit 26.5 do not preflight a single-range `Range` header (checked
+separately), and the CDN's preflight answer for a pack path already allows any header (`docs/film-lab-gate.md`, "The preflight"). A real phone's decode speed, Safari's HTTP cache on a second visit, and a real mobile network are open, as in
 stage 4. How many bytes still arrive after the page aborts a pack read on the CDN's HTTP/2 connection (loopback has almost none in flight)
 is not measured; the closed range requests exist to bound it.

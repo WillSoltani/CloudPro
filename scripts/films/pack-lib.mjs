@@ -251,10 +251,39 @@ export async function packFilesIn(dir) {
 }
 
 /**
+ * The CORS preflight for a cross-origin GET with a Range header, as a browser sends it. Current Chromium and WebKit send
+ * none for a single range (`bytes=a-b` or `bytes=a-` is a CORS-safelisted request header; checked 2026-11-13 with
+ * Chromium 151 and WebKit 26.5), but a browser that does must get an answer that allows it, or every pack read fails
+ * as a network error. Returns problem lines (empty: the preflight would pass).
+ */
+export async function checkRangePreflight(url, origin, opts = {}) {
+  const res = await fetchRetry(
+    url,
+    { method: "OPTIONS", headers: { Origin: origin, "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "range" } },
+    opts,
+  );
+  const problems = [];
+  if (res.status < 200 || res.status > 299) return [`${url}: CORS preflight (OPTIONS, Range) answered ${res.status}`];
+  const list = (name) => (res.headers.get(name) ?? "").toLowerCase().split(/\s*,\s*/).filter(Boolean);
+  const acao = res.headers.get("access-control-allow-origin");
+  if (acao !== "*" && acao !== origin) problems.push(`${url}: CORS preflight access-control-allow-origin "${acao}"`);
+  const methods = list("access-control-allow-methods");
+  if (methods.length && !methods.includes("get") && !methods.includes("*")) {
+    problems.push(`${url}: CORS preflight does not allow GET (access-control-allow-methods "${methods.join(", ")}")`);
+  }
+  const headers = list("access-control-allow-headers");
+  if (!headers.includes("range") && !headers.includes("*")) {
+    problems.push(`${url}: CORS preflight does not allow the Range header (access-control-allow-headers "${headers.join(", ")}")`);
+  }
+  return problems;
+}
+
+/**
  * Check a pack the manifest names, as the page will read it from the CDN: a HEAD (status, size, content type, CORS),
- * a Range read of its header (206 with a readable Content-Range, the header parses, agrees with the manifest's entry
- * and frame count) and of its last bytes. `full` also downloads it whole and checks its content hash against its name.
- * Returns { problems, notes }.
+ * the CORS preflight a browser would send before a Range read (OPTIONS with Access-Control-Request-Headers: range; it
+ * must answer 2xx and allow the origin, GET and the Range header), a Range read of its header (206 with a readable
+ * Content-Range, the header parses, agrees with the manifest's entry and frame count) and of its last bytes. `full`
+ * also downloads it whole and checks its content hash against its name. Returns { problems, notes }.
  */
 export async function checkCdnPack(m, width, { fetchImpl = fetch, origin = "https://soltani.org", full = false, wait } = {}) {
   const problems = [];
@@ -273,6 +302,7 @@ export async function checkCdnPack(m, width, { fetchImpl = fetch, origin = "http
   if (acao !== "*" && acao !== origin) problems.push(`${url}: access-control-allow-origin "${acao}"`);
   notes.push(`cache-control: ${head.headers.get("cache-control") ?? "(none)"}`);
   if (!/immutable/.test(head.headers.get("cache-control") ?? "")) notes.push("not cached as immutable");
+  problems.push(...(await checkRangePreflight(url, origin, opts)));
 
   const ranged = async (range) => {
     const res = await fetchRetry(url, { headers: { Origin: origin, Range: `bytes=${range}` } }, opts);
