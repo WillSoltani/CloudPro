@@ -383,3 +383,74 @@ with `e2e/film-feel.spec.ts` (chromium, placeholder frames, 3 runs each): a touc
 **On a phone:** open the page with `?hud=1` (the first line ends with `touch 35 ms` once a finger has moved the page) and try other
 values with `?smooth=<ms>` (0 to 300; 0 is no smoothing), for example `?hud=1&smooth=20`, `?smooth=50`, `?smooth=90`. The value
 holds for that page load; the constant to change for good is `TOUCH_LAG_MS`.
+
+### Stage 5: viewport and feel
+
+What changed: the fixed film layers (canvas, hold keys, poster, plate layer) are as tall as the large viewport and the picture keeps
+the place the small viewport's cover fit gives it, so a phone's toolbar showing or hiding changes nothing the film is laid out
+with; the clock reads cached geometry and `window.scrollY` on a scroll event; touch is smoothed at 35 ms instead of 171 ms
+(see the section above). The test-only variables and the simulation are in "Toolbar simulation" in `docs/film-lab-gate.md`.
+Everything below is Chromium on the local production build, placeholder frames, 2026-11-13, "before" = commit `9f4e3e4f` and
+"after" = this branch, on a machine whose load average ran from 25 to 140 during the gate runs (read the counters, not the timings).
+
+**Toolbar moves** (390x664 window, toolbar shown, and 390x754, hidden; DPR 2; `e2e/film-toolbar-lib.ts`; 6 moves at each of three
+positions, the window itself resized, which is the only simulation the old build can run; the picture's shift is read from the
+placeholder marker row in the canvas pixels):
+
+| | before | after |
+| --- | ---: | ---: |
+| canvas backing store reallocations per move | 1 (6 in 6 moves) | 0 |
+| canvas size (CSS) | 664, then 754 px tall | 754 px, always |
+| backing store | 432x736, then 432x835 | 432x835, always |
+| picture shift when the toolbar hides | 40.9 px down, re-cropped (0.45 x 90 px) | 0 px |
+| marker row on screen (centre) | 298.6 px shown, 339.1 px hidden | 298.9 px shown and hidden |
+| ResizeObserver callbacks on the canvas | 1 per move | 0 |
+| redraws caused by the move (hero) | 1 per move | 0 |
+| during a scripted scroll with 6 moves: reallocations / measures | 6 / 418 | 0 / 6 with the window resized (one per move: the window's own svh re-lays the page out), 0 / 0 in the phone mode |
+
+The first-view picture is the same: the marker row's centre is 298.6 px before and 298.9 px after (0.3 px, the rounding of a
+different backing height) with the toolbar shown. With the page unchanged (the `"phone"` mode: window size fixed, only
+`innerHeight`, `clientHeight` and `resize` move) the after build keeps the clock, the frame, every canvas pixel and the plate
+exactly, with 0 draws and 0 `measures`, through six moves at rest and six during a 400-frame scroll. The same spec fails on the
+old build, which is how it was checked to test something.
+
+**Scroll work** (the engine's own counter, and every `getBoundingClientRect` and `clientHeight` / `offsetHeight` / `scrollHeight`
+read on the page counted from outside by wrapping them, over a 6 s scripted scroll at 900 px/s, 361 scroll events; two repeats gave
+the same counts):
+
+| | before | after |
+| --- | ---: | ---: |
+| `measures` per second (gate, desktop and slowphone, 3 runs each) | 59.9 / 59.6 in the first run (52 to 60 and 31 to 60 over three) | 0 / 0 in all three |
+| `measures` per scroll event | 1.00 | 0 |
+| `getBoundingClientRect` per scroll event, 1440x900 / 390x844 | 19.7 / 29.9 | 11.8 / 22.0 |
+| size getters per scroll event, 1440x900 / 390x844 | 4.95 / 5.3 | 1.0 / 1.4 |
+| `getBoundingClientRect` per second, 1440x900 / 390x844 | 1144 / 1738 | 683 / 1282 |
+
+The engine's own measurement went from one per scroll event (a rect per segment plus the size reads) to none; what is
+left per scroll event, about 12 rects at 1440x900 and 22 at 390x844, is other components reading layout on scroll (the chapters'
+fit and reveal logic, the navbar, the scroll-to-top button); they were not part of this stage and are the next place to look if
+scroll still costs layout time on a phone.
+
+**The gate's delivery columns** (`npm run film:quality`, desktop and slowphone, three runs each of before and after, run in
+alternation, load 25 to 140): exact draws, stale ticks and the longest stale stretch overlap between the two builds and are not
+evidence of a change either way (desktop stale ticks 0.2, 4.5, 8.5 % before and 19, 17.3, 3.8 % after; slowphone 29, 58.9, 29.4 %
+before and 28.2, 31.7, 40.2 % after; frame-interval maxima of 0.1 to 15 s show the machine, not the page). The stage changes
+what is measured and drawn per toolbar move and per scroll event, not frame delivery; a clean comparison needs a quiet machine.
+Canvas resizes were 0 in every pass, before and after.
+
+**Owner sheet** (PNG contact sheets, not committed; handed over with the stage's report; real frames, before and after, toolbar shown and hidden at the hero, inside the second film and
+at a reading hold; 1440x900 before and after, which are pixel for pixel the same apart from the pulsing status dot).
+
+**What only a real phone can show**
+
+- The real toolbar animation: this simulation switches between two sizes; a phone slides the toolbar over a few hundred
+  milliseconds, with `resize` events along the way, and iOS Safari and Android Chrome do not do it the same way. Watch the
+  film while the toolbar slides, in both directions, mid-scroll and at rest.
+- Whether `lvh` behaves on iOS and Android: the layers rely on `100lvh` being the toolbar-hidden height and on `100svh` being the
+  toolbar-shown one, and on the layout not changing while the toolbar moves. A browser where `lvh` equals `svh` (or reports
+  `dvh`) would simply show the old behaviour; one where `lvh` is larger than the screen would draw a taller canvas. Check
+  `?hud=1`: `canvas <w>x<h>` must not change while the toolbar moves (the `resize` count in the HUD is the number of canvas
+  reallocations).
+- How 35 ms feels under a thumb: shorter than the 171 ms spring on the wheel, longer than none. Try `?hud=1&smooth=20`, `35`,
+  `60`, `0` (no smoothing), see "Stage 5: smoothing by input", and note which input the HUD names (it ends with the input and
+  its smoothing in ms). `TOUCH_LAG_MS` in `components/film/smoothing.ts` is the constant to change for good.
