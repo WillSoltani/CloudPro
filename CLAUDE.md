@@ -8,6 +8,8 @@ Next.js 16 App Router · React 19 · TypeScript (strict) · Tailwind 4 · framer
 ## Commands
 - `npm run dev` — http://localhost:3000 (`.claude/launch.json` runs it on 3005 for previews and QA)
 - `npm run verify` — lint + typecheck + build (CI also runs `test:pdf-fill` and the infra synth)
+- `npm run test:film-unit` and `npm run test:film` — film counters' unit tests, and the Playwright film specs on placeholder frames (`npm run film:placeholder` first; production build, never `next dev`; `docs/film-lab-gate.md`)
+- `npm run film:quality -- --back` — the scroll-pass lab gate against a local production server (`--base`, default 127.0.0.1:3006; refuses non-local pages); baseline and targets in "Lab gate", `docs/cinematic-homepage.md`
 
 ## Homepage
 `app/page.tsx` → `components/HomeClient.tsx` → `Hero` + `sections/*`; copy lives in `content/*.ts`. `components/InteractiveBackground.tsx` is a particle canvas mounted by the root layout.

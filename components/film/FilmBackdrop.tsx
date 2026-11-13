@@ -20,6 +20,20 @@ import {
 import { coverRect, manifestFor } from "@/components/film/filmBase";
 import { HOLD_REVEALS_KEY, HOLD_STORAGE_KEY } from "@/components/film/reel";
 import { REEL_CHROME_EVENT, type ReelChrome } from "@/components/film/useReelChrome";
+import {
+  aimAt,
+  countDraw,
+  countRequest,
+  dropFrame,
+  filmInstrument,
+  frameBytes,
+  holdFrame,
+  newEffectiveTarget,
+  onTarget,
+  recoverStale,
+  tickStale,
+} from "@/components/film/filmStats";
+import { FilmHud } from "@/components/film/FilmHud";
 
 /**
  * One crop point for the whole reel (x, y in 0–1): segments share boundary frames, so a per-film focus
@@ -354,6 +368,18 @@ export function FilmBackdrop({
     const n = reel.length;
     const portrait = pickFilmOrientation() === "portrait";
     const { drawnSegment: drawnSegmentMV, drawnFrame: drawnFrameMV } = api;
+    // Measurement only (components/film/filmStats.ts, `window.__filmStats`): nothing below reads it back.
+    const { stats, clock: staleClock, requested } = filmInstrument();
+    // What the counters score against: the frames the canvas can show for the current target (filmStats aimAt,
+    // with the loader's own `usable` rule), refreshed with the target in onReel.
+    const effective = newEffectiveTarget();
+    // Estimated decoded size of one of a segment's frames at its current tier.
+    const bytesOf = (s: Segment) => frameBytes(s.width, s.reg.film.aspect);
+    // A segment lets go of every decoded frame it holds (retier, dispose, teardown).
+    const dropAll = (s: Segment) => {
+      const bytes = bytesOf(s);
+      for (let k = 0; k < s.frames.length; k++) if (s.frames[k]) dropFrame(stats, bytes);
+    };
 
     // Hold-key layers (rendered below), indexed by segment. Each loads on approach (decoded first, then
     // set as the layer's background, sized and placed with coverRect); `keyReady[i]` once it is on the
@@ -429,6 +455,23 @@ export function FilmBackdrop({
     // τ at the end of the read pin, for the breath curve.
     const tauRead = (s: Segment) => (s.after > 0 ? s.read / s.after : 0);
 
+    // Stills shown per segment under reduced motion: frames still(s, 0) = 0 … still(s, steps − 1) = M.
+    const stillSteps = (s: Segment) => Math.max(2, s.reg.reducedSteps);
+    const still = (s: Segment, k: number) => Math.round((k / (stillSteps(s) - 1)) * moveEnd(s));
+
+    // The frames this page load ever requests, so the only ones the canvas can show: the move (0…M); tail frames
+    // (after M) only while tails play, and only the even ones on coarse pointers; under reduced motion only the
+    // stills. rank() requests by it, and the counters score against it (aimAt), so a frame never loaded by design
+    // is never counted as lag.
+    const usable = (s: Segment, i: number) => {
+      const end = moveEnd(s);
+      if (reduced) {
+        for (let k = 0; k < stillSteps(s); k++) if (still(s, k) === i) return true;
+        return false;
+      }
+      return i <= end || (tailCount(s) > 0 && (!coarse || (i - end) % 2 === 0));
+    };
+
     // Move progress → frame (0…M); under reduced motion the stills.
     const toIndex = (s: Segment, frac: number) => {
       const end = moveEnd(s);
@@ -459,17 +502,14 @@ export function FilmBackdrop({
     const tolerance = (s: Segment) => Math.max(LANDED, Math.round(s.reg.film.count / 32));
 
     // Request order around `target`: the target itself, M, last and 0 (always resident), then each
-    // coarse-to-fine pass nearest-first, so the frames that matter now arrive first. Tail frames (after M)
-    // only while tails play, and only the even ones on coarse pointers.
+    // coarse-to-fine pass nearest-first, so the frames that matter now arrive first. Only usable frames.
     const rank = (s: Segment, target: number) => {
       const count = s.reg.film.count;
       const end = moveEnd(s);
-      const tailOn = tailCount(s) > 0;
-      const usable = (i: number) => i <= end || (tailOn && (!coarse || (i - end) % 2 === 0));
       const seen = new Uint8Array(count);
       const order: number[] = [];
       const push = (i: number) => {
-        if (i >= 0 && i < count && !seen[i] && usable(i)) {
+        if (i >= 0 && i < count && !seen[i] && usable(s, i)) {
           seen[i] = 1;
           order.push(i);
         }
@@ -480,9 +520,8 @@ export function FilmBackdrop({
       push(count - 1);
       push(0);
       if (reduced) {
-        const steps = Math.max(2, s.reg.reducedSteps);
         const stills: number[] = [];
-        for (let k = 0; k < steps; k++) stills.push(Math.round((k / (steps - 1)) * end));
+        for (let k = 0; k < stillSteps(s); k++) stills.push(still(s, k));
         stills.sort(nearest).forEach(push);
       } else {
         for (const stride of STRIDES) {
@@ -552,12 +591,21 @@ export function FilmBackdrop({
       // While something is on screen (the poster, a key, the previous frame), never paint a frame far
       // from the target: wait for a nearer one rather than flash an unrelated moment of the film.
       const tol = poster ? LANDED : tolerance(s);
-      if (covered && gap > tol && nearerComing(s, targetFrame, tol)) return;
+      if (covered && gap > tol && nearerComing(s, targetFrame, tol)) {
+        stats.held++;
+        return;
+      }
       const img = s.frames[i]!;
       const rect = coverRect(canvas.width, canvas.height, img.naturalWidth / img.naturalHeight, REEL_FOCUS);
       ctx.drawImage(img, rect.left, rect.top, rect.width, rect.height);
       drawnSeg = targetSeg;
       drawnFrame = i;
+      countDraw(stats, i, effective);
+      stats.paintedSeg = targetSeg;
+      stats.paintedFilm = s.reg.film.name;
+      stats.paintedFrame = i;
+      stats.width = s.width;
+      if (staleClock.since >= 0 && onTarget(effective, drawnSeg, i, targetSeg)) recoverStale(stats, staleClock, performance.now());
       // Overlays follow the painted frame (frame first: a listener on the segment then reads both).
       drawnFrameMV.set(i);
       drawnSegmentMV.set(targetSeg);
@@ -597,6 +645,9 @@ export function FilmBackdrop({
       img.crossOrigin = "anonymous";
       img.src = frameUrl(s.reg.film, s.width, k);
       s.status[k] = 1;
+      const key = `${s.reg.film.name}/${s.width}/${k}`;
+      const repeated = requested.has(key);
+      if (!repeated) requested.add(key);
       // Frees this request's slot once. Called when decode() settles AND wherever the request is
       // cancelled (evict, dispose, teardown): in Chromium a decode() whose src was cleared mid-flight
       // never settles, so relying on it alone would leak the slot and eventually wedge the loader.
@@ -605,21 +656,28 @@ export function FilmBackdrop({
         if (released) return;
         released = true;
         inflight--;
+        stats.inflight = inflight;
         pump();
       };
       s.pending.set(k, { img, release });
       inflight++;
+      countRequest(stats, repeated, inflight);
       img
         .decode()
         .then(() => {
           if (cancelled || s.pending.get(k)?.img !== img) return; // evicted or torn down meanwhile
           s.frames[k] = img;
           s.status[k] = 2;
+          stats.decodes++;
+          holdFrame(stats, bytesOf(s));
           s.reg.el.dataset.loaded = String(++s.loaded);
           if (s.reg.index === 0 && !connection) timeHeroFrame(img.src);
           if (s.reg.index === targetSeg) schedule();
         })
-        .catch(() => {}) // a missing frame is covered by its neighbours
+        .catch(() => {
+          // A missing frame is covered by its neighbours. Counted only for a live request (not one cancelled).
+          if (!cancelled && s.pending.get(k)?.img === img && s.frames[k] !== img) stats.failures++;
+        })
         .finally(() => {
           if (s.pending.get(k)?.img === img) s.pending.delete(k);
           release();
@@ -685,6 +743,7 @@ export function FilmBackdrop({
         if (t.reg.index <= after) continue;
         const width = tier(t.reg.film);
         if (width === t.width) continue;
+        dropAll(t);
         for (const req of t.pending.values()) {
           req.img.src = "";
           released.push(req.release);
@@ -725,6 +784,7 @@ export function FilmBackdrop({
         }
         for (let k = 1; k < last; k++) {
           if (!s.frames[k] || k === end) continue;
+          dropFrame(stats, bytesOf(s));
           s.frames[k] = undefined;
           s.status[k] = 0;
           s.loaded--;
@@ -826,6 +886,7 @@ export function FilmBackdrop({
 
     // Measures every segment (m, q, μ, read pin, adjacency) and returns the raw clock c.
     const measure = () => {
+      stats.measures++;
       const root = document.documentElement;
       const viewport = root.clientHeight;
       const svh = probeRef.current?.offsetHeight || viewport;
@@ -998,6 +1059,12 @@ export function FilmBackdrop({
       return shownClock;
     };
 
+    // `usable` for the target segment, for aimAt (one closure for the effect, not one per tick).
+    const usableAtTarget = (i: number) => {
+      const t = segments.get(targetSeg);
+      return !!t && usable(t, i);
+    };
+
     const onReel = (spr: number) => {
       const c = follow(spr);
       const ph = phaseOf(c);
@@ -1025,6 +1092,11 @@ export function FilmBackdrop({
       } else {
         targetFrame = 0;
       }
+      if (s) aimAt(effective, targetFrame, s.reg.film.count, usableAtTarget);
+      else effective.lo = effective.hi = targetFrame;
+      stats.targetSeg = targetSeg;
+      stats.targetFrame = targetFrame;
+      stats.effectiveFrame = effective.lo;
       for (const t of segments.values()) {
         const i = t.reg.index;
         if (i < ph.seg) {
@@ -1073,6 +1145,7 @@ export function FilmBackdrop({
       // Paint in this tick (the spring's frame), not the next one: the picture never trails the clock by a frame.
       if (raf) cancelAnimationFrame(raf);
       draw();
+      tickStale(stats, staleClock, !onTarget(effective, drawnSeg, drawnFrame, targetSeg), performance.now());
     };
 
     const io = new IntersectionObserver(
@@ -1088,6 +1161,7 @@ export function FilmBackdrop({
     );
 
     const dispose = (s: Segment) => {
+      dropAll(s);
       io.unobserve(s.reg.el);
       byEl.delete(s.reg.el);
       const cancelledReqs = [...s.pending.values()];
@@ -1154,6 +1228,11 @@ export function FilmBackdrop({
         canvas.height = h;
         drawnSeg = -1;
         drawnFrame = -1;
+        stats.canvasResizes++;
+        stats.paintedSeg = -1;
+        stats.paintedFilm = "";
+        stats.paintedFrame = -1;
+        stats.width = 0;
         drawnSegmentMV.set(-1);
         drawnFrameMV.set(-1);
         draw(); // …so repaint before the browser presents it
@@ -1196,6 +1275,7 @@ export function FilmBackdrop({
       layout.disconnect();
       if (raf) cancelAnimationFrame(raf);
       for (const s of segments.values()) {
+        dropAll(s);
         for (const req of s.pending.values()) {
           req.img.src = "";
           req.release(); // pump() is a no-op once cancelled
@@ -1238,6 +1318,8 @@ export function FilmBackdrop({
         })}
       </div>
       {children}
+      {/* ?hud=1 only: the engine's counters (window.__filmStats). Renders nothing otherwise. */}
+      <FilmHud />
     </FilmBackdropContext.Provider>
   );
 }

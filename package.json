@@ -12,7 +12,12 @@
     "verify": "npm run lint && npm run typecheck && npm run build",
     "test:pdf-fill": "tsx --test app/tests/pdf-fill/*.test.ts",
     "test:raw-key": "tsx --test app/tests/raw-key/*.test.ts",
-    "test:return-to": "tsx --test app/tests/return-to/*.test.ts"
+    "test:return-to": "tsx --test app/tests/return-to/*.test.ts",
+    "film:placeholder": "node scripts/films/placeholder.mjs",
+    "film:quality": "node scripts/films/scrub-quality.mjs",
+    "test:film": "playwright test --project=chromium",
+    "test:film-unit": "tsx --test components/film/*.test.ts",
+    "test:film:safari": "PW_WEBKIT=1 playwright test --project=webkit"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.988.0",
@@ -40,6 +45,7 @@
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

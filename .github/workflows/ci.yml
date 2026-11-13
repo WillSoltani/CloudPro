@@ -45,7 +45,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -65,6 +65,125 @@ jobs:
       - name: Run PDF fill tests
         run: npm run test:pdf-fill
 
+  # Film gate: the home page's scroll film, built against tiny placeholder frames and driven by Playwright
+  # (playwright.config.ts, e2e/film-*.spec.ts). The real frames live on the film CDN and are not in the
+  # repository, so scripts/films/placeholder.mjs writes stand-ins under public/films (gitignored; the
+  # guard in app-checks only looks at tracked files, so they never trip it) and the page is built with
+  # NEXT_PUBLIC_FILM_BASE=/films. No secrets, no AWS, no request to the live site or the CDN.
+  film:
+    name: Film specs (placeholder frames)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --include=optional
+
+      - name: Install sharp for the placeholder generator (this job only)
+        # sharp encodes the placeholder frames. It is deliberately not in package.json or the lockfile:
+        # there it would pull the Linux libvips binaries into every Linux install, production included,
+        # and next/image would start using it. --no-save leaves package.json and the lockfile untouched.
+        run: npm install --no-save sharp@0.34.5
+
+      - name: Cache placeholder frames
+        id: film-placeholders
+        uses: actions/cache@v4
+        with:
+          path: |
+            public/films/*/[0-9]*
+            public/films/*/poster.*
+            public/films/*/.placeholder.json
+          # Keyed on what the generator reads: a hit holds exactly what it would write (and it is a no-op
+          # when it finds them).
+          key: ${{ runner.os }}-film-placeholders-${{ hashFiles('public/films/*/manifest.json', 'scripts/films/placeholder.mjs', 'scripts/films/placeholder-layout.mjs', 'package-lock.json') }}
+
+      - name: Film engine unit tests (counters)
+        run: npm run test:film-unit
+
+      - name: Generate placeholder frames
+        run: npm run film:placeholder
+
+      - name: Placeholder frames are not tracked (git sees nothing new)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Generating the placeholders changed the working tree:"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright browser
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        # The OS packages come from the Ubuntu mirrors. If they cannot be reached (a hung apt mirror), the
+        # step gives up after 5 minutes, warns, and installs the browser alone: this must not fail the job.
+        run: |
+          if ! timeout --kill-after=15 300 npx playwright install --with-deps chromium; then
+            echo "::warning::playwright install --with-deps failed or timed out (apt mirrors unreachable?); installing the browser alone"
+            sudo pkill -x apt-get || true
+            npx playwright install chromium
+          fi
+
+      - name: Install Playwright OS dependencies (browser cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        # Two bounded tries, then run the tests anyway.
+        run: |
+          for attempt in 1 2; do
+            if timeout --kill-after=15 150 npx playwright install-deps chromium; then
+              exit 0
+            fi
+            echo "::warning::playwright install-deps attempt ${attempt} failed or timed out (apt mirrors unreachable?)"
+            sudo pkill -x apt-get || true
+            sleep 10
+          done
+          echo "::warning::Continuing without the OS packages."
+
+      - name: Restore Next.js build cache (film build)
+        uses: actions/cache@v4
+        with:
+          path: .next-film/cache
+          key: ${{ runner.os }}-nextjs-film-${{ hashFiles('package-lock.json', 'app/**/*.ts', 'app/**/*.tsx', 'components/**/*.ts', 'components/**/*.tsx', 'next.config.ts', 'postcss.config.mjs') }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-film-
+
+      - name: Film specs (Chromium)
+        # playwright.config.ts builds with NEXT_PUBLIC_FILM_BASE=/films and starts `next start` on 127.0.0.1:3006.
+        timeout-minutes: 15
+        run: npm run test:film
+
+      - name: Upload Playwright report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-film
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
   infra-checks:
     name: Infra Build + CDK Synth
     runs-on: ubuntu-latest
@@ -79,7 +198,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: infra/package-lock.json
 
