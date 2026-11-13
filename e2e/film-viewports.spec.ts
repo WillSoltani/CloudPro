@@ -29,10 +29,11 @@ for (const size of SIZES) {
       const stats = (await readFilmStats(page))!;
       expect(stats.draws).toBeGreaterThan(0);
       expect(stats.paintedFilm).toBe(await canvas.getAttribute("data-segment"));
-      // The backing store is the viewport at device pixels, not a stale default size.
+      // The backing store is sized to the viewport (not the 300x150 default), at device pixels but never wider than the
+      // frames it shows (components/film/backing.ts): a portrait film's widest tier is 432..1080 px.
       const box = await canvas.evaluate((c: HTMLCanvasElement) => ({ w: c.width, h: c.height }));
-      expect(box.w).toBeGreaterThanOrEqual(size.width);
-      expect(box.h).toBeGreaterThanOrEqual(size.height);
+      expect(box.w).toBeGreaterThanOrEqual(Math.min(size.width, stats.width));
+      expect(Math.abs(box.h - (box.w * size.height) / size.width)).toBeLessThanOrEqual(1);
       if (PLACEHOLDER_RUN) {
         const painted = await readPaintedFrame(page);
         expect(painted?.pixels, "the pixels name the frame").toEqual({ film: painted?.hook.segment, index: painted?.hook.frame });

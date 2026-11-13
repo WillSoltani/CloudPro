@@ -34,6 +34,7 @@ import {
   tickStale,
 } from "@/components/film/filmStats";
 import { FilmHud } from "@/components/film/FilmHud";
+import { backingSize, growCap, MAX_DPR, wantsFullBacking } from "@/components/film/backing";
 
 /**
  * One crop point for the whole reel (x, y in 0–1): segments share boundary frames, so a per-film focus
@@ -349,7 +350,10 @@ export function FilmBackdrop({
     const drawnSet = drawn.current;
     const listeners = drawnListeners.current;
     const position = reduced ? scrolled : spring;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+    // ?backing=full: the old canvas size rule for this page load (round(CSS size x dpr), no width cap), for an A/B on
+    // a real phone. Read once here, never during render.
+    const fullBacking = wantsFullBacking(window.location.search);
     const connection = (
       navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; rtt?: number; downlink?: number } }
     ).connection;
@@ -1218,11 +1222,32 @@ export function FilmBackdrop({
       update();
       active = -1; // re-rank every segment around the (new) target
       onReel(position.get());
+      resize(); // a segment that joined with a wider tier than any before it may enlarge the canvas (once)
     };
 
+    // The canvas backing store never needs to be wider than the widest frame tier this page load uses (components/film/
+    // backing.ts): a 2880 px canvas painting 1920 px frames only costs fill. `backingCap` only grows, so a retier to
+    // a smaller tier (slow network) never shrinks it; before any segment has joined, the widest width the reel
+    // offers for this orientation stands in, so the first paint is never undersized. tier() works from the CSS box
+    // and dpr, not from the backing store, so this cannot feed back into the tier choice.
+    const reelMaxWidth = reel.reduce((m, e) => Math.max(m, ...manifestFor(e, pickFilmOrientation()).widths), 0);
+    let backingCap = 0;
     const resize = () => {
-      const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
-      const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+      let w: number;
+      let h: number;
+      if (fullBacking) {
+        w = Math.round(canvas.clientWidth * dpr);
+        h = Math.round(canvas.clientHeight * dpr);
+      } else {
+        let inUse = 0;
+        for (const t of segments.values()) inUse = Math.max(inUse, t.width);
+        backingCap = growCap(backingCap, inUse, reelMaxWidth);
+        ({ w, h } = backingSize(canvas.clientWidth, canvas.clientHeight, dpr, backingCap));
+      }
+      w = Math.max(1, w);
+      h = Math.max(1, h);
+      stats.backingW = w;
+      stats.backingH = h;
       if (canvas.width !== w || canvas.height !== h) {
         canvas.width = w; // clears the bitmap…
         canvas.height = h;
@@ -1255,8 +1280,7 @@ export function FilmBackdrop({
     window.addEventListener("resize", update);
     window.addEventListener("pagehide", saveBoot);
     resync.current = sync;
-    sync();
-    resize();
+    sync(); // ends with resize(): the canvas is sized once at load, after the segments have joined
 
     return () => {
       cancelled = true;

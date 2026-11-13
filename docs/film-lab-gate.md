@@ -10,11 +10,12 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
-| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts` |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts` |
 | Scroll-pass measurement (the lab gate script) | `scripts/films/scrub-quality.mjs` (`npm run film:quality`) |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
 | `?hud=1` overlay with the counters | `components/film/FilmHud.tsx` (mounted by `FilmBackdrop`, renders nothing without the flag) |
 | Counter spec | `e2e/film-stats.spec.ts` |
+| Canvas backing size (`backingSize`, `growCap`, `?backing=full`) and its unit tests | `components/film/backing.ts`, `backing.test.ts`; spec `e2e/film-backing.spec.ts` |
 | CI job | `film` in `.github/workflows/ci.yml` ("Film specs (placeholder frames)") |
 
 ## Commands
@@ -22,7 +23,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 ```
 npm run film:placeholder      # write the stand-ins under public/films (a second run does nothing)
 npm run test:film             # Playwright, chromium, placeholder frames
-npm run test:film-unit        # node:test, the counters' pure helpers
+npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, the gate script's leg buckets
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
@@ -60,7 +61,8 @@ up to date where it already does the work; it only writes the object, never read
 exactly as without it. `mode` is `"legacy"` for this loader. Counters (requests, refetches, decodes, failures,
 draws split into exact and fallback paints with their summed distance, ticks, stale ticks, stale ms and the
 longest stale stretch, held paints, canvas resizes, measures) grow until `window.__filmStatsReset()`; gauges
-(in flight, frames alive, decoded MB, target, effective and painted segment and frame, tier width) always describe
+(in flight, frames alive, decoded MB, target, effective and painted segment and frame, tier width, canvas backing
+width and height `backingW` / `backingH`) always describe
 now, and a reset restarts the peaks from them. A refetch is a request for a film, width and index already
 requested in this page load.
 
@@ -76,7 +78,24 @@ to the nearest effective frame. Stale means the canvas does not show the effecti
 after a clock tick; a stretch ends at the tick, or the paint between ticks, that shows it again.
 
 Open the home page with `?hud=1` to see two lines of them, refreshed four times a second. The first line reads
-`f<painted>/<target>`, followed by `eff <effective>` when the two targets differ.
+`f<painted>/<target>`, followed by `eff <effective>` when the two targets differ, the tier width and `canvas <w>x<h>`
+(the backing store, see below).
+
+## Canvas backing size
+
+The canvas backing store is `backingSize(CSS width, CSS height, dpr, cap)` (`components/film/backing.ts`): device pixels with
+the DPR capped at 2, never wider than `cap`, the aspect of the CSS box kept. `cap` is the widest frame tier in use on this
+page load, the maximum `width` over the segments that have joined (each picks its tier when it joins). The cap only grows
+during a page load: a later, wider tier may enlarge the canvas once, a slow-network retier to a smaller tier never shrinks
+it. Before any segment has joined the widest width the reel offers for this orientation stands in, so the first paint is
+never undersized; in practice the canvas is allocated once, at load, after the segments register (`canvasResizes` counts real
+reallocations only, and the specs allow at most 2 after a load and a short scroll). `tier()`, `draw()`'s cover fit, the hold
+keys and the overlays do not read the backing size.
+
+A 1440x900 laptop at DPR 2 gets 1920x1200 instead of 2880x1800; a 390x844 phone gets 432x935 (a 432 wide portrait tier) instead
+of 780x1688. For an A/B on a real phone open the page with **`?backing=full`**: that page load uses the old rule
+(round(CSS size x DPR capped at 2), no width cap). The flag is read once, when the engine starts, and the HUD line shows which
+size is in use.
 
 ## The specs
 
@@ -92,7 +111,8 @@ changes) before they look.
 | `film-smoke` | page 200, canvas paints, pixels name the frame, no 4xx/5xx, no console errors |
 | `film-stats` | the counters exist, move with a scroll and add up; reset zeroes counters and keeps gauges; HUD only with `?hud=1` |
 | `film-reel` | a full one-way pass at 390x844 (touch, portrait films) and 1440x900: every film of the reel is painted, the frame read back from the canvas pixels equals `data-frame`, refetches 0, no 4xx/5xx, no console errors; then back up, where the refetches are only recorded (printed and added to the test annotations), not asserted yet |
-| `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, no horizontal scroll bar at the top or at the end |
+| `film-backing` | 1440x900 at DPR 2 and 390x844 at DPR 3: the canvas is at most the widest tier in use (and at most 1920), keeps the box aspect within a pixel, is allocated at most twice after load and a short scroll, the gauges equal the canvas size and the painted frame read from the pixels equals `data-frame`; with `?backing=full` it is the old size |
+| `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, the backing store is sized to the box (not the 300x150 default), no horizontal scroll bar at the top or at the end |
 | `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
 
 ## Scroll-pass gate

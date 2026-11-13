@@ -53,7 +53,7 @@ export type FilmStats = {
   staleMsMax: number;
   /** Times draw() declined to paint because a frame nearer the target was still coming. */
   held: number;
-  /** Canvas backing-store reallocations (a resize that changes canvas.width or canvas.height). */
+  /** Canvas backing-store reallocations: only a resize that really changes canvas.width or canvas.height counts. */
   canvasResizes: number;
   /** Calls of the engine's measure() (each a batch of layout reads). */
   measures: number;
@@ -72,6 +72,9 @@ export type FilmStats = {
   paintedFrame: number;
   /** Tier width of the painted frame (0 before a paint). */
   width: number;
+  /** Canvas backing store now, in device px (gauges; 0 before the first sizing). See components/film/backing.ts. */
+  backingW: number;
+  backingH: number;
 };
 
 /** The stale-stretch clock: when the open stretch began (−1: none open) and when the previous tick ran (−1: none yet). */
@@ -115,6 +118,8 @@ export function newFilmStats(mode = "legacy"): FilmStats {
     paintedFilm: "",
     paintedFrame: -1,
     width: 0,
+    backingW: 0,
+    backingH: 0,
   };
 }
 
