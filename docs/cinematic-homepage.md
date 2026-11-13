@@ -377,6 +377,14 @@ One file per film directory and width holding all its frames (`docs/film-lab-gat
 budget loader with a few streaming reads instead of one request per frame. The per-frame path stays the fallback (`?pack=0`, and any
 film whose pack fails).
 
+**Note on the F column (added after review).** These runs used a per-frame fetch order that this stage had changed
+(commit `2275913d`: the head of the film ahead fetched before the active film's strides 2 and 1). That change touched the per-frame
+path, which is the stage-6 engine and the fallback, so it was reverted afterwards: the per-frame order is again stage 6's (strides
+16 to 1 of the active film, then the neighbours). The F column and the `?pack=0` figures below therefore measure the reverted order,
+not what `?pack=0` runs now; for the per-frame engine as it ships, read the stage 6 tables above (stale 30 to 34 %, longest stale
+0.5 to 0.8 s on the slow phone). The P and L columns are unaffected (packed films never use the per-frame order; legacy is a
+separate loader). The F column was not re-measured.
+
 **Setup.** Date 2026-11-13, the engine of commit `44d25688` plus the lab pack-origin switch added in this stage's last commit (nothing
 else in the engine changed). Machine: Apple M1 laptop (8 cores), macOS 26.5, Node 20.20.2, Playwright 1.62.1, Chromium 151, WebKit 26.5.
 The page is a production build with the manifests' own base (`NEXT_DIST_DIR=.next-film-cdn`, no `NEXT_PUBLIC_FILM_BASE`) on
@@ -458,17 +466,18 @@ film, including the odd tail frames a coarse pointer never shows and frames per-
 where one film hands over to the next: tower-01-p's last frames into tower-04-p (the bridge, 160 film frames per viewport), about
 28 s into the pass, in three of four runs before the fix below (rack-01-p's first frames in the fourth), with the next film's first
 frames still queued: the planner fetched the film ahead's entry frame only after every stride-2 and stride-1 frame of the active
-film. After the fix the longest stretch still falls at that hand-over in two of three runs (the per-frame path cannot fetch the
-bridge as fast as it plays on 9 Mbit/s), only shorter. Fixed (`budget-plan.ts` `NEXT_HEAD_FRAMES`: the film
-ahead's entry, 0, M, last and every 4th of its first 32 frames now come right after the active film's coarse passes; unit test);
-the slowphone `?pack=0` longest stretch went from 551 (517 to 757) to 384 (373 to 587) ms and stale ticks from 32.9 (32.7 to 36.2)
-to 30.5 (30.5 to 31) %, between rounds on the same loaded machine. With packs it began on the first scroll, at the hero's first
+film. A change to the per-frame order (`NEXT_HEAD_FRAMES`, commit `2275913d`: the film ahead's entry, 0, M, last and every 4th of
+its first 32 frames right after the active film's coarse passes) shortened that stretch in the lab (slowphone `?pack=0` longest
+stretch 551 (517 to 757) to 384 (373 to 587) ms, stale ticks 32.9 to 30.5 %, between rounds on the same loaded machine), but it
+changed the per-frame path, which this stage must leave as stage 6 left it, and packs already remove the stretch. **It was
+reverted**: `?pack=0` and any film whose pack is given up run the stage-6 order again, with its longer hand-over stretch. A later
+stage may bring it back as a change of its own, measured against stage 6. With packs it began on the first scroll, at the hero's first
 frames: once the hero's skeleton was in, the next film's skeleton took the first read and the hero's own full read waited for it
 (116 to 161 ms). Fixed (at most one full read, assigned in list order; unit test); what remains (103 and 115 ms) is one round trip
 after the first scroll, the hero's rest being read only once the visitor engages. The one 721 ms pack run followed a 9.2 s stall.
 On the unthrottled profiles the longest stretches are "decoding" or "bytes held, decode not started": decode-bound, not network.
 
-In this gate's three rounds (after both fixes, frames from the CDN), the longest stale stretch of each slow-phone run: with one file per frame on the slow phone it began at the
+In this gate's three rounds (with both changes, the per-frame one since reverted; frames from the CDN), the longest stale stretch of each slow-phone run: with one file per frame on the slow phone it began at the
 tower-01-p to tower-04-p hand-over in two of three runs (547 and 332 ms, "file fetch queued") and at rack-01-p's first frames in the
 third (296 ms); legacy in the tower films in all three (tower-04-p's first frame, tower-01-p f281 and f34; 529 to 600 ms). With packs it began, in all three slow-phone runs, on the
 first scroll at the hero's first frames (99 to 100 ms, "pack read open (read at frame 1)"): the one round trip between the visitor's

@@ -46,10 +46,8 @@ import {
  *   segment's tolerance from where it was ranked), the direction of travel flips, the visitor engages, a segment
  *   becomes near or not, or a segment joins, leaves or retiers: the active segment's target, M, last and 0, then its
  *   usable frames coarse to fine (strides 16, 8, 4, 2, 1) ahead first in the direction of travel (nearest first at
- *   rest) down to stride 4, then the head of the neighbour ahead (its entry, 0, M, last and every 4th frame over
- *   NEXT_HEAD_FRAMES from the entry), then the active segment's strides 2 and 1, then the neighbour ahead and the
- *   neighbour behind (entry, 0, M, last, then coarse to fine outward from the entry); segments farther away fetch only
- *   0, M and last. Before the visitor engages (the idle gate) only the active
+ *   rest), then the neighbour ahead and the neighbour behind (entry, 0, M, last, then coarse to fine outward from the
+ *   entry); segments farther away fetch only 0, M and last. Before the visitor engages (the idle gate) only the active
  *   segment's stride-4 skeleton with 0, M and last, and segment active + 1's 0, M and last. Only near segments fetch.
  *   The current target is always tried first. A started fetch is never aborted; at most `maxFetches` at once. A
  *   failed fetch is retried after RETRY_BASE_MS, then twice that; after FETCH_TRIES tries the frame is missing (its
@@ -83,13 +81,6 @@ export const NONE = -1;
 export const STRIDES: readonly number[] = [16, 8, 4, 2, 1];
 /** The idle gate: before the visitor engages, the active segment fetches only every ENGAGE_STRIDE-th frame. */
 export const ENGAGE_STRIDE = 4;
-/**
- * The head of the film ahead fetched right after the active film's coarse passes (strides 16, 8, 4): its entry, 0, M and
- * last, then every ENGAGE_STRIDE-th frame over this many frames from the entry. Crossing into it then finds its first
- * frames even when the active film's fine passes are still running (measured on the slow phone, 2026-11-13: the longest
- * stale stretch began where one film hands over to the next, the next film's first frames still queued).
- */
-export const NEXT_HEAD_FRAMES = 32;
 /** The wanted window decodes every COARSE-th frame (by index) before the frames between them. */
 export const COARSE = 4;
 /** Share of the window ahead of the target in the direction of travel (at rest: 0.5). */
@@ -523,20 +514,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
       pushOrder(s, s.moveEnd);
       pushOrder(s, s.last);
       pushOrder(s, 0);
-      fetchSegment(s, target, dir, ENGAGE_STRIDE);
-    }
-    if (engaged) {
-      // The head of the film ahead, then the active film's fine passes (strides 2 and 1).
-      const nb = seg(active + aheadDir);
-      if (nb?.near) {
-        const entry = entryOf[nb.index] >= 0 ? entryOf[nb.index] : aheadDir > 0 ? 0 : nb.last;
-        pushOrder(nb, entry);
-        pushOrder(nb, 0);
-        pushOrder(nb, nb.moveEnd);
-        pushOrder(nb, nb.last);
-        for (let k = ENGAGE_STRIDE; k <= NEXT_HEAD_FRAMES; k += ENGAGE_STRIDE) pushOrder(nb, entry + aheadDir * k);
-      }
-      if (s.near) fetchSegment(s, target, dir, 1);
+      fetchSegment(s, target, dir, engaged ? 1 : ENGAGE_STRIDE);
     }
     if (!engaged) {
       const nx = seg(active + 1);

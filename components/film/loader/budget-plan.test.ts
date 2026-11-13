@@ -376,7 +376,7 @@ describe("budget planner: bytes are fetched once", () => {
 });
 
 describe("budget planner: the fetch order", () => {
-  it("target, M, last, 0, then strides 16, 8, 4 ahead first; the head of the neighbour ahead; strides 2, 1; the neighbour ahead, then the one behind; far ones only 0, M, last", () => {
+  it("target, M, last, 0, then strides 16, 8, 4, 2, 1 ahead first; the neighbour ahead, then the one behind; far ones only 0, M, last", () => {
     const h = harness(20, [{ count: 65 }, { count: 65 }, { count: 65 }, { count: 65 }], { maxFetches: 0 });
     h.want(1, 20, 1);
     const o = h.p.fetchOrder().map(key);
@@ -385,13 +385,9 @@ describe("budget planner: the fetch order", () => {
     assert.deepEqual(o.slice(3, 6), ["1#32", "1#48", "1#16"]);
     const firstOf = (s: number) => o.findIndex((k) => k.startsWith(`${s}#`));
     const lastOf = (s: number) => o.length - 1 - [...o].reverse().findIndex((k) => k.startsWith(`${s}#`));
-    // The active film's coarse passes (every 4th frame), then the head of the film ahead (its entry 0, M = last = 64,
-    // then every 4th frame up to NEXT_HEAD_FRAMES), then the active film's fine passes, then the rest of the film ahead.
-    const fine = o.findIndex((k) => k.startsWith("1#") && Number(k.slice(2)) % 4 !== 0);
-    assert.ok(o.slice(0, firstOf(2)).every((k) => k.startsWith("1#") && Number(k.slice(2)) % 4 === 0), "coarse passes first");
-    assert.deepEqual(o.slice(firstOf(2), fine), ["2#0", "2#64", "2#4", "2#8", "2#12", "2#16", "2#20", "2#24", "2#28", "2#32"]);
-    const restOf2 = o.findIndex((k, i) => i > fine && k.startsWith("2#"));
-    assert.ok(lastOf(1) < restOf2 && lastOf(2) < firstOf(0), "active, then the rest of ahead (2), then behind (0)");
+    // The per-frame order is the stage-6 engine's and stays it (the fallback, `?pack=0`): every frame of the active
+    // film, strides 16 to 1, before any frame of the neighbours.
+    assert.ok(lastOf(1) < firstOf(2) && lastOf(2) < firstOf(0), "active, then ahead (2), then behind (0)");
     assert.equal(o.filter((k) => k.startsWith("1#")).length, 65);
     assert.equal(o.filter((k) => k.startsWith("2#")).length, 65);
     assert.deepEqual(o.filter((k) => k.startsWith("3#")).sort(), ["3#0", "3#64"]);
@@ -400,26 +396,6 @@ describe("budget planner: the fetch order", () => {
     const up = h.p.fetchOrder().map(key);
     const firstUp = up.findIndex((k) => !k.startsWith("1#"));
     assert.equal(up[firstUp], "0#64");
-  });
-
-  it("near the end of a film, the next film's first frames are fetched before the active film's fine passes", () => {
-    // A slow network: 3 fetches at a time, each landing a while later; the visitor runs down a long film to its end.
-    const h = harness(40, [{ count: 289 }, { count: 145 }], { maxFetches: 3 });
-    let crossedWith = -1;
-    for (let f = 0; f <= 288; f += 6) {
-      h.want(0, f, 1);
-      // Two rounds of fetches land per step: the network is slower than the scroll.
-      h.land();
-      h.land();
-      if (crossedWith < 0 && f >= 280) crossedWith = h.network.filter((k) => k.startsWith("1#")).length;
-    }
-    const order = h.network;
-    const got = new Set(order);
-    assert.ok(got.has("1#0"), "the next film's entry frame arrived before the scroll crossed into it");
-    assert.ok(["1#4", "1#8", "1#12"].every((k) => got.has(k)), `its head too: ${order.filter((k) => k.startsWith("1#")).slice(0, 12)}`);
-    assert.ok(crossedWith >= 4);
-    // The active film's odd frames were still missing then: the head did not wait for them.
-    assert.ok([...Array(289).keys()].some((i) => i % 2 === 1 && !got.has(`0#${i}`)));
   });
 
   it("the idle gate: before the visitor engages, the active skeleton and the next segment's 0, M and last only", () => {
