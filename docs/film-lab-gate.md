@@ -10,8 +10,8 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
-| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts` |
-| Scroll-pass measurement (the lab gate script) | `scripts/films/scrub-quality.mjs` (`npm run film:quality`) |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts` |
+| Scroll-pass measurement (the lab gate script) and the page URL it builds from `--query` | `scripts/films/scrub-quality.mjs` (`npm run film:quality`), `scripts/films/page-url.mjs` |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
 | `?hud=1` overlay with the counters | `components/film/FilmHud.tsx` (mounted by `FilmBackdrop`, renders nothing without the flag) |
 | Counter spec | `e2e/film-stats.spec.ts` |
@@ -27,7 +27,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 ```
 npm run film:placeholder      # write the stand-ins under public/films (a second run does nothing)
 npm run test:film             # Playwright, chromium, placeholder frames
-npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, both loaders and the planner, the gate script's leg buckets
+npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, both loaders and the planner, the gate script's leg buckets and page URL
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
@@ -106,9 +106,11 @@ frame's bytes (CORS, no credentials, so the canvas stays readable), keeps them, 
 and transfers the bitmap; at most 6 fetches (3 on a slow network or with Save-Data) and 2 decodes (3 on a budget of 256 MiB or
 more) at once, never aborting a fetch that has started. Without `navigator.connection` the worker times the first hero
 frames' fetches and the page decides "slow" from them, as the legacy loader does from resource timing. The worker is **plain
-JavaScript with no imports on purpose**: Next 16.1's production build (Turbopack) does not compile
-`new Worker(new URL("./frame-worker.js", import.meta.url), { type: "module" })` into a worker chunk, it copies the file as it
-is to `/_next/static/media/frame-worker.<hash>.js` (a `.ts` file would be copied as TypeScript, which no browser runs). The same
+JavaScript with no imports on purpose**: the same file also runs on the page when a worker cannot (below), and the loader's
+authors found Next 16.1's production build copying it to `/_next/static/media/frame-worker.<hash>.js`. Measured in the 2026-11-13
+build (Next 16.1.6): that copy is emitted, but the browser starts a `blob:` worker whose script `importScripts` hashed chunks
+under `/_next/static/chunks/` that hold the compiled store, so no stable URL names the worker's code. The specs that need the
+worker to fail therefore replace `window.Worker` (`e2e/film-fallback.spec.ts`) instead of refusing a URL. The same
 file exports `createFrameStore`, which the page runs itself when a worker cannot: if the worker fails to start, lacks
 `createImageBitmap`, errors or does not answer within 10 s, its jobs are cancelled (no try spent), the bytes it held are
 forgotten and fetched again (they count as refetches), decoded frames stay, and `mode` becomes `"budget-main"`.
@@ -192,6 +194,8 @@ browser, and `?loader=legacy`), the frame read back from the canvas pixels compa
 | `film-backing` | 1440x900 at DPR 2 and 390x844 at DPR 3: the canvas is at most the widest tier in use (and at most 1920), keeps the box aspect within a pixel, is allocated at most twice after load and a short scroll, the gauges equal the canvas size and the painted frame read from the pixels equals `data-frame`; with `?backing=full` it is the old size |
 | `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, the backing store is sized to the box (not the 300x150 default), no horizontal scroll bar at the top or at the end |
 | `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
+| `film-memory` | budget loader, 390x844 touch and 1440x900: a walk down the whole page and back up, twice (a stop every viewport height, each settled). After every leg decoded MB peak and the decoded MB held are within `budgetMB`, the compressed bytes peak is within the cap for that budget (48 MiB on a phone budget, 160 MiB otherwise), nothing failed and nothing was fetched twice; the two legs up make 0 frame requests and decode again (redecodes > 0), and so does the second leg down (0 requests); every film is painted. With `?budget=96` the film plays to the end (down and up, every stop settled, pixels equal `data-frame`) inside the 96 MiB budget |
+| `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 
 ## Scroll-pass gate
 
@@ -204,6 +208,26 @@ the plan's targets and the same baseline: "Lab gate" in `docs/cinematic-homepage
 ```
 npm run film:quality -- --profiles desktop,iphone,slowphone --back --json out.json
 ```
+
+**Choosing the loader and the budget in the gate.** `--query "<a=b&c=d>"` is appended to the page URL (after `?`) for every profile,
+and `--query-desktop`, `--query-iphone`, `--query-slowphone` set it for one profile (replacing `--query` for that profile). The
+loader and budget flags are page parameters, so an A/B is two runs that differ only in the query:
+
+```
+npm run film:quality -- --back --query "loader=legacy" --json legacy.json
+npm run film:quality -- --back --query "loader=budget" --query-iphone "loader=budget&budget=160" --query-slowphone "loader=budget&budget=160" --json budget.json
+```
+
+The lab browsers report a desktop-sized `navigator.deviceMemory` (headless Chromium, 512 MiB budget) and the iphone profile's
+WebKit has none and a narrow window (160 MiB), so `budget=160` is how the slowphone profile gets a phone's figure. The table has, per
+leg, the budget loader's counters beside the existing columns: redecodes, compressed bytes held (peak), the budget in MB,
+decodes in flight (peak), decodes by worker / on the main thread, the mean decode time, and the loader running at the end of
+the leg (`loader at end`; it can differ from the start if the worker failed). The same figures are in the JSON (`redecodes`,
+`bytesHeldMBPeak`, `budgetMB`, `decodeInFlightPeak`, `workerDecodes`, `mainThreadDecodes`, `decodeMsMean`, `mode`), and
+`query` is recorded per profile. The existing columns and their meaning are unchanged. A frame fetched by the budget loader is
+a page-initiated `fetch` from the worker, so Playwright's request events for the Chromium profiles still see it; in WebKit each
+`createImageBitmap(Blob)` also shows as a `blob:` request event, so read "film frames" and "engine requests" there, not
+"requests (all)".
 
 With `FILM_FRAMES=cdn` the Playwright build goes to `.next-film-cdn` (real frames from the film CDN), so it never overwrites the
 placeholder build in `.next-film`.
@@ -253,6 +277,8 @@ on the iphone profile and 0.6 to 0.9 GB on the slow phone); a pass makes 1,000 t
 nearly every frame it asks for (an engine that evicts what the visitor just saw).
 
 ## Stage 4 on placeholder frames
+
+The real-frame A/B (three alternating runs, verdict per line) is in "Stage 4: budget loader" under "Lab gate" in `docs/cinematic-homepage.md`.
 
 The budget loader against the legacy one, one run each of
 `npm run film:quality -- --profiles desktop,iphone,slowphone --back` on **placeholder frames** (`.next-film`, 127.0.0.1:3006),

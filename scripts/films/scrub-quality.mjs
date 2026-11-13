@@ -18,6 +18,11 @@
  *                         reported separately (the "back" rows)
  *   --cap <requests>      hard cap on requests per profile: every request past it is aborted
  *   --allow-remote        needed, together with --cap, to measure a base that is not localhost / 127.0.0.1
+ *   --query "<a=b&c=d>"  appended to the page URL (after "?") for every profile, e.g. "loader=legacy" or
+ *                         "loader=budget&budget=160" (the film's loader choice and decoded-frame budget, see
+ *                         docs/film-lab-gate.md)
+ *   --query-<profile> "<...>"  the same for one profile only (--query-iphone "budget=160"); it replaces --query for that
+ *                         profile
  *   --json <file>         also write the numbers as JSON
  *   --assert <file>       check the numbers against thresholds (see below); exit 1 when one is missed
  *   --headed              show the browser
@@ -49,6 +54,11 @@
  *   meas/s           calls of the engine's measure() per second of scrolling (each is a batch of layout reads)
  *   frame ms         the browser's own requestAnimationFrame intervals during the scroll (median, p95, max)
  *   >33 ms           count of those intervals longer than 33.4 ms
+ *   redecodes        frames decoded again from kept bytes (budget loader; 0 for legacy)
+ *   bytes held MB    most compressed frame bytes kept at once (budget loader)
+ *   budget MB        the decoded-frame budget of the page load (budget loader; 0 for legacy), 10^6 bytes
+ *   decode in-flight peak / decodes worker/main / decode ms mean   decodes running at once, where they ran, their mean time
+ *   loader at end    window.__filmStats.mode when the leg closed ("legacy", "budget", "budget-main")
  *
  * LOCAL ONLY by default. A page on any host but localhost / 127.0.0.1 / [::1] is refused unless both --cap and
  * --allow-remote are given. A locally served page loading frames from the film CDN is fine.
@@ -57,14 +67,17 @@ import { chromium, webkit, devices } from "@playwright/test";
 import { promises as fs } from "node:fs";
 import { createRequire } from "node:module";
 import { legBucket } from "./leg-bucket.mjs";
+import { pageUrl } from "./page-url.mjs";
 
 const require = createRequire(import.meta.url);
 const PLAYWRIGHT_VERSION = require("@playwright/test/package.json").version;
 
 // ---- options ---------------------------------------------------------------------------------------------
 
+const PROFILE_NAMES = { desktop: 1, iphone: 1, slowphone: 1 };
+
 function parseArgs(argv) {
-  const o = { base: "http://127.0.0.1:3006", profiles: null, speed: null, back: false, cap: 0, allowRemote: false, json: null, assert: null, headed: false };
+  const o = { base: "http://127.0.0.1:3006", profiles: null, speed: null, back: false, cap: 0, allowRemote: false, json: null, assert: null, headed: false, query: "", queries: {} };
   const need = (i, name) => {
     if (i + 1 >= argv.length || argv[i + 1].startsWith("--")) fail(`scrub-quality: ${name} needs a value`);
     return argv[i + 1];
@@ -80,11 +93,14 @@ function parseArgs(argv) {
     else if (a === "--json") o.json = need(i++, a);
     else if (a === "--assert") o.assert = need(i++, a);
     else if (a === "--headed") o.headed = true;
+    else if (a === "--query") o.query = need(i++, a);
+    else if (/^--query-[a-z]+$/.test(a)) o.queries[a.slice("--query-".length)] = need(i++, a);
     else if (a === "--help" || a === "-h") {
       console.log("see the comment at the top of scripts/films/scrub-quality.mjs");
       process.exit(0);
     } else fail(`scrub-quality: unknown option ${a}`);
   }
+  for (const p of Object.keys(o.queries)) if (!(p in PROFILE_NAMES)) fail(`scrub-quality: --query-${p}: unknown profile "${p}" (desktop, iphone, slowphone)`);
   if (o.speed !== null && !(o.speed > 0)) fail("scrub-quality: --speed must be a positive number");
   if (!Number.isFinite(o.cap) || o.cap < 0) fail("scrub-quality: --cap must be a number of requests");
   return o;
@@ -288,7 +304,8 @@ async function measureProfile(name) {
     await cdp.send("Emulation.setCPUThrottlingRate", { rate: prof.throttle.cpu });
   }
 
-  const response = await page.goto(BASE + "/", { waitUntil: "load", timeout: 180_000 });
+  const url = pageUrl(BASE, opts.queries[name] ?? opts.query);
+  const response = await page.goto(url, { waitUntil: "load", timeout: 180_000 });
   const status = response?.status() ?? 0;
   await page.waitForFunction(() => !!window.__filmStats && document.querySelector("canvas[data-segment]")?.dataset.frame !== undefined, null, { timeout: 120_000 });
   await page.waitForTimeout(PRE_SCROLL_IDLE_MS);
@@ -370,6 +387,14 @@ async function measureProfile(name) {
       held: s.held,
       decodes: s.decodes,
       failures: s.failures,
+      // the budget loader's counters (0 under the legacy loader) and the loader running at the end of the leg
+      redecodes: s.redecodes,
+      bytesHeldMBPeak: round(s.bytesHeldMBPeak, 1),
+      budgetMB: round(s.budgetMB, 1),
+      decodeInFlightPeak: s.decodeInFlightPeak,
+      workerDecodes: s.workerDecodes,
+      mainThreadDecodes: s.mainThreadDecodes,
+      decodeMsMean: round(s.decodeMsMean, 1),
       mode: s.mode,
       errorSamples: n.errors.slice(0, 3),
     };
@@ -383,6 +408,7 @@ async function measureProfile(name) {
     status,
     capped,
     mode: before.stats.mode,
+    query: opts.queries[name] ?? opts.query,
     film: before.film,
     viewport: before.viewport,
     dpr: before.dpr,
@@ -435,6 +461,13 @@ function rowsFor(results) {
     add(`${tag}: frames alive peak`, get((l) => l.framesAlivePeak));
     add(`${tag}: decoded MB peak`, get((l) => l.decodedMBPeak));
     add(`${tag}: in-flight peak`, get((l) => l.inflightPeak));
+    add(`${tag}: redecodes`, get((l) => l.redecodes));
+    add(`${tag}: bytes held MB peak`, get((l) => l.bytesHeldMBPeak));
+    add(`${tag}: budget MB`, get((l) => l.budgetMB));
+    add(`${tag}: decode in-flight peak`, get((l) => l.decodeInFlightPeak));
+    add(`${tag}: decodes worker/main`, get((l) => `${l.workerDecodes}/${l.mainThreadDecodes}`));
+    add(`${tag}: decode ms mean`, get((l) => l.decodeMsMean));
+    add(`${tag}: loader at end`, get((l) => l.mode));
     add(`${tag}: canvas resizes`, get((l) => l.canvasResizes));
     add(`${tag}: measures/s`, get((l) => l.measuresPerSec));
     add(`${tag}: frame ms med/p95/max`, get((l) => `${f(l.frameMs.median)}/${f(l.frameMs.p95)}/${f(l.frameMs.max)}`));
@@ -499,7 +532,7 @@ if (results.length) {
   console.log(`\nFilm lab gate: ${BASE}  ·  Playwright ${PLAYWRIGHT_VERSION}  ·  ${new Date().toISOString()}${opts.cap ? `  ·  request cap ${opts.cap}` : ""}`);
   for (const r of results) {
     const extra = [r.capped ? "CAPPED by --cap" : "", r.status !== 200 ? `HTTP ${r.status}` : "", r.mode !== "legacy" ? `mode ${r.mode}` : ""].filter(Boolean).join(", ");
-    console.log(`  ${r.name}: ${r.label}; ${r.speed} px/s; viewport ${r.viewport.join("x")} @${r.dpr}x, document ${r.documentHeight} px, loader "${r.mode}"${extra ? `  [${extra}]` : ""}`);
+    console.log(`  ${r.name}: ${r.label}; ${r.speed} px/s; viewport ${r.viewport.join("x")} @${r.dpr}x, document ${r.documentHeight} px, loader "${r.mode}"${r.query ? `, query "${r.query}"` : ""}${extra ? `  [${extra}]` : ""}`);
   }
   console.log("");
   printTable(results);

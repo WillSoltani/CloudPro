@@ -212,3 +212,30 @@ export const horizontalOverflow = (page: Page) =>
     html: document.documentElement.scrollWidth - document.documentElement.clientWidth,
     body: document.body.scrollWidth - document.documentElement.clientWidth,
   }));
+
+/**
+ * Scrolls from `from` to `to` in `step` px, calling `visit(y)` at each stop (the caller usually waits for the film to
+ * settle there), and once more at `to` itself.
+ */
+export async function walkPage(page: Page, from: number, to: number, step: number, visit: (y: number) => Promise<void>): Promise<void> {
+  const dir = to >= from ? 1 : -1;
+  for (let y = from; dir > 0 ? y < to : y > to; y += dir * step) {
+    await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), y);
+    await visit(y);
+  }
+  await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), to);
+  await visit(to);
+}
+
+/** The film and frame the canvas shows: the pixels' reading on placeholder frames, else the hooks'. */
+export async function paintedNow(page: Page): Promise<{ segment: string; frame: number; width: number; pixelsAgree: boolean }> {
+  const painted = PLACEHOLDER_RUN ? await readPaintedFrame(page) : null;
+  const hook =
+    painted?.hook ??
+    (await page.evaluate(() => {
+      const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]")!;
+      return { segment: c.dataset.segment ?? "", frame: Number(c.dataset.frame), width: Number(c.dataset.width) };
+    }));
+  const pixelsAgree = !painted || (!!painted.pixels && painted.pixels.film === hook.segment && painted.pixels.index === hook.frame);
+  return { ...hook, pixelsAgree };
+}
