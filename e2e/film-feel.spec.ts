@@ -6,9 +6,12 @@ import { assertPlaceholdersPresent, openHome, readFilmStats, settle, settleNote 
 // for a touch-style scroll (a touchstart, then scripted scrollTo steps every animation frame at a steady speed, then
 // a momentum decay, as a fling does) and a wheel scroll (real wheel events). Each run reports the mean and the largest
 // gap while the page moves, in milliseconds of scroll time (how long ago the raw clock was where the picture is now)
-// and in film frames, and how long the picture takes to land after the scroll stops. Timings depend on the machine:
-// the spec asserts the rules (never past the raw clock, never a step back while scrolling forward, touch tighter than
-// the wheel) and prints the numbers (FEEL lines).
+// and in film frames, and how long the picture takes to land after the scroll stops. Timings depend on the machine, so
+// the spec asserts only what does not: the input and the smoothing the counters report, the rules (never past the raw
+// clock, never a step back while scrolling forward, landing on the raw clock), and a tick count for scrolls that are
+// driven frame by frame (so the count does not depend on how long a frame takes). It prints the numbers (FEEL lines).
+// The timing claims (touch trails the same finger less than the wheel's spring; the rules at 60 Hz, 30 Hz, 50 and
+// 100 ms frames and an uneven mix) are unit tests on a fake clock: components/film/smoothing.test.ts.
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
@@ -130,52 +133,82 @@ const report = (f: Feel) =>
 async function ready(page: Page, query = ""): Promise<void> {
   await openHome(page, query);
   expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
-  await page.waitForTimeout(700);
-}
-
-/** A touch-style scroll: a touchstart, then scrollTo every animation frame at `speed` px/s for `ms`, then a fling's decay. */
-async function touchScroll(page: Page, speed = 900, ms = 1000): Promise<void> {
-  await page.evaluate(
-    async ({ speed, ms }) => {
-      const frame = () => new Promise<number>((r) => requestAnimationFrame(r));
-      document.dispatchEvent(new Event("touchstart", { bubbles: true }));
-      let y = window.scrollY;
-      let last = await frame();
-      const start = last;
-      let v = speed;
-      for (;;) {
-        const now = await frame();
-        const dt = Math.min(50, now - last) / 1000;
-        last = now;
-        if (now - start < ms) {
-          document.dispatchEvent(new Event("touchmove", { bubbles: true }));
-        } else {
-          // The finger has lifted: the browser's momentum, decaying (no touch events).
-          v *= Math.pow(0.95, dt * 60);
-          if (v < 20) break;
-        }
-        y += v * dt;
-        window.scrollTo({ top: Math.round(y), behavior: "instant" });
-      }
+  // FilmBackdrop's landing window: SETTLE_MS (500 ms) after the load event, or after the backdrop mounted (before the
+  // settle above) when the page had loaded by then. Wait until both are past, on the page's own clock.
+  const after = await page.evaluate(() => performance.now());
+  await page.waitForFunction(
+    ({ after, ms }) => {
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      return !!nav && nav.loadEventEnd > 0 && performance.now() > Math.max(after, nav.loadEventEnd) + ms;
     },
-    { speed, ms },
+    { after, ms: 600 },
+    { timeout: 60_000 },
   );
 }
 
-/** A wheel scroll: `steps` notches of `delta` px, `gapMs` apart. */
-async function wheelScroll(page: Page, steps = 12, delta = 100, gapMs = 50): Promise<void> {
+/**
+ * A touch-style scroll, driven frame by frame (the same scroll on any machine): a touchstart, then a scrollTo every
+ * animation frame of `speed` / 60 px for `frames` frames (a finger at `speed` px/s at 60 Hz), then a fling's decay
+ * (5 % less per frame, no touch events) until it is under 20 px/s.
+ */
+async function touchScroll(page: Page, speed = 900, frames = 60): Promise<void> {
+  await page.evaluate(
+    async ({ speed, frames }) => {
+      const frame = () => new Promise<number>((r) => requestAnimationFrame(r));
+      document.dispatchEvent(new Event("touchstart", { bubbles: true }));
+      let y = window.scrollY;
+      let v = speed;
+      await frame();
+      for (let k = 0; ; k++) {
+        await frame();
+        if (k < frames) {
+          document.dispatchEvent(new Event("touchmove", { bubbles: true }));
+        } else {
+          // The finger has lifted: the browser's momentum, decaying (no touch events).
+          v *= 0.95;
+          if (v < 20) break;
+        }
+        y += v / 60;
+        window.scrollTo({ top: Math.round(y), behavior: "instant" });
+      }
+    },
+    { speed, frames },
+  );
+}
+
+/** Waits `n` animation frames of the page. */
+const frames = (page: Page, n: number) =>
+  page.evaluate(async (n) => {
+    for (let i = 0; i < n; i++) await new Promise((r) => requestAnimationFrame(r));
+  }, n);
+
+/** A wheel scroll: `steps` notches of `delta` px, `gapFrames` animation frames apart. */
+async function wheelScroll(page: Page, steps = 12, delta = 100, gapFrames = 3): Promise<void> {
   await page.mouse.move(400, 400);
   for (let i = 0; i < steps; i++) {
     await page.mouse.wheel(0, delta);
-    await page.waitForTimeout(gapMs);
+    await frames(page, gapFrames);
   }
+}
+
+/** Until the shown clock has landed on the raw clock (the smoothing has finished; a condition, not a time). */
+async function landed(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const c = document.querySelector<HTMLCanvasElement>("canvas[data-clock]");
+      return !!c && !!window.__filmStats && c.dataset.clock === window.__filmStats.rawClock.toFixed(3);
+    },
+    undefined,
+    { timeout: 30_000 },
+  );
 }
 
 async function measureFeel(page: Page, drive: () => Promise<void>): Promise<Feel> {
   await record(page);
   await drive();
-  // Long enough for the slowest smoothing to land.
-  await page.waitForTimeout(1200);
+  // The whole landing is recorded (overshoot and back-steps are checked through it).
+  await landed(page);
+  await frames(page, 2);
   const { raws, shows } = await collect(page);
   const s = (await readFilmStats(page))!;
   return analyse(raws, shows, s.input, s.smoothMs);
@@ -189,7 +222,8 @@ test("touch: the picture follows the finger closely, never past it and never bac
   await info.attach("feel-touch", { body: JSON.stringify(feel, null, 2), contentType: "application/json" });
   expect(feel.input).toBe("touch");
   expect(feel.smoothMs).toBe(35);
-  expect(feel.samples).toBeGreaterThan(20);
+  // 60 frames of finger and about 75 of fling, each a scroll step: ticks while it moves, however long a frame takes.
+  expect(feel.samples, "ticks while the page moves").toBeGreaterThan(20);
   expect(feel.overshoot, "the shown clock never passes the raw clock").toBe(0);
   expect(feel.backStep, "no step back while scrolling forward").toBe(0);
 });
@@ -202,41 +236,49 @@ test("wheel: today's spring, never past the raw clock and never back @feel", asy
   await info.attach("feel-wheel", { body: JSON.stringify(feel, null, 2), contentType: "application/json" });
   expect(feel.input).toBe("wheel");
   expect(Math.round(feel.smoothMs)).toBe(171);
-  expect(feel.samples).toBeGreaterThan(10);
+  // 12 notches 3 frames apart: the spring moves on every frame in between, however long a frame takes.
+  expect(feel.samples, "ticks while the page moves").toBeGreaterThan(10);
   expect(feel.overshoot, "the shown clock never passes the raw clock").toBe(0);
   expect(feel.backStep, "no step back while scrolling forward").toBe(0);
 });
 
-test("the same scroll trails less by touch than by the wheel's spring @feel", async ({ page }) => {
+test("the same scripted scroll under the wheel's spring and under touch: each input's smoothing, the same rules @feel", async ({ page }) => {
   test.setTimeout(120_000);
   // One page load: a wheel notch first sets the wheel input, then the scripted scroll runs under it (today's
-  // smoothing for every input); a touchstart switches to touch for the second, identical scroll.
+  // smoothing for every input); a touchstart switches to touch for the second, identical scroll. Which one trails
+  // less is a timing claim, unit-tested on a fake clock (components/film/smoothing.test.ts, "the feel on any frame
+  // schedule"); here the figures are printed and the rules asserted for both.
   await ready(page);
   await page.mouse.move(400, 400);
   await page.mouse.wheel(0, 1);
-  await page.waitForTimeout(400);
+  await landed(page);
   const asWheel = await measureFeel(page, () =>
     page.evaluate(async () => {
       const frame = () => new Promise<number>((r) => requestAnimationFrame(r));
       let y = window.scrollY;
-      let last = await frame();
-      const start = last;
-      while (last - start < 800) {
-        const now = await frame();
-        y += (900 * Math.min(50, now - last)) / 1000;
-        last = now;
+      await frame();
+      for (let k = 0; k < 48; k++) {
+        await frame();
+        y += 900 / 60;
         window.scrollTo({ top: Math.round(y), behavior: "instant" });
       }
     }),
   );
-  const asTouch = await measureFeel(page, () => touchScroll(page, 900, 800));
+  const asTouch = await measureFeel(page, () => touchScroll(page, 900, 48));
   console.log(`${report(asWheel).replace("FEEL wheel", "FEEL scripted-under-wheel")}`);
   console.log(`${report(asTouch).replace("FEEL touch", "FEEL scripted-under-touch")}`);
   expect(asWheel.input).toBe("wheel");
+  expect(Math.round(asWheel.smoothMs)).toBe(171);
   expect(asTouch.input).toBe("touch");
-  expect(asTouch.meanMs).toBeLessThan(asWheel.meanMs);
-  expect(asTouch.overshoot).toBe(0);
-  expect(asTouch.backStep).toBe(0);
+  expect(asTouch.smoothMs).toBe(35);
+  for (const [name, f] of [
+    ["wheel", asWheel],
+    ["touch", asTouch],
+  ] as const) {
+    expect(f.samples, `${name}: ticks while the page moves`).toBeGreaterThan(10);
+    expect(f.overshoot, `${name}: the shown clock never passes the raw clock`).toBe(0);
+    expect(f.backStep, `${name}: no step back while scrolling forward`).toBe(0);
+  }
 });
 
 test("?smooth=<ms> sets the touch smoothing and the HUD names the input @feel", async ({ page }) => {

@@ -85,14 +85,14 @@ describe("inputOf", () => {
 });
 
 /**
- * The engine around the spring, at 60 Hz: on a frame where the raw clock moved, the scroll event (FilmBackdrop update:
- * steer, then the spring's new target), then the spring advances one frame and the tick shows follow(spring). The spring
- * is integrated numerically (x'' = (k·(target − x) − d·x') / m, 0.25 ms steps); a jump sets the value and zeroes the
- * velocity, as framer-motion's MotionValue.jump does. scrollY is the raw clock × 1000.
+ * The engine around the spring, on a fake clock: frame k lasts `frameMs(k)` ms (60 Hz unless given; a loaded machine
+ * gives 33, 50, 100 ms frames or an uneven mix). On a frame where the raw clock moved, the scroll event (FilmBackdrop
+ * update: steer, then the spring's new target), then the spring advances one frame and the tick shows follow(spring). The
+ * spring is integrated numerically (x'' = (k·(target − x) − d·x') / m, 0.25 ms steps); a jump sets the value and zeroes
+ * the velocity, as framer-motion's MotionValue.jump does. scrollY is the raw clock × 1000.
  */
-function simulate(params: SpringParams | null, rawAt: (tMs: number) => number, endMs: number) {
+function simulate(params: SpringParams | null, rawAt: (tMs: number) => number, endMs: number, frameMs: (k: number) => number = () => 1000 / 60) {
   const f = createFollower();
-  const dt = 1000 / 60;
   let x = rawAt(0);
   let v = 0;
   let target = x;
@@ -101,7 +101,7 @@ function simulate(params: SpringParams | null, rawAt: (tMs: number) => number, e
   let quietDone = true;
   const ticks: { t: number; raw: number; spring: number; shown: number; dir: number }[] = [];
   f.follow(x, raw);
-  for (let t = dt; t <= endMs; t += dt) {
+  for (let k = 0, dt = frameMs(0), t = dt; t <= endMs; k++, dt = frameMs(k), t += dt) {
     const next = rawAt(t);
     if (next !== raw) {
       const seed = f.steer(next - raw);
@@ -232,6 +232,54 @@ describe("steady lag", () => {
     const ratioGap = gap(smoothingFor("touch").spring!) / gap(smoothingFor("wheel").spring!);
     assert.ok(ratioGap < 0.35, String(ratioGap));
   });
+});
+
+// Frame schedules of a slow or loaded machine (ms per animation frame): steady 30, 20 and 10 Hz, and an uneven mix of
+// 8 to 120 ms frames from a fixed seed. The browser spec (e2e/film-feel.spec.ts) no longer asserts timings; these do.
+const SCHEDULES: { name: string; frameMs: (k: number) => number }[] = [
+  { name: "60 Hz", frameMs: () => 1000 / 60 },
+  { name: "30 Hz", frameMs: () => 1000 / 30 },
+  { name: "50 ms frames", frameMs: () => 50 },
+  { name: "100 ms frames", frameMs: () => 100 },
+  {
+    name: "uneven 8 to 120 ms frames",
+    frameMs: (k) => {
+      // A fixed sequence (an LCG on the frame index): the same "random" frames on every run.
+      const r = ((k * 1103515245 + 12345) >>> 0) % 1000;
+      return 8 + (112 * r) / 999;
+    },
+  },
+];
+
+describe("the feel on any frame schedule (a fake clock)", () => {
+  for (const { name, frameMs } of SCHEDULES) {
+    it(`${name}: the same finger trails less under touch than under the wheel's spring`, () => {
+      // The browser spec's comparison: one scripted finger (0.9 units/s, then the fling), the mean gap per tick.
+      const gap = (p: SpringParams) => {
+        const ticks = simulate(p, fling, 900, frameMs);
+        assert.ok(ticks.length > 0);
+        return ticks.reduce((sum, k) => sum + (k.raw - k.shown), 0) / ticks.length;
+      };
+      const touch = gap(smoothingFor("touch").spring!);
+      const wheel = gap(smoothingFor("wheel").spring!);
+      assert.ok(touch < wheel, `touch ${touch} vs wheel ${wheel}`);
+      assert.ok(touch / wheel < 0.6, `ratio ${touch / wheel}`);
+    });
+
+    for (const { name: smoothing, params } of PARAMS) {
+      it(`${name}, ${smoothing}: never past the raw clock nor a step back, through notches and a fling, and lands`, () => {
+        for (const [rawAt, end] of [
+          [notches, 3000],
+          [fling, 4000],
+        ] as const) {
+          const ticks = simulate(params, rawAt, end, frameMs);
+          assertForward(ticks);
+          const last = ticks[ticks.length - 1];
+          assert.ok(Math.abs(last.shown - last.raw) < 1e-3, `lands: ${last.shown} vs ${last.raw}`);
+        }
+      });
+    }
+  }
 });
 
 describe("createFollower", () => {
