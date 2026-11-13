@@ -16,5 +16,25 @@
     "768": 2200,
     "1280": 3996,
     "1920": 6492
+  },
+  "packs": {
+    "768": {
+      "file": "pack-ecccd654.bin",
+      "bytes": 1807478,
+      "header": 2628,
+      "skeletonEnd": 461682
+    },
+    "1280": {
+      "file": "pack-fa0f1ce7.bin",
+      "bytes": 3587088,
+      "header": 2628,
+      "skeletonEnd": 914500
+    },
+    "1920": {
+      "file": "pack-df195fa7.bin",
+      "bytes": 6325074,
+      "header": 2628,
+      "skeletonEnd": 1609760
+    }
   }
 }

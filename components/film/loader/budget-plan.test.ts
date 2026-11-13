@@ -385,6 +385,8 @@ describe("budget planner: the fetch order", () => {
     assert.deepEqual(o.slice(3, 6), ["1#32", "1#48", "1#16"]);
     const firstOf = (s: number) => o.findIndex((k) => k.startsWith(`${s}#`));
     const lastOf = (s: number) => o.length - 1 - [...o].reverse().findIndex((k) => k.startsWith(`${s}#`));
+    // The per-frame order is the stage-6 engine's and stays it (the fallback, `?pack=0`): every frame of the active
+    // film, strides 16 to 1, before any frame of the neighbours.
     assert.ok(lastOf(1) < firstOf(2) && lastOf(2) < firstOf(0), "active, then ahead (2), then behind (0)");
     assert.equal(o.filter((k) => k.startsWith("1#")).length, 65);
     assert.equal(o.filter((k) => k.startsWith("2#")).length, 65);

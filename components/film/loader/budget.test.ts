@@ -12,7 +12,7 @@ import { RETRY_BASE_MS } from "./budget-plan";
 import { createFrameStore, type BitmapLike, type FetchLike } from "./frame-worker";
 import type { FromWorker, ToWorker } from "./frame-worker-protocol";
 import { createLegacyLoader } from "./legacy";
-import { loaderFromQuery, runnableLoader } from "./select";
+import { loaderFromQuery, packOriginFromQuery, packsFromQuery, rehostUrl, runnableLoader } from "./select";
 import type { FrameLoader, ImageLike, JoinOptions, LoaderEnv, WantPlan } from "./types";
 
 const W = 768;
@@ -569,6 +569,21 @@ describe("loader selection", () => {
     assert.equal(loaderFromQuery("?loader=budget-main&hud=1", "budget"), "budget-main");
     assert.equal(loaderFromQuery("?loader=nope", "budget"), "budget");
     assert.equal(loaderFromQuery("", "legacy"), "legacy");
+  });
+  it("?packorigin= (lab only) is honoured on a local page for a local http origin, nowhere else", () => {
+    const q = "?packorigin=http://127.0.0.1:3008";
+    assert.equal(packOriginFromQuery(q, "127.0.0.1"), "http://127.0.0.1:3008");
+    assert.equal(packOriginFromQuery("?packorigin=http://localhost:3008/films", "localhost"), "http://localhost:3008");
+    assert.equal(packOriginFromQuery(q, "soltani.org"), null, "never on a real host");
+    assert.equal(packOriginFromQuery(q, "www.soltani.org"), null);
+    assert.equal(packOriginFromQuery("?packorigin=https://evil.example", "127.0.0.1"), null);
+    assert.equal(packOriginFromQuery("?packorigin=http://evil.example", "127.0.0.1"), null);
+    assert.equal(packOriginFromQuery("?packorigin=http://127.0.0.1.evil.example", "127.0.0.1"), null);
+    assert.equal(packOriginFromQuery("?packorigin=http://u:p@127.0.0.1:3008", "127.0.0.1"), null);
+    assert.equal(packOriginFromQuery("?packorigin=nonsense", "127.0.0.1"), null);
+    assert.equal(packOriginFromQuery("", "127.0.0.1"), null);
+    assert.equal(rehostUrl("https://dkkkpszkw3bz9.cloudfront.net/films/rack-00/768/pack-abc.bin", "http://127.0.0.1:3008"), "http://127.0.0.1:3008/films/rack-00/768/pack-abc.bin");
+    assert.equal(packsFromQuery("?pack=0&packorigin=http://127.0.0.1:3008"), false);
   });
   it("falls back to what the page can run", () => {
     assert.equal(runnableLoader("budget", all), "budget");

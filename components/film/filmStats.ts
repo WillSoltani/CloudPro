@@ -114,10 +114,46 @@ export type FilmStats = {
   rawClock: number;
   rawSeg: number;
   rawFrame: number;
+  /**
+   * Pack reads started (stage 7: one request each, a streaming GET or a Range read of a film's pack). `requests` keeps
+   * meaning one-file-per-frame requests, so the film's data requests are `packRequests + requests`.
+   */
+  packRequests: number;
+  /** Pack body bytes received, in MB (10^6), and of them the bytes received a second time (already held, or read again after a drop). */
+  packBytesMB: number;
+  packBytesRepeatedMB: number;
+  /** Segments reading their frames from a pack now, and segments whose pack was given up (they load frame by frame) (gauges). */
+  packFilms: number;
+  packFallbackFilms: number;
+  /** Frames whose bytes came from a pack / as one file each. */
+  framesFromPacks: number;
+  framesFromFiles: number;
+  /**
+   * Where the longest stale stretch (`staleMsMax`) began: the target segment, film and frame, the frame painted then,
+   * ms since the last reset, and what the loader was waiting for (FrameLoader.waitReason; "" without one).
+   */
+  staleMaxSeg: number;
+  staleMaxFilm: string;
+  staleMaxFrame: number;
+  staleMaxPainted: number;
+  staleMaxAtMs: number;
+  staleMaxWhy: string;
 };
 
-/** The stale-stretch clock: when the open stretch began (−1: none open) and when the previous tick ran (−1: none yet). */
-export type StaleClock = { since: number; last: number };
+/**
+ * The stale-stretch clock: when the open stretch began (−1: none open) and when the previous tick ran (−1: none yet);
+ * where the open stretch began (`noteStaleStart`) and when the counters were last reset.
+ */
+export type StaleClock = {
+  since: number;
+  last: number;
+  seg: number;
+  film: string;
+  frame: number;
+  painted: number;
+  why: string;
+  resetAt: number;
+};
 
 /**
  * The frames that count as on target for the current target frame: `lo` ≤ `hi`, equal when the target itself is
@@ -174,11 +210,46 @@ export function newFilmStats(mode = "legacy"): FilmStats {
     rawClock: 0,
     rawSeg: 0,
     rawFrame: 0,
+    packRequests: 0,
+    packBytesMB: 0,
+    packBytesRepeatedMB: 0,
+    packFilms: 0,
+    packFallbackFilms: 0,
+    framesFromPacks: 0,
+    framesFromFiles: 0,
+    staleMaxSeg: -1,
+    staleMaxFilm: "",
+    staleMaxFrame: -1,
+    staleMaxPainted: -1,
+    staleMaxAtMs: 0,
+    staleMaxWhy: "",
   };
 }
 
 export function newStaleClock(): StaleClock {
-  return { since: -1, last: -1 };
+  return { since: -1, last: -1, seg: -1, film: "", frame: -1, painted: -1, why: "", resetAt: 0 };
+}
+
+/**
+ * A stale stretch is about to open (call before `tickStale` on a stale tick while none is open): remember where, so the
+ * counters can say where the longest one began. `why` is read only here, once per stretch.
+ */
+export function noteStaleStart(clock: StaleClock, seg: number, film: string, frame: number, painted: number, why: string): void {
+  clock.seg = seg;
+  clock.film = film;
+  clock.frame = frame;
+  clock.painted = painted;
+  clock.why = why;
+}
+
+/** The open stretch is the longest so far: copy where it began. */
+function recordStaleMax(s: FilmStats, clock: StaleClock): void {
+  s.staleMaxSeg = clock.seg;
+  s.staleMaxFilm = clock.film;
+  s.staleMaxFrame = clock.frame;
+  s.staleMaxPainted = clock.painted;
+  s.staleMaxAtMs = Math.round(clock.since - clock.resetAt);
+  s.staleMaxWhy = clock.why;
 }
 
 export function newEffectiveTarget(): EffectiveTarget {
@@ -246,6 +317,18 @@ export function resetFilmStats(s: FilmStats, clock: StaleClock, now: number): vo
   s.held = 0;
   s.canvasResizes = 0;
   s.measures = 0;
+  s.packRequests = 0;
+  s.packBytesMB = 0;
+  s.packBytesRepeatedMB = 0;
+  s.framesFromPacks = 0;
+  s.framesFromFiles = 0;
+  s.staleMaxSeg = -1;
+  s.staleMaxFilm = "";
+  s.staleMaxFrame = -1;
+  s.staleMaxPainted = -1;
+  s.staleMaxAtMs = 0;
+  s.staleMaxWhy = "";
+  clock.resetAt = now;
   if (clock.since >= 0) {
     clock.since = now;
     clock.last = now;
@@ -330,7 +413,10 @@ export function tickStale(s: FilmStats, clock: StaleClock, stale: boolean, now: 
     s.staleTicks++;
     if (clock.since < 0) clock.since = now;
   }
-  if (clock.since >= 0 && now - clock.since > s.staleMsMax) s.staleMsMax = now - clock.since;
+  if (clock.since >= 0 && now - clock.since > s.staleMsMax) {
+    s.staleMsMax = now - clock.since;
+    recordStaleMax(s, clock);
+  }
   if (!stale) clock.since = -1;
   clock.last = now;
 }
@@ -342,7 +428,10 @@ export function tickStale(s: FilmStats, clock: StaleClock, stale: boolean, now: 
 export function recoverStale(s: FilmStats, clock: StaleClock, now: number): void {
   if (clock.since < 0) return;
   if (clock.last >= 0) s.staleMs += now - clock.last;
-  if (now - clock.since > s.staleMsMax) s.staleMsMax = now - clock.since;
+  if (now - clock.since > s.staleMsMax) {
+    s.staleMsMax = now - clock.since;
+    recordStaleMax(s, clock);
+  }
   clock.since = -1;
   clock.last = now;
 }
@@ -351,6 +440,11 @@ declare global {
   interface Window {
     __filmStats?: FilmStats;
     __filmStatsReset?: () => void;
+    /**
+     * The engine's and the loader's state around the current target, read by the film specs only when the film did not
+     * come to rest (e2e/film-frames.ts settle). Read-only; set by FilmBackdrop while its effect runs.
+     */
+    __filmWhy?: () => Record<string, unknown>;
   }
 }
 
@@ -398,6 +492,21 @@ export function loaderStatsFor(inst: Instrument): LoaderStats {
     },
     mode: (mode) => {
       stats.mode = mode;
+    },
+    packRequested: () => {
+      stats.packRequests++;
+    },
+    packBytes: (bytes, repeated) => {
+      stats.packBytesMB += bytes / 1e6;
+      stats.packBytesRepeatedMB += repeated / 1e6;
+    },
+    packFilms: (using, fallback) => {
+      stats.packFilms = using;
+      stats.packFallbackFilms = fallback;
+    },
+    framesArrived: (fromPack, n) => {
+      if (fromPack) stats.framesFromPacks += n;
+      else stats.framesFromFiles += n;
     },
   };
 }

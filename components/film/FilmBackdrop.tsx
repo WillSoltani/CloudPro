@@ -45,6 +45,7 @@ import {
   countDraw,
   filmInstrument,
   loaderStatsFor,
+  noteStaleStart,
   newEffectiveTarget,
   onTarget,
   recoverStale,
@@ -57,7 +58,7 @@ import { createBudgetLoader } from "@/components/film/loader/budget";
 import { withLegacyFallback } from "@/components/film/loader/fallback";
 import { budgetOverrideBytes } from "@/components/film/loader/budget-bytes";
 import { readConnection, saveDataOn } from "@/components/film/loader/network";
-import { loaderFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
+import { loaderFromQuery, packOriginFromQuery, packsFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
 import type { FrameLoader, LoaderEnv, WantPlan } from "@/components/film/loader/types";
 
 /**
@@ -453,8 +454,9 @@ export function FilmBackdrop({
     };
 
     // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load
-    // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab). Its
-    // counters reach `window.__filmStats` through the one adapter in filmStats.ts.
+    // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab; `?pack=0`
+    // turns film packs off, so every film loads one file per frame). Its counters reach `window.__filmStats` through the
+    // one adapter in filmStats.ts.
     const search = window.location.search;
     const loaderName = runnableLoader(loaderFromQuery(search, DEFAULT_LOADER), pageCaps());
     const loaderEnv: LoaderEnv = {
@@ -487,6 +489,8 @@ export function FilmBackdrop({
               createBudgetLoader(loaderEnv, {
                 mainThread: loaderName === "budget-main",
                 budgetBytes: budgetOverrideBytes(search) ?? undefined,
+                packs: packsFromQuery(search),
+                packOrigin: packOriginFromQuery(search, window.location.hostname) ?? undefined,
                 onUnusable,
               }),
             createLegacyLoader,
@@ -1026,7 +1030,13 @@ export function FilmBackdrop({
       // Paint in this tick (the spring's frame), not the next one: the picture never trails the clock by a frame.
       if (raf) cancelAnimationFrame(raf);
       draw();
-      tickStale(stats, staleClock, !onTarget(effective, drawnSeg, drawnFrame, targetSeg), performance.now());
+      const stale = !onTarget(effective, drawnSeg, drawnFrame, targetSeg);
+      // Where a stale stretch begins and what the loader was waiting for (once per stretch; filmStats staleMax*).
+      if (stale && staleClock.since < 0) {
+        const why = loader.waitReason?.(targetSeg, effective.lo) ?? "";
+        noteStaleStart(staleClock, targetSeg, s?.reg.film.name ?? "", targetFrame, drawnSeg === targetSeg ? drawnFrame : -1, why);
+      }
+      tickStale(stats, staleClock, stale, performance.now());
     };
 
     const io = new IntersectionObserver(
@@ -1200,8 +1210,24 @@ export function FilmBackdrop({
     resync.current = sync;
     sync(); // ends with resize(): the canvas is sized once at load, after the segments have joined
 
+    // The film specs' diagnostic when the film does not come to rest (e2e/film-frames.ts settle). Read-only.
+    const filmWhy = () => ({
+      targetSeg,
+      targetFrame,
+      effective: [effective.lo, effective.hi],
+      drawn: [drawnSeg, drawnFrame],
+      rafPending: raf !== 0,
+      rawDir: follower.direction,
+      clock: [scrolled.get(), spring.get(), follower.shown],
+      staleSinceMs: staleClock.since < 0 ? -1 : Math.round(performance.now() - staleClock.since),
+      staleWhy: staleClock.why,
+      loader: loader.debugState?.(targetSeg, effective.lo) ?? { mode: loader.mode },
+    });
+    window.__filmWhy = filmWhy;
+
     return () => {
       cancelled = true;
+      if (window.__filmWhy === filmWhy) delete window.__filmWhy;
       resync.current = null;
       const root = document.documentElement;
       delete root.dataset.reelChrome;

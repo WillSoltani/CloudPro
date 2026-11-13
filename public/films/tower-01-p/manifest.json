@@ -14,5 +14,19 @@
   "kb": {
     "432": 1408,
     "499": 2052
+  },
+  "packs": {
+    "432": {
+      "file": "pack-437c5aac.bin",
+      "bytes": 1019796,
+      "header": 3492,
+      "skeletonEnd": 260424
+    },
+    "499": {
+      "file": "pack-7930f0f0.bin",
+      "bytes": 1355562,
+      "header": 3492,
+      "skeletonEnd": 345530
+    }
   }
 }

@@ -52,12 +52,28 @@ export function hudStatsLine(s: FilmStats): string {
   ].join(" · ");
 }
 
+/**
+ * Line 3, with film packs (stage 7): films reading a pack / given up to frame-by-frame files, the film data requests
+ * (pack reads + per-frame file requests), pack MB received (read twice), frames from packs / from files. Empty when
+ * no film has a pack on this page load (`?pack=0`, or no manifest names one).
+ */
+export function hudPackLine(s: FilmStats): string {
+  if (s.packFilms + s.packFallbackFilms === 0 && s.packRequests === 0) return "";
+  return [
+    `packs ${s.packFilms}${s.packFallbackFilms ? ` (${s.packFallbackFilms} as files)` : ""}`,
+    `data req ${s.packRequests + s.requests} (${s.packRequests} pack + ${s.requests} file)`,
+    `pack ${s.packBytesMB.toFixed(1)} MB${s.packBytesRepeatedMB > 0 ? ` (${s.packBytesRepeatedMB.toFixed(2)} twice)` : ""}`,
+    `frames ${s.framesFromPacks} pack / ${s.framesFromFiles} file`,
+  ].join(" · ");
+}
+
 function FilmHudPanel() {
   const [lines, setLines] = useState("");
   useEffect(() => {
     const read = () => {
       const s = window.__filmStats;
-      setLines(s ? `${hudPositionLine(s)}\n${hudStatsLine(s)}` : "film stats not running");
+      const packs = s ? hudPackLine(s) : "";
+      setLines(s ? `${hudPositionLine(s)}\n${hudStatsLine(s)}${packs ? `\n${packs}` : ""}` : "film stats not running");
     };
     const id = window.setInterval(read, REFRESH_MS);
     const first = window.setTimeout(read, 0);

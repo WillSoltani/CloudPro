@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { assertPlaceholdersPresent, LOADERS, loaderQuery, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, LOADERS, loaderQuery, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, settleNote, watchPage } from "./film-frames";
 
 // The canvas backing store (components/film/backing.ts): never wider than the widest frame tier in use, the DPR
 // capped at 2, the aspect of the box kept; ?backing=full restores the old size rule for the page load. The size is
@@ -24,7 +24,7 @@ async function scrollAndSampleTiers(page: Page): Promise<number[]> {
   const step = Math.round(page.viewportSize()!.height / 2);
   for (let i = 1; i <= 8; i++) {
     await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), i * step);
-    expect(await settle(page), `settles at ${i * step}`).toBe(true);
+    expect(await settle(page), `settles at ${i * step}${settleNote(page)}`).toBe(true);
     await sample();
   }
   return [...seen];
@@ -43,7 +43,7 @@ for (const loader of LOADERS) for (const vp of VIEWPORTS) {
     test("the backing store is capped at the widest tier in use and allocated once @backing", async ({ page, baseURL }) => {
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
       await openHome(page, loaderQuery(loader));
-      expect(await settle(page), "the first frame settles").toBe(true);
+      expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
 
       const tiers = await scrollAndSampleTiers(page);
       const widest = Math.max(...tiers);
@@ -76,7 +76,7 @@ for (const loader of LOADERS) for (const vp of VIEWPORTS) {
 
     test("?backing=full restores the old size rule for the page load @backing", async ({ page }) => {
       await openHome(page, loaderQuery(loader, "backing=full&hud=1"));
-      expect(await settle(page), "the first frame settles").toBe(true);
+      expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
       const box = await canvasBox(page);
       const dpr = Math.min(box.dpr, 2);
       expect([box.w, box.h]).toEqual([Math.round(box.cssW * dpr), Math.round(box.cssH * dpr)]);

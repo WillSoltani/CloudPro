@@ -58,3 +58,13 @@ export function heroTimesSlow(times: readonly number[]): boolean {
   const mid = sorted.length / 2;
   return (sorted[mid - 1] + sorted[mid]) / 2 > SLOW_FRAME_MS;
 }
+
+/**
+ * Where frames come from a pack (no per-frame fetch to time): the hero pack's first read delivered `frames` frames in
+ * `ms` since its request started. Slow when that is slower than per-frame fetches taking SLOW_FRAME_MS each, FAST_INFLIGHT
+ * at a time (TIMED_FRAMES frames or more needed; fewer: undecided, false).
+ */
+export function packTimesSlow(ms: number, frames: number): boolean {
+  if (frames < TIMED_FRAMES || !(ms > 0)) return false;
+  return ms / Math.ceil(frames / FAST_INFLIGHT) > SLOW_FRAME_MS;
+}

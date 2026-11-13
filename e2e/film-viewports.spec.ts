@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { assertPlaceholdersPresent, horizontalOverflow, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, horizontalOverflow, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, settleNote, watchPage } from "./film-frames";
 
 // The page loads and the film canvas paints at the sizes the site has to hold, and the document never scrolls
 // sideways (at the top, and at the end where the last chapter sits). With both frame loaders (LOADERS).
@@ -22,7 +22,7 @@ for (const loader of LOADERS) for (const size of SIZES) {
     test(`loads, paints the film, has no horizontal scroll bar @viewports`, async ({ page, baseURL }) => {
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
       await openHome(page, loaderQuery(loader));
-      expect(await settle(page), "the first frame settles").toBe(true);
+      expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
 
       const canvas = page.locator("canvas[data-segment]");
       await expect(canvas).toHaveAttribute("data-segment", /^(rack-00|rack-00-p)$/);
@@ -47,7 +47,7 @@ for (const loader of LOADERS) for (const size of SIZES) {
       // The end of the page (the last chapter and the footer), where a wide element would show up.
       await page.evaluate(() => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }));
       expect(await maxScroll(page)).toBeGreaterThan(size.height * 5);
-      expect(await settle(page), "the last frame settles").toBe(true);
+      expect(await settle(page), `the last frame settles${settleNote(page)}`).toBe(true);
       const bottom = await horizontalOverflow(page);
       expect(bottom.html).toBeLessThanOrEqual(0);
       expect(bottom.body).toBeLessThanOrEqual(0);

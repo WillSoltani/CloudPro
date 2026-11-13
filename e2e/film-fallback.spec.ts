@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { assertPlaceholdersPresent, filmNames, maxScroll, openHome, paintedNow, readFilmStats, settle, walkPage, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, filmNames, maxScroll, openHome, paintedNow, readFilmStats, settle, settleNote, unsettledAt, walkPage, watchPage } from "./film-frames";
 
 // The loader's fallbacks (components/film/loader/select.ts, budget.ts), on placeholder frames, with the page's own
 // capabilities taken away by an init script before any script of the page runs:
@@ -16,14 +16,14 @@ test.use({ viewport: { width: 1440, height: 900 } });
 /** Scrolls down the page a viewport at a time; every stop must settle and its pixels must name the frame the hook names. */
 async function playDown(page: import("@playwright/test").Page) {
   const films = new Set<string>();
-  const unsettled: number[] = [];
+  const unsettled: string[] = [];
   const mismatches: string[] = [];
   const step = page.viewportSize()!.height;
   const end = await maxScroll(page);
   expect(end).toBeGreaterThan(step * 10);
   await walkPage(page, 0, end, step, async (y) => {
     if (!(await settle(page))) {
-      unsettled.push(y);
+      unsettled.push(unsettledAt(page, y));
       return;
     }
     const p = await paintedNow(page);
@@ -43,7 +43,7 @@ test("without Worker the film plays on the main thread, mode budget-main @fallba
   });
   await openHome(page);
   expect(await page.evaluate(() => typeof window.Worker)).toBe("undefined");
-  expect(await settle(page), "the first frame settles").toBe(true);
+  expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
   expect((await readFilmStats(page))!.mode).toBe("budget-main");
   await playDown(page);
   const s = (await readFilmStats(page))!;
@@ -66,7 +66,7 @@ test("without Worker and createImageBitmap the film plays with the legacy loader
   });
   await openHome(page);
   expect(await page.evaluate(() => [typeof window.Worker, typeof window.createImageBitmap])).toEqual(["undefined", "undefined"]);
-  expect(await settle(page), "the first frame settles").toBe(true);
+  expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
   expect((await readFilmStats(page))!.mode).toBe("legacy");
   await playDown(page);
   const s = (await readFilmStats(page))!;
@@ -95,7 +95,7 @@ test("when the worker script does not run the film plays on the main thread @fal
   await openHome(page);
   await expect.poll(async () => (await readFilmStats(page))?.mode, { timeout: 30_000 }).toBe("budget-main");
   expect(await page.evaluate(() => (window as unknown as { __workersStarted: number }).__workersStarted), "workers started").toBeGreaterThan(0);
-  expect(await settle(page), "the first frame settles").toBe(true);
+  expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
   await playDown(page);
   const s = (await readFilmStats(page))!;
   expect(s.mode).toBe("budget-main");
@@ -127,7 +127,7 @@ test("when createImageBitmap rejects every frame the page hands over to the lega
   await openHome(page);
   await expect.poll(async () => (await readFilmStats(page))?.mode, { timeout: 30_000 }).toBe("legacy");
   expect(await page.evaluate(() => (window as unknown as { __bitmapCalls: number }).__bitmapCalls), "decodes tried first").toBeGreaterThan(0);
-  expect(await settle(page), "the first frame settles").toBe(true);
+  expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
   await playDown(page);
   const s = (await readFilmStats(page))!;
   expect(s.mode).toBe("legacy");

@@ -26,6 +26,15 @@
  *   - a directory whose marker matches and whose files are all there is left alone (no-op);
  *   - --clean removes the width directories, the poster and the marker of a directory it wrote, never the
  *     manifest, and refuses a directory of real frames unless --force.
+ * Packs (stage 7): for every film and width it also writes the film's pack, <out>/<name>/<width>/<file>, built from the
+ * placeholder frames with the real format and frame order (scripts/films/pack-lib.mjs). <file> is the name the
+ * manifest gives in `packs[width].file` when it has one, so a page built with NEXT_PUBLIC_FILM_BASE=/films finds the
+ * placeholder pack exactly where the manifest points (its sizes differ from the manifest's hints: the reader takes
+ * them from the pack's own header); without an entry it is pack-<8 hex of its own sha256>.bin, which the page never
+ * asks for (it reads packs only for widths whose manifest names one). Other pack-*.bin files in that directory are
+ * removed; an existing pack with the same bytes is left alone (a second run changes nothing). Adding a `packs` entry
+ * to a manifest later and running the script again writes the pack under the new name without touching the frames.
+ *
  * Needs sharp, which is not a declared dependency (next carries it as an optional one, enough on a Mac). CI
  * runs `npm install --no-save sharp@0.34.5` before this; do the same on a machine without a working sharp.
  * Output is gitignored (/public/films/*\/* but manifest.json), so nothing here can be committed by accident.
@@ -37,6 +46,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { LAYOUT_VERSION, MAX_FILMS, MAX_FRAMES, frameSvg } from "./placeholder-layout.mjs";
+import { buildFilmPack, moveEndOf, packFilesIn, readTimeline, writePackFile } from "./pack-lib.mjs";
+import { PACK_FILE_PATTERN } from "../../components/film/loader/pack-format.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const MARKER = ".placeholder.json";
@@ -139,10 +150,38 @@ async function pool(n, fn) {
   );
 }
 
+const timeline = await readTimeline();
+
+/**
+ * Write each width's pack from the placeholder frames on disk, under the manifest's name for it when it has one.
+ * Returns how many packs were written (0 when every one was already there with the same bytes).
+ */
+async function ensurePacks(p) {
+  let written = 0;
+  for (const { width } of p.sizes) {
+    const dir = path.join(p.dir, String(width));
+    const frames = [];
+    for (let i = 0; i < p.m.count; i++) frames.push(new Uint8Array(await fs.readFile(path.join(dir, p.file(i)))));
+    const built = buildFilmPack(frames, moveEndOf(p.m, timeline));
+    const listed = p.m.packs?.[String(width)]?.file;
+    const file = typeof listed === "string" && PACK_FILE_PATTERN.test(listed) ? listed : built.file;
+    const dest = path.join(dir, file);
+    const present = await packFilesIn(dir);
+    if (present.length === 1 && present[0] === file) {
+      const old = await fs.readFile(dest);
+      if (old.equals(Buffer.from(built.data.buffer, built.data.byteOffset, built.data.length))) continue;
+    }
+    await writePackFile(dest, built.data);
+    written++;
+  }
+  return written;
+}
+
 let files = 0;
 let bytes = 0;
 let skipped = 0;
 let refused = 0;
+let packs = 0;
 
 for (const name of selected) {
   const p = await plan(name);
@@ -159,7 +198,10 @@ for (const name of selected) {
     continue;
   }
   if (found.kind === "ours" && (await complete(p, found.marker))) {
-    skipped++;
+    const n = await ensurePacks(p);
+    packs += n;
+    if (n) console.log(`${name}: ${n} pack(s) written`);
+    else skipped++;
     continue;
   }
   if (found.kind !== "none") await removeGenerated(p);
@@ -187,9 +229,11 @@ for (const name of selected) {
   );
   files += filmFiles;
   bytes += filmBytes;
-  console.log(`${name}: ${filmFiles} files, ${(filmBytes / 1024).toFixed(0)} KB`);
+  const n = await ensurePacks(p);
+  packs += n;
+  console.log(`${name}: ${filmFiles} files, ${(filmBytes / 1024).toFixed(0)} KB, ${n} pack(s)`);
 }
 
 if (CLEAN) console.log(refused ? `placeholder.mjs: clean stopped on ${refused} directory(ies) of real frames` : "placeholder.mjs: clean done");
-else console.log(`placeholder.mjs: wrote ${files} files, ${(bytes / 1024 / 1024).toFixed(2)} MB (${bytes} bytes); ${skipped} film(s) already up to date`);
+else console.log(`placeholder.mjs: wrote ${files} files, ${(bytes / 1024 / 1024).toFixed(2)} MB (${bytes} bytes), ${packs} pack(s); ${skipped} film(s) already up to date`);
 if (refused) process.exit(1);
