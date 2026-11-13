@@ -100,6 +100,20 @@ export type FilmStats = {
   /** Canvas backing store now, in device px (gauges; 0 before the first sizing). See components/film/backing.ts. */
   backingW: number;
   backingH: number;
+  /**
+   * The input that moved the page last ("wheel", "keys", "touch"; components/film/smoothing.ts) and the steady lag of
+   * the smoothing it gets, in ms (0: none, as under reduced motion). Gauges.
+   */
+  input: string;
+  smoothMs: number;
+  /**
+   * The raw (unsmoothed) clock at the last scroll event, its segment and the frame it would paint (gauges). The shown
+   * clock is the canvas's `data-clock`, its segment and frame targetSeg and targetFrame: the gap between the two is
+   * the smoothing's lag.
+   */
+  rawClock: number;
+  rawSeg: number;
+  rawFrame: number;
 };
 
 /** The stale-stretch clock: when the open stretch began (−1: none open) and when the previous tick ran (−1: none yet). */
@@ -155,6 +169,11 @@ export function newFilmStats(mode = "legacy"): FilmStats {
     width: 0,
     backingW: 0,
     backingH: 0,
+    input: "wheel",
+    smoothMs: 0,
+    rawClock: 0,
+    rawSeg: 0,
+    rawFrame: 0,
   };
 }
 

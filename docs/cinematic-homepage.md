@@ -371,3 +371,15 @@ how it counts `ImageBitmap` memory against it differ from a Mac's), its decode s
 worker; an A-series phone under thermal pressure may be several times slower, which the 4x CPU throttle only approximates, and the
 decode cap of 2 at once was not tuned against it), and a real mobile network (the CDN is close to this machine). The first and the
 last of these need a phone on the page with `?hud=1&loader=budget` against `?loader=legacy`.
+
+### Stage 5: smoothing by input
+
+The wheel, the keys and the scroll bar keep the spring the page was directed with (about 171 ms of steady lag). Touch and its
+momentum now get the same spring run at 35 ms (`components/film/smoothing.ts`), so the picture stays under the finger. Measured
+with `e2e/film-feel.spec.ts` (chromium, placeholder frames, 3 runs each): a touch-style scroll trailed by a mean of 153 to 156 ms
+(11 to 12 frames, at most 23) before and 38 ms (3 frames, at most 5) after; the wheel is unchanged (mean 182 to 188 ms against
+185 to 186 ms before, within the run-to-run range). Details: "Smoothing by input" in `docs/film-lab-gate.md`.
+
+**On a phone:** open the page with `?hud=1` (the first line ends with `touch 35 ms` once a finger has moved the page) and try other
+values with `?smooth=<ms>` (0 to 300; 0 is no smoothing), for example `?hud=1&smooth=20`, `?smooth=50`, `?smooth=90`. The value
+holds for that page load; the constant to change for good is `TOUCH_LAG_MS`.

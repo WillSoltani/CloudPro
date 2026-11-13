@@ -4,12 +4,13 @@ import {
   createContext,
   useContext,
   useEffect,
+  useInsertionEffect,
   useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { motionValue, useMotionValue, useSpring, type MotionValue } from "framer-motion";
+import { attachFollow, motionValue, useMotionValue, type MotionValue } from "framer-motion";
 import {
   frameUrl,
   pickFilmOrientation,
@@ -28,6 +29,15 @@ import {
 } from "@/components/film/placement";
 import { rawClock, segmentMetrics, type SegmentBox } from "@/components/film/clock";
 import { filmViewport, subscribeFilmViewport } from "@/components/film/viewport";
+import {
+  createFollower,
+  inputOf,
+  smoothingFor,
+  smoothParam,
+  TOUCH_LAG_MS,
+  WHEEL_SPRING,
+  type SpringParams,
+} from "@/components/film/smoothing";
 import { HOLD_REVEALS_KEY, HOLD_STORAGE_KEY } from "@/components/film/reel";
 import { REEL_CHROME_EVENT, type ReelChrome } from "@/components/film/useReelChrome";
 import {
@@ -68,8 +78,6 @@ export const REEL_OBJECT_POSITION = `${REEL_FOCUS[0] * 100}% ${REEL_FOCUS[1] * 1
 /** The stage variables at REEL_FOCUS (placement.ts stageVars): the key layers' padding, the hero poster's box. */
 export const REEL_STAGE_VARS = stageVars(REEL_FOCUS);
 
-// Critically damped: smooths wheel steps without a slow tail.
-const SPRING = { stiffness: 140, damping: 24, mass: 1, restDelta: 0.0005 } as const;
 // A segment starts loading once it is within ~1.5 viewports.
 const NEAR = "150% 0px";
 // Hold keys: segment i's end key fades in over the last KEY_IN_PX of its scroll (the hero keeps its
@@ -236,7 +244,9 @@ export function breathCurve(tau: number, tauRead: number): number {
  * top, `y = −top`, `m` = its camera move in px (a chapter's `moveVh`·svh; a legacy segment's section
  * height − viewport), `q = D − m` with D the distance to the next segment's top (or to the end of the
  * page), `μ = m / (m + q)` and `u = y < m ? μ·y/m : μ + (1 − μ)·(y − m)/q` (clamped 0–1); `c` is the max
- * of `i + u`, spring-smoothed (unsmoothed under reduced motion). From the smoothed `c`: `seg = floor(c)`,
+ * of `i + u`, spring-smoothed by input (unsmoothed under reduced motion; components/film/smoothing.ts: the wheel, keys
+ * and scroll bar keep the art-directed spring, about 171 ms of steady lag; touch and its momentum get the same spring
+ * run at 35 ms, or `?smooth=<ms>`; `?hud=1` names the input). From the smoothed `c`: `seg = floor(c)`,
  * `p = min(1, u/μ)` (the move), `τ = (u − μ)/(1 − μ)` (the tail). Painted: `round(p·M)` in the move and
  * `M + round(g(τ)·T)` in the tail (g: breathCurve; T = 0 without tail frames or under reduced motion or
  * Save-Data, so the tail holds M on the key).
@@ -351,7 +361,14 @@ export function FilmBackdrop({
 
   const reduced = useReducedMotionSafe();
   const scrolled = useMotionValue(0);
-  const spring = useSpring(scrolled, SPRING);
+  // The smoothed clock: what `useSpring(scrolled, WHEEL_SPRING)` was, built from the same parts (useSpring is
+  // useFollowValue, which attaches framer-motion's attachFollow to a motion value), so that the engine can retune the
+  // spring when the input changes (components/film/smoothing.ts). attachFollow reads `springOptions` each time the raw
+  // clock moves and starts the next leg from the spring's own value and velocity, so a retune never moves the picture.
+  // The spec e2e/film-feel.spec.ts fails if a framer-motion upgrade stops honouring a retune (touch would trail as the wheel).
+  const [springOptions] = useState<{ type: "spring" } & SpringParams>(() => ({ type: "spring", ...WHEEL_SPRING }));
+  const spring = useMotionValue(0);
+  useInsertionEffect(() => attachFollow(spring, scrolled, springOptions), [spring, scrolled, springOptions]);
 
   // app/globals.css keeps the homepage's initial #fragment jump instant until the page has loaded;
   // from then on, anchor links scroll smoothly again.
@@ -475,6 +492,31 @@ export function FilmBackdrop({
             createLegacyLoader,
           );
     stats.mode = loader.mode;
+
+    // Smoothing by input (components/film/smoothing.ts): the wheel, the keys and the scroll bar keep WHEEL_SPRING, touch
+    // (and the momentum after the finger lifts) gets TOUCH_LAG_MS, or `?smooth=<ms>` for this page load. Cheap passive
+    // listeners note the input; a change retunes the spring in place. Under reduced motion nothing is smoothed.
+    const touchLag = smoothParam(search) ?? TOUCH_LAG_MS;
+    let smoothing = smoothingFor("wheel", touchLag);
+    Object.assign(springOptions, WHEEL_SPRING);
+    const showSmoothing = () => {
+      stats.input = smoothing.input;
+      stats.smoothMs = reduced ? 0 : smoothing.lagMs;
+    };
+    showSmoothing();
+    const onInput = (e: Event) => {
+      const kind = inputOf(e.type, { pointerType: (e as PointerEvent).pointerType, key: (e as KeyboardEvent).key });
+      if (!kind || kind === smoothing.input) return;
+      smoothing = smoothingFor(kind, touchLag);
+      showSmoothing();
+      if (reduced || !smoothing.spring) return;
+      Object.assign(springOptions, smoothing.spring);
+      // A leg still running under the old parameters: start the next one now, from where the spring is, with its velocity.
+      if (Math.abs(spring.get() - scrolled.get()) > 1e-6) spring.set(scrolled.get());
+    };
+    const INPUT_EVENTS = ["touchstart", "touchmove", "pointerdown", "wheel", "keydown"] as const;
+    const inputListen = { passive: true, capture: true } as const;
+
     let cancelled = false;
     let raf = 0;
     let reelAt = 0;
@@ -850,6 +892,23 @@ export function FilmBackdrop({
       window.dispatchEvent(new CustomEvent(REEL_CHROME_EVENT, { detail: { chrome, section } }));
     };
 
+    // The frame a phase paints (rounded: the target) and, in `frameFloat`, the float frame the overlays get: p·M in the
+    // move, M + g(τ)·T in a tail with frames (reduced motion: the still itself).
+    let frameFloat = 0;
+    const frameAt = (ph: Phase): number => {
+      const s = ph.s;
+      if (!s) return (frameFloat = 0);
+      const end = moveEnd(s);
+      const tail = tailCount(s);
+      if (ph.tau > 0 && tail > 0) {
+        frameFloat = end + breathCurve(ph.tau, tauRead(s)) * tail;
+        return Math.round(frameFloat);
+      }
+      const target = toIndex(s, ph.p);
+      frameFloat = reduced ? target : ph.p * end;
+      return target;
+    };
+
     const update = () => {
       if (!segments.size) return;
       const scrollY = window.scrollY;
@@ -859,53 +918,47 @@ export function FilmBackdrop({
       steer(c - scrolled.get());
       scrolled.set(c);
       const raw = phaseOf(c);
+      stats.rawClock = c;
+      stats.rawSeg = raw.seg;
+      stats.rawFrame = frameAt(raw);
       saveHold(raw.legacy);
       publishChrome(raw);
       // Land instead of scrubbing on the first measure, until just after load (the browser restores
-      // scroll or jumps to a #fragment then), and on a leap of more than a segment in one event.
-      if (!measured || performance.now() < settleUntil || leap > 1) spring.jump(c);
+      // scroll or jumps to a #fragment then), on a leap of more than a segment in one event, and always
+      // where the input has no smoothing (`?smooth=0` on touch).
+      if (!measured || performance.now() < settleUntil || leap > 1 || !smoothing.spring) spring.jump(c);
       measured = true;
     };
 
     // The clock the page shows follows the spring but never passes the raw clock and never steps against
-    // the raw clock's direction of travel (rawDir; once the raw clock has been still for QUIET_MS, toward it
-    // from either side). A spring carrying velocity into a stop (a wheel step, a touch fling ending) would
-    // otherwise overshoot and slide back by a film frame or two. On a reversal the spring's momentum points
-    // the old way: steer() re-seeds it at the shown clock, at rest, so the picture turns at once (holding
-    // while the raw clock is still on the old side of it). A jump (spring.jump on a leap, the hash boot)
-    // lands at once.
-    let shownClock = Number.NaN;
-    let rawDir = 0;
-    let lastDir = 0;
+    // the raw clock's direction of travel (once the raw clock has been still for QUIET_MS, toward it from
+    // either side): the follower (components/film/smoothing.ts createFollower), whatever the smoothing. A
+    // spring carrying velocity into a stop (a wheel step, a touch fling ending) would otherwise overshoot and
+    // slide back by a film frame or two. On a reversal the spring's momentum points the old way: steer()
+    // re-seeds it at the shown clock, at rest, so the picture turns at once (holding while the raw clock is
+    // still on the old side of it). A jump (spring.jump on a leap, the hash boot) lands at once.
+    const follower = createFollower();
     let quietTimer = 0;
-    let seenY = Number.NaN;
     const steer = (delta: number) => {
       if (reduced || Math.abs(delta) < 1e-6) return;
-      const dir = Math.sign(delta);
-      if (lastDir && dir !== lastDir && Number.isFinite(shownClock)) spring.jump(shownClock);
-      rawDir = lastDir = dir;
+      const seed = follower.steer(delta);
+      if (Number.isFinite(seed)) spring.jump(seed);
       window.clearTimeout(quietTimer);
       quietTimer = window.setTimeout(() => {
-        rawDir = 0;
         // Held against a reversal while the spring ran on: carry on from the picture to the raw clock.
-        if (Number.isFinite(shownClock) && Math.abs(spring.get() - shownClock) > 1e-6) {
-          spring.jump(shownClock);
-          spring.set(scrolled.get());
+        const from = follower.quiet(spring.get());
+        if (!Number.isFinite(from)) return;
+        if (!smoothing.spring) {
+          spring.jump(scrolled.get());
+          return;
         }
+        spring.jump(from);
+        spring.set(scrolled.get());
       }, QUIET_MS);
     };
     const follow = (c: number) => {
-      const raw = scrolled.get();
-      // The viewer's input reaches the scroll handler a frame late: take its direction straight from scrollY,
-      // so the tick in between already holds instead of running on the old way.
-      const sy = window.scrollY;
-      if (Number.isFinite(seenY) && Math.abs(sy - seenY) >= 0.5) rawDir = Math.sign(sy - seenY);
-      seenY = sy;
-      if (!Number.isFinite(shownClock) || reduced) return (shownClock = c);
-      const dir = rawDir || (raw >= shownClock ? 1 : -1);
-      shownClock =
-        dir > 0 ? Math.max(shownClock, Math.min(c, raw)) : Math.min(shownClock, Math.max(c, raw));
-      return shownClock;
+      follower.scrolled(window.scrollY);
+      return reduced ? follower.land(c) : follower.follow(c, scrolled.get());
     };
 
     // The loader's `usable` for the target segment, for aimAt (one closure for the effect, not one per tick).
@@ -924,20 +977,8 @@ export function FilmBackdrop({
         for (const notify of listeners) notify();
       }
       // The smoothed frame as a float for the overlays; the painted target rounded.
-      let frame = 0;
-      if (s) {
-        const end = moveEnd(s);
-        const tail = tailCount(s);
-        if (ph.tau > 0 && tail > 0) {
-          frame = end + breathCurve(ph.tau, tauRead(s)) * tail;
-          targetFrame = Math.round(frame);
-        } else {
-          targetFrame = toIndex(s, ph.p);
-          frame = reduced ? targetFrame : ph.p * end;
-        }
-      } else {
-        targetFrame = 0;
-      }
+      targetFrame = frameAt(ph);
+      const frame = frameFloat;
       if (s) aimAt(effective, targetFrame, s.reg.film.count, usableAtTarget);
       else effective.lo = effective.hi = targetFrame;
       stats.targetSeg = targetSeg;
@@ -980,7 +1021,7 @@ export function FilmBackdrop({
       });
       plan.active = ph.seg;
       plan.frame = targetFrame;
-      plan.direction = rawDir;
+      plan.direction = follower.direction;
       loader.want(plan);
       // Paint in this tick (the spring's frame), not the next one: the picture never trails the clock by a frame.
       if (raf) cancelAnimationFrame(raf);
@@ -1155,6 +1196,7 @@ export function FilmBackdrop({
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
+    for (const type of INPUT_EVENTS) window.addEventListener(type, onInput, inputListen);
     resync.current = sync;
     sync(); // ends with resize(): the canvas is sized once at load, after the segments have joined
 
@@ -1172,6 +1214,7 @@ export function FilmBackdrop({
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+      for (const type of INPUT_EVENTS) window.removeEventListener(type, onInput, inputListen);
       window.clearTimeout(quietTimer);
       io.disconnect();
       ro.disconnect();
@@ -1179,7 +1222,7 @@ export function FilmBackdrop({
       if (raf) cancelAnimationFrame(raf);
       loader.dispose();
     };
-  }, [api, reel, keys, reduced, scrolled, spring]);
+  }, [api, reel, keys, reduced, scrolled, spring, springOptions]);
 
   return (
     <FilmBackdropContext.Provider value={api}>

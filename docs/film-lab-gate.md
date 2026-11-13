@@ -10,7 +10,8 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
-| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts` |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts` |
+| Smoothing by input (`smoothingFor`, `?smooth=`, the follower around the spring) and its unit tests | `components/film/smoothing.ts`, `smoothing.test.ts`; spec `e2e/film-feel.spec.ts` |
 | Scroll-pass measurement (the lab gate script) and the page URL it builds from `--query` | `scripts/films/scrub-quality.mjs` (`npm run film:quality`), `scripts/films/page-url.mjs` |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
 | `?hud=1` overlay with the counters | `components/film/FilmHud.tsx` (mounted by `FilmBackdrop`, renders nothing without the flag) |
@@ -161,7 +162,8 @@ after a clock tick; a stretch ends at the tick, or the paint between ticks, that
 
 Open the home page with `?hud=1` to see two lines of them, refreshed four times a second. The first line reads
 `f<painted>/<target>`, followed by `eff <effective>` when the two targets differ, the tier width and `canvas <w>x<h>`
-(the backing store, see below).
+(the backing store, see below), the loader, and the input that moved the page last with the smoothing it gets (`touch 35 ms`,
+`wheel 171 ms`; see "Smoothing by input").
 
 ## Canvas backing size
 
@@ -207,6 +209,31 @@ out with changes with it any more:
   real layout measurements: at 390x844, 200 scroll events cost 200 before and 0 now (4 at load in both). Registrations in one
   commit reconcile once (a microtask).
 
+## Smoothing by input
+
+The shown clock is the raw clock through a spring (`components/film/smoothing.ts`). The wheel, the keys and the scroll bar (a
+mouse press) keep the art-directed spring, `WHEEL_SPRING` (stiffness 140, damping 24: about 171 ms of steady lag). Touch, a pen,
+and the momentum after the finger lifts get the same spring run faster, `TOUCH_LAG_MS` = 35 ms of steady lag: the browser
+already smooths a finger, so the long spring was only lag between the finger and the picture. Passive capture listeners
+(`touchstart`, `touchmove`, `pointerdown`, `wheel`, scroll keys on `keydown`) note the input; a change retunes the spring in
+place, and the next leg starts from the spring's own value and velocity, so the picture never jumps. Under reduced motion
+nothing is smoothed, as before. The follower around the spring is unchanged in behaviour (never past the raw clock, never a step
+against the direction of travel, re-seeded at the picture on a reversal) and `smoothing.test.ts` checks it for both springs and
+for none.
+
+**`?smooth=<ms>`** (whole ms, 0 to 300, read once per page load) replaces the touch lag, for trying values on a real phone with
+`?hud=1`; 0 is no smoothing. The counters carry `input`, `smoothMs`, and the raw clock with its segment and frame (`rawClock`,
+`rawSeg`, `rawFrame`; the shown one is `data-clock`, `targetSeg`, `targetFrame`).
+
+`e2e/film-feel.spec.ts` measures the gap between the two clocks while the page moves, in ms of scroll time (how long ago the raw
+clock was where the picture is) and in frames. Chromium, 1280x720, placeholder frames, 3 runs each (load 5 to 45, so read the
+ranges, not the decimals):
+
+| Scroll | Before (one spring for all) | After |
+| --- | --- | --- |
+| touch-style (900 px/s for 1 s, then a fling's decay) | mean 153 to 156 ms, max 195 to 211 ms; mean 11.4 to 11.8 frames, max 21 to 23 | mean 38 ms, max 53 to 54 ms; mean 3 frames, max 5 |
+| wheel (12 notches of 100 px, 50 ms apart) | mean 185 to 186 ms, max 212 to 219 ms; mean 26.4 to 26.8 frames, max 34; lands 667 ms after the last notch | mean 182 to 188 ms, max 212 to 221 ms; mean 25.6 to 26.8 frames, max 34; lands 665 to 667 ms after |
+
 ## The specs
 
 Where a spec compares the pixels with `data-frame`, both come from one `page.evaluate` (`readPaintedFrame`): `draw()` writes the pixels and the
@@ -227,6 +254,7 @@ browser, and `?loader=legacy`), the frame read back from the canvas pixels compa
 | `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, the backing store is sized to the box (not the 300x150 default), no horizontal scroll bar at the top or at the end |
 | `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
 | `film-memory` | budget loader, 390x844 touch and 1440x900: a walk down the whole page and back up, twice (a stop every viewport height, each settled). After every leg decoded MB peak and the decoded MB held are within `budgetMB`, the compressed bytes peak is within the cap for that budget (48 MiB on a phone budget, 160 MiB otherwise), nothing failed and nothing was fetched twice; the two legs up make 0 frame requests and decode again (redecodes > 0), and so does the second leg down (0 requests); every film is painted. With `?budget=96` the film plays to the end (down and up, every stop settled, pixels equal `data-frame`) inside the 96 MiB budget |
+| `film-feel` | a touch-style scroll (a touchstart, scripted `scrollTo` steps every frame, a fling's decay) and a wheel scroll: the input and smoothing the counters report, the shown clock never past the raw clock and never stepping back; the same scripted scroll trails less under touch than under the wheel's spring (the one relative timing check); `?smooth=90` and the HUD's input line; no smoothing under reduced motion. Prints the gap figures (`FEEL` lines) |
 | `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on; with a `createImageBitmap` that rejects every frame (and no `Worker`) the page hands over to the legacy loader at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 
 ## Scroll-pass gate
