@@ -461,6 +461,32 @@ describe("budget planner: the fetch order", () => {
     assert.ok(h.p.hasBytes(0, 5));
   });
 
+  it("a failed fetch of a frame other than the target is retried too, and stops being 'coming' once given up", () => {
+    const h = harness(80, [{ count: 64 }]);
+    h.want(0, 20, 1);
+    // The 6th fetch started (the order passed it): fail it, then let everything else land.
+    const failed = h.fetching()[5];
+    const f = jobFrame(failed.job);
+    assert.notEqual(f, 20);
+    h.fetching().splice(5, 1);
+    assert.equal(h.p.fetchFailed(0, f, failed.epoch, 0), false);
+    let t = 0;
+    for (let tryNo = 2; tryNo <= FETCH_TRIES; tryNo++) {
+      h.settle();
+      t += 60_000;
+      h.setNow(t);
+      h.pump(); // the retry timer fires: no want(), no re-plan
+      const again = h.fetching().find((x) => jobFrame(x.job) === f);
+      assert.ok(again, `frame ${f} fetched again (try ${tryNo})`);
+      h.fetching().splice(h.fetching().indexOf(again), 1);
+      assert.equal(h.p.fetchFailed(0, f, again.epoch, t), tryNo === FETCH_TRIES);
+    }
+    h.settle();
+    assert.equal(h.network.filter((k) => k === `0#${f}`).length, FETCH_TRIES);
+    assert.ok(h.p.isMissing(0, f));
+    assert.equal(h.p.isComing(0, f, 0), false, "a frame given up is not waited for");
+  });
+
   it("starts nothing while paused (the document is hidden)", () => {
     const h = harness(20, [{ count: 16 }]);
     h.p.setPaused(true);

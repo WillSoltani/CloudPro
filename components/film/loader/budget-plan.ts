@@ -815,6 +815,8 @@ export function createBudgetPlanner(config: PlannerConfig) {
       s.bytes[frame] = B_NONE;
       s.retryAt[frame] = now + RETRY_BASE_MS * 2 ** (tries - 1);
       if (s.retryAt[frame] < retryWake) retryWake = s.retryAt[frame];
+      // The scan passed it when the fetch started: start again from the top of the order, or the retry never comes.
+      cursor = 0;
       return false;
     },
 
