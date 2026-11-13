@@ -9,7 +9,7 @@
  * unit-tested (filmStats.test.ts).
  */
 export type FilmStats = {
-  /** The loader that fills the canvas: "legacy" is FilmBackdrop's own; later loaders set their own name. */
+  /** The frame loader that fills the canvas (components/film/loader): "legacy" is legacy.ts; later loaders set their own name. */
   mode: string;
   /** Frame requests started (an <img> given a frame URL). */
   requests: number;

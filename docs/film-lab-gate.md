@@ -16,6 +16,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | `?hud=1` overlay with the counters | `components/film/FilmHud.tsx` (mounted by `FilmBackdrop`, renders nothing without the flag) |
 | Counter spec | `e2e/film-stats.spec.ts` |
 | Canvas backing size (`backingSize`, `growCap`, `?backing=full`) and its unit tests | `components/film/backing.ts`, `backing.test.ts`; spec `e2e/film-backing.spec.ts` |
+| Frame loader interface and the legacy loader, its unit tests | `components/film/loader/types.ts`, `legacy.ts`, `legacy.test.ts` (see "The frame loader") |
 | CI job | `film` in `.github/workflows/ci.yml` ("Film specs (placeholder frames)") |
 
 ## Commands
@@ -23,7 +24,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 ```
 npm run film:placeholder      # write the stand-ins under public/films (a second run does nothing)
 npm run test:film             # Playwright, chromium, placeholder frames
-npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, the gate script's leg buckets
+npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, the legacy loader, the gate script's leg buckets
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
@@ -54,6 +55,18 @@ enough on a Mac. CI runs `npm install --no-save sharp@0.34.5` first; do the same
   If the production server was started earlier in another mode (placeholders or `FILM_FRAMES=cdn`), stop it:
   locally `reuseExistingServer` keeps it.
 
+## The frame loader
+
+Which frames exist in memory is decided by a frame loader behind one interface, `FrameLoader` in
+`components/film/loader/types.ts`; `FilmBackdrop` keeps the clock, the draw call, the hold keys, the chrome and the
+registration. The one loader today is the legacy loader, `components/film/loader/legacy.ts` (`createLegacyLoader`: one
+request and one main-thread decode per frame, 6 in flight, nearest-first ranking, eviction of segments more than one away
+except frames 0, M and last), with unit tests in `components/film/loader/legacy.test.ts` (fake Image, run by
+`npm run test:film-unit`). `FilmBackdrop` picks the loader in one place in its effect, `const loader = createLegacyLoader(...)`;
+that is where another loader is selected (a later stage adds a `?loader=...` flag there). A loader reports through the
+narrow `LoaderStats` hook (requests with refetches, decodes, failures, in flight, frames alive and their bytes), so
+`window.__filmStats` keeps the same meaning whichever loader runs, and `mode` names it (`"legacy"`).
+
 ## Counters
 
 `components/film/FilmBackdrop.tsx` keeps `window.__filmStats` (type `FilmStats` in `components/film/filmStats.ts`)
@@ -69,8 +82,8 @@ requested in this page load.
 Draws and staleness are scored against the **effective target**, not the raw one. `targetFrame` is the frame the
 clock wants; `effectiveFrame` is the frame the engine can show for it. They differ only where the engine never
 loads the target frame by design: on a coarse pointer it requests only the even frames of a breathing tail, and
-under reduced motion only the stills. The rule comes from the engine itself (`usable` in `FilmBackdrop`, the
-predicate `rank()` requests by), applied by `aimAt` in `filmStats.ts`. A paint is exact, and the canvas is on
+under reduced motion only the stills. The rule comes from the engine itself (the loader's `usable`, the
+predicate its `rank()` requests by), applied by `aimAt` in `filmStats.ts`. A paint is exact, and the canvas is on
 target, when the painted frame is the target or, for a target the engine never loads, a usable frame nearest to it
 (an odd tail frame on a phone: either even neighbour). `effectiveFrame` names the lower one on such a tie, the one
 draw() prefers; the rule is "as far from `targetFrame` as `effectiveFrame` is". `fallbackDistance` is the distance
