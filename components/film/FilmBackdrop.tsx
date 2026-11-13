@@ -24,7 +24,9 @@ import {
   backingPlacement,
   LAYER_HEIGHT_CLASS,
   placement,
+  STAGE_BOX_CLASS,
   STAGE_HEIGHT_CLASS,
+  stageBox,
   stageVars,
 } from "@/components/film/placement";
 import { rawClock, segmentMetrics, type SegmentBox } from "@/components/film/clock";
@@ -76,7 +78,7 @@ const DEFAULT_LOADER: LoaderName = "budget";
 export const REEL_FOCUS: readonly [number, number] = [0.5, 0.45];
 /** `object-position` / `background-position` matching REEL_FOCUS, for layers that must line up with the canvas. */
 export const REEL_OBJECT_POSITION = `${REEL_FOCUS[0] * 100}% ${REEL_FOCUS[1] * 100}%`;
-/** The stage variables at REEL_FOCUS (placement.ts stageVars): the key layers' padding, the hero poster's box. */
+/** The stage variables at REEL_FOCUS (placement.ts stageVars): the box of the hold-key layers and of the hero poster. */
 export const REEL_STAGE_VARS = stageVars(REEL_FOCUS);
 
 // A segment starts loading once it is within ~1.5 viewports.
@@ -452,6 +454,12 @@ export function FilmBackdrop({
       if (!box.w) measureBox();
       return placement(box.w, box.h, box.svh, aspect, REEL_FOCUS);
     };
+    // The hold-key layers' top relative to the canvas's (placement.ts stageBox: ≤ 0, where the stage's height grown
+    // as the placement grows it ends on the large viewport's bottom), for px set on a key layer.
+    const keyTop = () => {
+      if (!box.w) measureBox();
+      return stageBox(box.h, box.svh, REEL_FOCUS[1]).top;
+    };
 
     // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load
     // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab; `?pack=0`
@@ -691,14 +699,25 @@ export function FilmBackdrop({
       if (index === targetSeg) schedule();
     });
 
-    // Size and place a key layer's background exactly where draw() would paint a frame of its aspect.
+    // The breath's origin on key layer i (see `breath`): its frame point, in px of the layer's own box.
+    const setBreathOrigin = (i: number, layer: HTMLElement) => {
+      const b = segments.get(i)?.reg.breath;
+      if (!b) return;
+      const r = placed(keyAspect[i] || 16 / 9);
+      layer.style.transformOrigin = `${r.left + r.width * b.origin[0]}px ${r.top - keyTop() + r.height * b.origin[1]}px`;
+    };
+
+    // Size and place a key layer's background exactly where draw() would paint a frame of its aspect (the layer's
+    // box starts keyTop() below the canvas's top; its CSS cover fit before this runs is the same rectangle). A breath
+    // already running (its origin set before the key's aspect was known) gets its origin from the key's own aspect.
     const layoutKey = (i: number) => {
       const layer = keyLayers[i];
       const aspect = keyAspect[i];
       if (!layer || !aspect) return;
       const r = placed(aspect);
       layer.style.backgroundSize = `${r.width}px ${r.height}px`;
-      layer.style.backgroundPosition = `${r.left}px ${r.top}px`;
+      layer.style.backgroundPosition = `${r.left}px ${r.top - keyTop()}px`;
+      if (layer.style.transform) setBreathOrigin(i, layer);
     };
 
     const loadKey = (i: number) => {
@@ -853,12 +872,13 @@ export function FilmBackdrop({
         }
         const tailFrame = drawnSeg === hold && tailCount(s) > 0 && drawnFrame > moveEnd(s);
         const f = tailFrame ? frameUrl(s.reg.film, loader.width(hold), drawnFrame) : undefined;
-        // The held key's push (the tower's breath), as [scale, origin x px, origin y px].
+        // The held key's push (the tower's breath), as [scale, origin x px, origin y px], the origin in the key
+        // layer's own box (`b`; the former `k` measured it from the canvas's top, and app/page.tsx ignores it).
         const layer = keyLayers[hold];
         const scale = layer?.style.transform.startsWith("scale(") ? parseFloat(layer.style.transform.slice(6)) : 1;
         const origin = layer?.style.transformOrigin.split(" ").map(parseFloat) ?? [];
-        const k = scale !== 1 && origin.length === 2 ? [scale, ...origin] : undefined;
-        sessionStorage.setItem(HOLD_REVEALS_KEY, JSON.stringify({ h: hold, w: window.innerWidth, o, f, k }));
+        const b = scale !== 1 && origin.length === 2 ? [scale, ...origin] : undefined;
+        sessionStorage.setItem(HOLD_REVEALS_KEY, JSON.stringify({ h: hold, w: window.innerWidth, o, f, b }));
       } catch {
         // storage unavailable: a reload boots the held chapter's pin items hidden on the hold key
       }
@@ -1009,13 +1029,7 @@ export function FilmBackdrop({
         const scale = keyScale(i, ph);
         const transform = scale === 1 ? "" : `scale(${scale.toFixed(5)})`;
         if (layer.style.transform !== transform) {
-          if (transform) {
-            const b = segments.get(i)?.reg.breath;
-            const r = placed(keyAspect[i] || 16 / 9);
-            if (b) {
-              layer.style.transformOrigin = `${r.left + r.width * b.origin[0]}px ${r.top + r.height * b.origin[1]}px`;
-            }
-          }
+          if (transform) setBreathOrigin(i, layer);
           layer.style.transform = transform;
         }
         const o = Math.round(keyOpacity(i, ph.legacy) * 1000) / 1000;
@@ -1279,16 +1293,16 @@ export function FilmBackdrop({
         {Array.from({ length: Math.max(keys.landscape.length, keys.portrait.length) }, (_, i) => {
           const src = keys.landscape[i];
           const portraitSrc = keys.portrait[i];
-          // The boot script's pre-JS geometry is the CSS cover fit at REEL_OBJECT_POSITION of the content box, which
-          // the bottom padding (lvh − svh, --film-stage-pad) makes the stage: the placement wherever the stage's fit
-          // covers the layer. The backdrop then sets the placement in px once the key has decoded.
+          // The boot script's pre-JS geometry is the CSS cover fit at REEL_OBJECT_POSITION of the layer's box, the
+          // hero poster's (placement.ts STAGE_BOX_CLASS): the placement, the grow included. The backdrop then sets the
+          // same placement in px once the key has decoded, so the key does not move when it takes over.
           return src || portraitSrc ? (
             <div
               key={`${i}:${src}:${portraitSrc}`}
               data-key={i}
               data-src={src}
               data-src-portrait={portraitSrc !== src ? portraitSrc : undefined}
-              className={`pointer-events-none fixed inset-0 -z-10 w-full bg-cover bg-no-repeat bg-origin-content opacity-0 supports-[height:100lvh]:pb-(--film-stage-pad) ${LAYER_HEIGHT_CLASS}`}
+              className={`pointer-events-none fixed inset-x-0 -z-10 w-full bg-cover bg-no-repeat opacity-0 ${STAGE_BOX_CLASS}`}
               style={{ backgroundPosition: REEL_OBJECT_POSITION }}
             />
           ) : null;

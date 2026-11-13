@@ -91,6 +91,27 @@ export const SVH = "var(--film-svh, 100svh)";
 export const LAYER_HEIGHT_CLASS = "h-screen supports-[height:100lvh]:h-[var(--film-lvh,100lvh)]";
 export const STAGE_HEIGHT_CLASS = "h-screen supports-[height:100svh]:h-[var(--film-svh,100svh)]";
 
+/**
+ * The stage box (Tailwind; a whole literal for the scanner), for elements that place the picture with the browser's
+ * own cover fit at REEL_OBJECT_POSITION: the hero poster (inside its stage) and the hold-key layers (fixed, so their
+ * stage is the layer's top). Its top is --film-stage-top and its height --film-stage-h (stageVars below, which the
+ * element or a parent must declare), so the cover fit in it is placement() exactly, the grow included, and its bottom
+ * is the large viewport's. Where lvh = svh both are the plain stage (top 0, full height); where the browser has no
+ * lvh, top 0 and 100vh. stageBox() is the same box in px.
+ */
+export const STAGE_BOX_CLASS =
+  "top-0 h-screen supports-[height:100lvh]:top-(--film-stage-top) supports-[height:100lvh]:h-(--film-stage-h)";
+
+/**
+ * STAGE_BOX_CLASS in px, for a layer `lvh` tall over a stage `svh` tall at focus y `fy`: the box's top (from the
+ * layer's top: ≤ 0) and height, top + height = lvh. Where lvh ≤ svh (or no stage) it is the layer, { top: 0, height: lvh }.
+ */
+export function stageBox(lvh: number, svh: number, fy: number): { top: number; height: number } {
+  if (!(svh > 0) || !(lvh > svh) || !(fy < 1)) return { top: 0, height: lvh };
+  const height = stageHeight(lvh, svh, fy);
+  return { top: lvh - height, height };
+}
+
 const num = (v: number) => String(+v.toFixed(5));
 
 /** stageHeight() in CSS: the picture's height before the width term. */
@@ -100,20 +121,18 @@ export function stageHeightCss(focus: readonly [number, number]): string {
 
 /**
  * CSS variables for elements that place the picture with the browser's own cover fit (`object-fit: cover` or
- * `background-size: cover` at REEL_OBJECT_POSITION) instead of px from placement():
+ * `background-size: cover` at REEL_OBJECT_POSITION) instead of px from placement() (STAGE_BOX_CLASS):
  *   --film-stage-h    stageHeight(): a box this tall …
  *   --film-stage-top  … whose top is this far above the layer's top, cover-fitted at the focus, puts the picture
- *                     exactly where placement() does (the hero poster): its height is max(width / aspect, stage-h)
- *                     and its top (stage-h − h)·fy + stage-top = (svh − h)·fy.
- *   --film-stage-pad  lvh − svh: as padding-bottom with `background-origin: content-box`, a layer's cover fit is the
- *                     stage's (the hold keys before the backdrop has set their px; exact unless the scale grows).
- * All three are the plain stage (svh, 0, 0) where lvh = svh.
+ *                     exactly where placement() does (the hero poster, the hold keys): its height is
+ *                     max(width / aspect, stage-h) and its top (stage-h − h)·fy + stage-top = (svh − h)·fy. The box's
+ *                     bottom, stage-top + stage-h, is lvh.
+ * Both are the plain stage (svh, 0) where lvh = svh.
  */
 export function stageVars(focus: readonly [number, number]): Record<string, string> {
   const fy = focus[1];
   return {
     "--film-stage-h": `calc${stageHeightCss(focus)}`,
     "--film-stage-top": `calc((${SVH} - ${LVH}) * ${num(fy)} / ${num(1 - fy)})`,
-    "--film-stage-pad": `calc(${LVH} - ${SVH})`,
   };
 }

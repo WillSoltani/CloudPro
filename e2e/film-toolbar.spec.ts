@@ -1,6 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { assertPlaceholdersPresent, maxScroll, openHome, readFilmStats } from "./film-frames";
 import {
+  cssKeyPictures,
+  GROW_TOOLBAR,
   moveToolbar,
   restAt,
   scrollScript,
@@ -26,6 +28,11 @@ import {
 //             phone), so the document is laid out again and a toggle changes the clock; the film's layers must still
 //             not reallocate, move or drift apart.
 // The checks are exact counters and pixel reads, no timing thresholds.
+//
+// The hold keys before the backdrop runs (a reload or a #section deep link into a hold: the boot style in app/page.tsx
+// shows the key with the layer's own CSS) must already be where the backdrop then lays them out, also where the
+// placement grows the scale (GROW_TOOLBAR); their box is the hero poster's (placement.ts STAGE_BOX_CLASS), and
+// where lvh = svh it is the layer itself, top 0 and full height.
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
@@ -39,6 +46,7 @@ test.use({
 const MODES: ToolbarMode[] = ["phone", "resize"];
 const CYCLES = 3;
 const FOCUS_Y = 0.45; // REEL_FOCUS[1]: the marker row sits on this share of the stage (the small viewport)
+const OBJECT_POSITION = "50% 45%"; // REEL_OBJECT_POSITION
 
 /** Opens the home page with the simulated toolbar, shown, and waits for the first paint. */
 async function open(page: Page, mode: ToolbarMode): Promise<void> {
@@ -192,6 +200,133 @@ for (const mode of MODES) {
       } else {
         // The window's own svh lengths move the layout: a few measurements per move, not one per scroll event.
         expect(end.stats.measures - base.stats.measures, "layout measurements over 400 scroll events and 6 toolbar moves").toBeLessThanOrEqual(24);
+      }
+    });
+  });
+}
+
+const closeBox = (a: { left: number; top: number; width: number; height: number }, b: typeof a, tol: number) =>
+  close(a.left, b.left, tol) && close(a.top, b.top, tol) && close(a.width, b.width, tol) && close(a.height, b.height, tol);
+const fmt = (b: { left: number; top: number; width: number; height: number }) =>
+  `${b.left.toFixed(2)},${b.top.toFixed(2)} ${b.width.toFixed(2)}x${b.height.toFixed(2)}`;
+
+test.describe("hold keys where the placement grows the scale", () => {
+  test.use({ viewport: { width: GROW_TOOLBAR.width, height: GROW_TOOLBAR.shown } });
+
+  for (const how of ["a scroll into the last hold", "a #contact deep link"] as const) {
+    test(`the key's CSS fit before the backdrop lays it out is the laid-out picture, ${how} @toolbar`, async ({ page }) => {
+      await simulateToolbar(page, "phone", GROW_TOOLBAR);
+      if (how === "a #contact deep link") {
+        await openHome(page, "#contact");
+        await restAt(page, await page.evaluate(() => window.scrollY));
+      } else {
+        await openHome(page);
+        await restAt(page, (await maxScroll(page)) - 160);
+      }
+      const s = await snapshot(page);
+      const css = await cssKeyPictures(page, OBJECT_POSITION);
+      const laidOut = s.keys.filter((k) => k.pic);
+      expect(laidOut.length, "a hold key has been laid out").toBeGreaterThan(0);
+      for (const k of laidOut) {
+        const c = css.find((x) => x.i === k.i);
+        expect(c, `key ${k.i}: its image is on the layer`).toBeDefined();
+        // No zoom step when the backdrop takes over: the CSS cover fit of the layer's box is the placement.
+        expect(closeBox(c!.pic, k.pic!, 0.5), `key ${k.i}: CSS fit ${fmt(c!.pic)} vs laid out ${fmt(k.pic!)}`).toBe(true);
+        // The grow case: the picture is taller than the small viewport's own cover fit would make it.
+        expect(k.pic!.top + k.pic!.height, `key ${k.i}: the picture covers the large viewport`).toBeGreaterThanOrEqual(GROW_TOOLBAR.hidden - 0.5);
+      }
+      // The key layers' box is the hero poster's box (both: the stage's height grown as the placement grows it, its
+      // bottom on the large viewport's).
+      expect(s.poster).not.toBeNull();
+      for (const k of s.keys) expect(closeBox(k.box, s.poster!, 0.01), `key ${k.i} box ${fmt(k.box)} vs poster ${fmt(s.poster!)}`).toBe(true);
+      expect(s.keys[0].box.top + s.keys[0].box.height, "the key box ends at the large viewport's bottom (to a layout unit)").toBeCloseTo(GROW_TOOLBAR.hidden, 1);
+    });
+  }
+
+  test("the breath's origin is the same frame point as without the grow, and a reload boots it there @toolbar", async ({ page, browser, baseURL }) => {
+    test.setTimeout(120_000);
+    // The held key's push (the stand-in breath) scales the layer about a frame point: in the layer's own box, which
+    // starts above the viewport here, so the origin must be offset by the box's top.
+    const breathAt = async (p: Page) => {
+      const s = await snapshot(p);
+      const b = await p.evaluate(() => {
+        const el = [...document.querySelectorAll<HTMLElement>("[data-key]")].find((e) => e.style.transform.startsWith("scale("));
+        return el ? { i: Number(el.dataset.key), origin: el.style.transformOrigin.split(" ").map(parseFloat), scale: el.style.transform } : null;
+      });
+      expect(b, "a hold key breathes at the last hold").not.toBeNull();
+      const k = s.keys.find((x) => x.i === b!.i)!;
+      expect(k.pic, `key ${k.i} is laid out`).not.toBeNull();
+      // The origin as a frame fraction: (layer px − picture's top-left) / picture size.
+      const frac = [(k.box.left + b!.origin[0] - k.pic!.left) / k.pic!.width, (k.box.top + b!.origin[1] - k.pic!.top) / k.pic!.height];
+      return { ...b!, frac, box: k.box };
+    };
+
+    await simulateToolbar(page, "phone", GROW_TOOLBAR);
+    // The boot style as app/page.tsx's script wrote it, captured before the backdrop removes it.
+    await page.addInitScript(() => {
+      new MutationObserver((_, mo) => {
+        const st = document.getElementById("reel-hold-boot");
+        if (!st) return;
+        (window as unknown as { __bootCss: string }).__bootCss = st.textContent ?? "";
+        mo.disconnect();
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await openHome(page);
+    await restAt(page, (await maxScroll(page)) - 160);
+    const grown = await breathAt(page);
+    expect(grown.box.top, "the key box starts above the viewport here").toBeLessThan(0);
+
+    // The same frame point where lvh = svh (no grow, box top 0).
+    const ctx = await browser.newContext({ baseURL, viewport: { width: GROW_TOOLBAR.width, height: GROW_TOOLBAR.hidden }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    try {
+      const plain = await ctx.newPage();
+      await openHome(plain);
+      await restAt(plain, (await maxScroll(plain)) - 160);
+      const ref = await breathAt(plain);
+      expect(ref.box.top).toBe(0);
+      expect(ref.i).toBe(grown.i);
+      for (const a of [0, 1]) expect(Math.abs(grown.frac[a] - ref.frac[a]), `breath origin frame fraction ${a}: ${grown.frac[a]} vs ${ref.frac[a]}`).toBeLessThan(1e-3);
+    } finally {
+      await ctx.close();
+    }
+
+    // A reload there: pagehide saves the push in the key box's px (`b`), the boot script applies exactly that, and the
+    // backdrop takes over with the same origin.
+    await page.reload({ waitUntil: "load" });
+    const rec = await page.evaluate(() => JSON.parse(sessionStorage.getItem("reel-hold-reveals") ?? "null"));
+    expect(rec?.h, "the saved hold").toBe(grown.i);
+    expect(rec?.k, "no record in the former canvas-top px").toBeUndefined();
+    expect(rec?.b?.length, "the saved push").toBe(3);
+    expect(Math.abs(rec.b[1] - grown.origin[0]) < 0.01 && Math.abs(rec.b[2] - grown.origin[1]) < 0.01, `saved origin ${rec.b.slice(1)} vs ${grown.origin}`).toBe(true);
+    await page.waitForFunction(() => typeof (window as unknown as { __bootCss?: string }).__bootCss === "string");
+    const bootCss = await page.evaluate(() => (window as unknown as { __bootCss: string }).__bootCss);
+    expect(bootCss, "the boot style applies the saved origin").toContain(`transform-origin:${rec.b[1]}px ${rec.b[2]}px`);
+    await restAt(page, await page.evaluate(() => window.scrollY));
+    const after = await breathAt(page);
+    expect(Math.abs(after.origin[0] - rec.b[1]) < 0.5 && Math.abs(after.origin[1] - rec.b[2]) < 0.5, `backdrop origin ${after.origin} vs booted ${rec.b.slice(1)}`).toBe(true);
+  });
+});
+
+for (const [name, viewport, mobile] of [
+  ["desktop 1440x900", { width: 1440, height: 900 }, false],
+  ["phone 390x844 without a toolbar", { width: 390, height: 844 }, true],
+] as const) {
+  test.describe(`hold keys where lvh = svh: ${name}`, () => {
+    test.use({ viewport, hasTouch: mobile, isMobile: mobile });
+    test(`the key layer is the layer itself, top 0 and full height @toolbar`, async ({ page }) => {
+      await openHome(page);
+      await restAt(page, (await maxScroll(page)) - 160);
+      const s = await snapshot(page);
+      expect(s.keys.length).toBeGreaterThan(0);
+      for (const k of s.keys) {
+        expect(k.box, `key ${k.i} box`).toEqual(s.canvas);
+        expect([k.box.top, k.box.height], `key ${k.i} top and height`).toEqual([0, viewport.height]);
+      }
+      // A laid-out key's CSS fit and its px agree here as well.
+      const css = await cssKeyPictures(page, OBJECT_POSITION);
+      for (const k of s.keys.filter((x) => x.pic)) {
+        const c = css.find((x) => x.i === k.i)!;
+        expect(closeBox(c.pic, k.pic!, 0.5), `key ${k.i}: CSS fit ${fmt(c.pic)} vs laid out ${fmt(k.pic!)}`).toBe(true);
       }
     });
   });
