@@ -16,5 +16,25 @@
     "768": 1016,
     "1280": 1796,
     "1920": 2908
+  },
+  "packs": {
+    "768": {
+      "file": "pack-9f655819.bin",
+      "bytes": 869118,
+      "header": 2052,
+      "skeletonEnd": 177244
+    },
+    "1280": {
+      "file": "pack-cd06fee9.bin",
+      "bytes": 1595490,
+      "header": 2052,
+      "skeletonEnd": 327886
+    },
+    "1920": {
+      "file": "pack-030f2820.bin",
+      "bytes": 2733054,
+      "header": 2052,
+      "skeletonEnd": 561796
+    }
   }
 }

@@ -16,5 +16,25 @@
     "432": 860,
     "720": 1472,
     "1080": 2596
+  },
+  "packs": {
+    "432": {
+      "file": "pack-c6899a45.bin",
+      "bytes": 602950,
+      "header": 1764,
+      "skeletonEnd": 115512
+    },
+    "720": {
+      "file": "pack-de5c128c.bin",
+      "bytes": 1271160,
+      "header": 1764,
+      "skeletonEnd": 243506
+    },
+    "1080": {
+      "file": "pack-cf04d46a.bin",
+      "bytes": 2328458,
+      "header": 1764,
+      "skeletonEnd": 444450
+    }
   }
 }
