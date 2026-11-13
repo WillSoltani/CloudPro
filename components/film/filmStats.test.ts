@@ -130,6 +130,8 @@ describe("resetFilmStats", () => {
     s.measures = 9;
     s.targetFrame = 6;
     s.paintedFrame = 4;
+    s.backingW = 1920;
+    s.backingH = 1200;
     resetFilmStats(s, c, 100);
     for (const k of [
       "requests", "refetches", "decodes", "failures", "draws", "exactDraws", "fallbackDraws", "fallbackDistance",
@@ -144,6 +146,8 @@ describe("resetFilmStats", () => {
     assert.equal(s.inflightPeak, 2);
     assert.equal(s.targetFrame, 6);
     assert.equal(s.paintedFrame, 4);
+    assert.equal(s.backingW, 1920);
+    assert.equal(s.backingH, 1200);
     assert.equal(s.mode, "legacy");
   });
 

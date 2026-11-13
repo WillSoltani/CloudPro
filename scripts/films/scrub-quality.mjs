@@ -387,6 +387,8 @@ async function measureProfile(name) {
     viewport: before.viewport,
     dpr: before.dpr,
     documentHeight: before.height,
+    // canvas backing store in device px, as window.__filmStats reports it (null on a build without the gauge)
+    backing: before.stats.backingW ? [before.stats.backingW, before.stats.backingH] : null,
     longTasksSupported: before.longSupported,
     load: {
       requests: loadLeg.requests,
@@ -411,6 +413,7 @@ function rowsFor(results) {
   const rows = [];
   const add = (label, get) => rows.push([label, ...results.map((r) => String(get(r)))]);
   add("scroll speed px/s", (r) => r.speed);
+  add("canvas backing px", (r) => (r.backing ? r.backing.join("x") : "n/a"));
   add("load: requests (all)", (r) => r.load.requests);
   add("load: film frames", (r) => r.load.filmFrames);
   add("load: MB", (r) => r.load.mb);
