@@ -1081,8 +1081,24 @@ export function FilmBackdrop({
     resync.current = sync;
     sync(); // ends with resize(): the canvas is sized once at load, after the segments have joined
 
+    // The film specs' diagnostic when the film does not come to rest (e2e/film-frames.ts settle). Read-only.
+    const filmWhy = () => ({
+      targetSeg,
+      targetFrame,
+      effective: [effective.lo, effective.hi],
+      drawn: [drawnSeg, drawnFrame],
+      rafPending: raf !== 0,
+      rawDir,
+      clock: [scrolled.get(), spring.get(), shownClock],
+      staleSinceMs: staleClock.since < 0 ? -1 : Math.round(performance.now() - staleClock.since),
+      staleWhy: staleClock.why,
+      loader: loader.debugState?.(targetSeg, effective.lo) ?? { mode: loader.mode },
+    });
+    window.__filmWhy = filmWhy;
+
     return () => {
       cancelled = true;
+      if (window.__filmWhy === filmWhy) delete window.__filmWhy;
       resync.current = null;
       const root = document.documentElement;
       delete root.dataset.reelChrome;

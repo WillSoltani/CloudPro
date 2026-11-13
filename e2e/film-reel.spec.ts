@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { assertPlaceholdersPresent, filmNames, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, filmNames, LOADERS, loaderQuery, maxScroll, openHome, PLACEHOLDER_RUN, readFilmStats, readPaintedFrame, settle, settleNote, unsettledAt, watchPage } from "./film-frames";
 
 // A full pass through the reel, deterministic: the page is scrolled in half-viewport steps and, at each step,
 // the test waits for the film to come to rest (the canvas shows the frame the clock wants) before it looks.
@@ -35,13 +35,13 @@ for (const loader of LOADERS) for (const vp of VIEWPORTS) {
       test.setTimeout(240_000);
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
       await openHome(page, loaderQuery(loader));
-      expect(await settle(page), "the first frame settles").toBe(true);
+      expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
       expect((await readFilmStats(page))!.mode, "the loader running").toBe(loader.mode);
 
       const expected = filmNames().filter((n) => n.endsWith("-p") === vp.portrait);
       expect(expected.length).toBeGreaterThan(0);
       const seen = new Set<string>();
-      const unsettled: number[] = [];
+      const unsettled: string[] = [];
       const mismatches: string[] = [];
       const step = Math.round(page.viewportSize()!.height / 2);
       const end = await maxScroll(page);
@@ -51,7 +51,7 @@ for (const loader of LOADERS) for (const vp of VIEWPORTS) {
       await page.evaluate(() => window.__filmStatsReset!());
       await walk(page, 0, end, step, async (y) => {
         if (!(await settle(page))) {
-          unsettled.push(y);
+          unsettled.push(unsettledAt(page, y));
           return;
         }
         const painted = PLACEHOLDER_RUN ? await readPaintedFrame(page) : null;

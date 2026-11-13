@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { assertPlaceholdersPresent, filmNames, maxScroll, openHome, paintedNow, readFilmStats, settle, walkPage, watchPage } from "./film-frames";
+import { assertPlaceholdersPresent, filmNames, maxScroll, openHome, paintedNow, readFilmStats, settle, settleNote, unsettledAt, walkPage, watchPage } from "./film-frames";
 
 // Film packs (stage 7) on placeholder packs (`npm run film:placeholder` writes them under the names the manifests give):
 //  - a full pass down and back at 390x844 touch and 1440x900 in pack mode: the film data requests it takes (pack reads
@@ -34,11 +34,11 @@ function countNet(page: Page): Net {
 /** Walks from `from` to `to` in `step` px; every stop must settle and its pixels must name the frame its hook names. */
 async function play(page: Page, from: number, to: number, step: number): Promise<Set<string>> {
   const films = new Set<string>();
-  const unsettled: number[] = [];
+  const unsettled: string[] = [];
   const mismatches: string[] = [];
   await walkPage(page, from, to, step, async (y) => {
     if (!(await settle(page))) {
-      unsettled.push(y);
+      unsettled.push(unsettledAt(page, y));
       return;
     }
     const p = await paintedNow(page);
@@ -64,7 +64,7 @@ for (const vp of VIEWPORTS) {
       const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
       const net = countNet(page);
       await openHome(page);
-      expect(await settle(page)).toBe(true);
+      expect(await settle(page), settleNote(page)).toBe(true);
       const idle = (await readFilmStats(page))!;
       const idleNet = { ...net };
       expect(idle.mode).toBe("budget");
@@ -124,7 +124,7 @@ test.describe("pack fallbacks", () => {
     const net = countNet(page);
     await page.context().route(PACK_RE, (route) => route.fulfill({ status: 404, body: "not here" }));
     await openHome(page);
-    expect(await settle(page)).toBe(true);
+    expect(await settle(page), settleNote(page)).toBe(true);
     const s = await playDown(page);
     expect(s.mode).toBe("budget");
     expect(s.packFallbackFilms, "films given up to frame files").toBeGreaterThanOrEqual(8);
@@ -144,7 +144,7 @@ test.describe("pack fallbacks", () => {
       route.fulfill({ status: 200, contentType: "application/octet-stream", body: Buffer.from("<html>an error page, not a pack</html>".repeat(40)) }),
     );
     await openHome(page);
-    expect(await settle(page)).toBe(true);
+    expect(await settle(page), settleNote(page)).toBe(true);
     const s = await playDown(page);
     expect(s.packFallbackFilms).toBeGreaterThanOrEqual(8);
     expect(s.framesFromPacks).toBe(0);
@@ -173,7 +173,7 @@ test.describe("pack fallbacks", () => {
       await route.fulfill({ status: 200, contentType: "application/octet-stream", body: first ? body.subarray(0, 2000) : body });
     });
     await openHome(page);
-    expect(await settle(page)).toBe(true);
+    expect(await settle(page), settleNote(page)).toBe(true);
     const s = await playDown(page);
     expect(ranged, "Range requests from a later byte made (and answered 200)").toBeGreaterThan(0);
     expect(s.packFallbackFilms, "no pack given up").toBe(0);

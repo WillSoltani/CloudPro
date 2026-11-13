@@ -180,14 +180,51 @@ export async function openHome(page: Page, query = ""): Promise<void> {
  * for six looks (a frame that failed to load). Resolves false after `timeoutMs`
  * (the caller decides whether that is a failure). It reads the counters and the canvas hooks only; no threshold
  * on how fast anything is.
+ *
+ * When it gives up it takes a diagnostic snapshot in the same page call (`settleNote` and `unsettledAt` put it in a
+ * failure message; it is also logged): the target, what is painted, the canvas hooks, the counters that matter, the
+ * engine's and the loader's own state around the target (`window.__filmWhy`: the wait reason, the jobs in flight, the
+ * pack reads), how many looks the window got and the longest gap between two of them, and the long tasks seen in the
+ * window (Chromium only). Few looks with long gaps mean the page barely ran (starvation); many looks with nothing
+ * changing mean the engine stopped (a stall); a key that keeps changing means the target or the canvas never rests.
  */
-export function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
-  return page.evaluate(async (limit) => {
+export async function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
+  const r = await page.evaluate(async (limit) => {
+    type Seen = { lt?: [number, number][] };
+    const w = window as unknown as Window & { __settleSeen?: Seen };
+    const seen: Seen = (w.__settleSeen ??= {});
+    // Long tasks of the page (one observer per page load; buffered, so those before the first settle count too).
+    if (!seen.lt && typeof PerformanceObserver === "function" && PerformanceObserver.supportedEntryTypes?.includes("longtask")) {
+      const lt: [number, number][] = (seen.lt = []);
+      try {
+        new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) lt.push([e.startTime, e.duration]);
+          if (lt.length > 400) lt.splice(0, lt.length - 400);
+        }).observe({ type: "longtask", buffered: true });
+      } catch {
+        // no long-task timing here
+      }
+    }
     const t0 = performance.now();
+    const s0 = window.__filmStats ? { ticks: window.__filmStats.ticks, draws: window.__filmStats.draws, held: window.__filmStats.held } : null;
     let stable = 0;
     let last = "";
+    let looks = 0;
+    let prev = t0;
+    let maxGap = 0;
+    let gapsOver1s = 0;
+    let keyChanges = 0;
+    let restingLooks = 0;
+    let exactLooks = 0;
+    const firstKey: string[] = [];
     while (performance.now() - t0 < limit) {
       await new Promise((r) => setTimeout(r, 60));
+      const now = performance.now();
+      const gap = now - prev;
+      prev = now;
+      looks++;
+      if (gap > maxGap) maxGap = gap;
+      if (gap > 1000) gapsOver1s++;
       const s = window.__filmStats;
       const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]");
       if (!s || !c) continue;
@@ -195,15 +232,115 @@ export function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
       const reach = Math.abs(s.effectiveFrame - s.targetFrame);
       const exact = s.paintedSeg === s.targetSeg && s.paintedFrame >= 0 && Math.abs(s.paintedFrame - s.targetFrame) === reach;
       const resting = exact || (s.inflight === 0 && s.paintedSeg === s.targetSeg);
+      if (exact) exactLooks++;
+      if (resting) restingLooks++;
+      if (!firstKey.length) firstKey.push(key);
       if (resting && key === last) {
-        if (++stable >= (exact ? 3 : 6)) return true;
+        if (++stable >= (exact ? 3 : 6)) return { ok: true as const };
       } else {
         stable = 0;
       }
+      if (last && key !== last) keyChanges++;
       last = key;
     }
-    return false;
+    // Gave up: the snapshot, in this same call.
+    const end = performance.now();
+    const s = window.__filmStats;
+    const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]");
+    const tasks = (seen.lt ?? []).filter(([start, d]) => start + d >= t0);
+    let why: unknown = null;
+    try {
+      why = window.__filmWhy?.() ?? null;
+    } catch (e) {
+      why = `__filmWhy threw: ${String(e)}`;
+    }
+    return {
+      ok: false as const,
+      snapshot: {
+        windowMs: Math.round(end - t0),
+        looks,
+        maxGapMs: Math.round(maxGap),
+        gapsOver1s,
+        keyChanges,
+        restingLooks,
+        exactLooks,
+        firstKey: firstKey[0] ?? "",
+        lastKey: last,
+        visibility: document.visibilityState,
+        longTasks: tasks.length ? { n: tasks.length, totalMs: Math.round(tasks.reduce((a, [, d]) => a + d, 0)), maxMs: Math.round(Math.max(...tasks.map(([, d]) => d))) } : seen.lt ? { n: 0 } : "not observable here",
+        hooks: c ? { ...c.dataset } : null,
+        stats: s
+          ? {
+              mode: s.mode,
+              targetSeg: s.targetSeg,
+              targetFrame: s.targetFrame,
+              effectiveFrame: s.effectiveFrame,
+              paintedSeg: s.paintedSeg,
+              paintedFrame: s.paintedFrame,
+              inflight: s.inflight,
+              decodeInFlight: s.decodeInFlight,
+              packRequests: s.packRequests,
+              packFilms: s.packFilms,
+              packFallbackFilms: s.packFallbackFilms,
+              framesFromPacks: s.framesFromPacks,
+              framesFromFiles: s.framesFromFiles,
+              failures: s.failures,
+              ticksInWindow: s0 ? s.ticks - s0.ticks : null,
+              drawsInWindow: s0 ? s.draws - s0.draws : null,
+              heldInWindow: s0 ? s.held - s0.held : null,
+              staleMsMax: Math.round(s.staleMsMax),
+              staleMaxWhy: s.staleMaxWhy,
+            }
+          : null,
+        engine: why,
+      },
+    };
   }, timeoutMs);
+  if (r.ok) {
+    giveUps.delete(page);
+    return true;
+  }
+  const note = formatSnapshot(r.snapshot);
+  giveUps.set(page, note);
+  console.log(`[settle] gave up after ${timeoutMs} ms at scrollY ${await page.evaluate(() => window.scrollY).catch(() => "?")}:\n${note}`);
+  return false;
+}
+
+/** The snapshot as lines: one per field, the engine's state split into its parts, one line per segment of the plan. */
+function formatSnapshot(snap: Record<string, unknown>): string {
+  const { engine, ...rest } = snap;
+  const line = (k: string, v: unknown) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`;
+  const lines = Object.entries(rest).map(([k, v]) => line(k, v));
+  if (engine && typeof engine === "object") {
+    const { loader, ...e } = engine as Record<string, unknown>;
+    lines.push(line("engine", e));
+    if (loader && typeof loader === "object") {
+      const { plan, ...l } = loader as Record<string, unknown>;
+      lines.push(line("loader", l));
+      if (plan && typeof plan === "object") {
+        const { segs, ...p } = plan as Record<string, unknown>;
+        lines.push(line("plan", p));
+        if (Array.isArray(segs)) for (const sg of segs) lines.push(`  seg ${sg}`);
+      }
+    }
+  } else {
+    lines.push(line("engine", engine));
+  }
+  return lines.join("\n");
+}
+
+/** The snapshot of the last settle() on `page` that gave up, while no later one has settled. */
+const giveUps = new WeakMap<Page, string>();
+
+/** For a failure message: the last give-up's snapshot on `page` ("" when the last settle() settled). */
+export function settleNote(page: Page): string {
+  const note = giveUps.get(page);
+  return note ? `\nsettle() gave up; snapshot:\n${note}` : "";
+}
+
+/** An entry for a spec's list of unsettled stops: the scroll position and the snapshot of the settle() that gave up there. */
+export function unsettledAt(page: Page, y: number): string {
+  return `y=${y}${settleNote(page)}`;
 }
 
 /** The farthest the document scrolls (px). */

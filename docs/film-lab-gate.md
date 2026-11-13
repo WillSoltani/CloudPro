@@ -339,6 +339,16 @@ browser, reading the placeholder packs; the same with `?pack=0`, one file per fr
 from the canvas pixels compared with `data-frame` for each. With packs the reel and stats specs also check that every frame came
 from a pack (no frame file, no pack given up); with `?pack=0` that no pack was read.
 
+**A stop that does not settle explains itself.** When `settle()` gives up (20 s) it takes a snapshot in the same page call, logs it
+(`[settle] gave up …`) and the specs carry it into the failure message (`settleNote`, `unsettledAt`): the target, the effective
+frame, the painted segment and frame, `inflight`, the canvas `data-*` hooks, the loader mode and the pack counters; how many looks
+the window got, the longest gap between two of them, how often the key changed and the long tasks seen in the window
+(Chromium only); and the engine's own state through `window.__filmWhy()` (FilmBackdrop, read-only, for the specs): the wait reason
+for the target frame, the frames around it (`around`: D decoded, d decoding, B bytes held, x given up, `^` not wanted), the jobs in
+flight, the time since the store last answered, and the planner's line per segment (its pack read, rank, level, goal, range).
+Few looks with long gaps mean the page barely ran; many looks with nothing changing mean the engine stopped; a key that keeps
+changing means the target or the canvas never rests.
+
 | Spec | What it checks |
 | --- | --- |
 | `film-smoke` | page 200, canvas paints, pixels name the frame, no 4xx/5xx, no console errors |

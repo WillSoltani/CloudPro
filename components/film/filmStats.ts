@@ -421,6 +421,11 @@ declare global {
   interface Window {
     __filmStats?: FilmStats;
     __filmStatsReset?: () => void;
+    /**
+     * The engine's and the loader's state around the current target, read by the film specs only when the film did not
+     * come to rest (e2e/film-frames.ts settle). Read-only; set by FilmBackdrop while its effect runs.
+     */
+    __filmWhy?: () => Record<string, unknown>;
   }
 }
 

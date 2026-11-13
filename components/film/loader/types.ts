@@ -197,4 +197,9 @@ export interface FrameLoader {
    * once when a stale stretch starts); optional, the legacy loader has none.
    */
   waitReason?(index: number, frame: number): string;
+  /**
+   * The loader's state around frame `frame` of segment `index`, for the film specs' diagnostic when the film does not
+   * come to rest (FilmBackdrop's `window.__filmWhy`, e2e/film-frames.ts settle). Read-only; optional, the legacy loader has none.
+   */
+  debugState?(index: number, frame: number): Record<string, unknown>;
 }

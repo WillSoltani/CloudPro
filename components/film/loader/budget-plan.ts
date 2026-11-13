@@ -1506,9 +1506,10 @@ export function createBudgetPlanner(config: PlannerConfig) {
 
     /**
      * Why frame `i` of segment `index` is not on the canvas yet, as an index into WAIT_REASONS (the counters' stale
-     * locator; not for the hot path).
+     * locator; not for the hot path). `rebuild` false: a dirty pack plan is read as it stands (the specs' diagnostic,
+     * which must not change the plan).
      */
-    waitReason(index: number, i: number): number {
+    waitReason(index: number, i: number, rebuild = true): number {
       const s = segs[index];
       if (!s) return 9;
       if (i < 0 || i >= s.count) return 7;
@@ -1520,11 +1521,64 @@ export function createBudgetPlanner(config: PlannerConfig) {
       if (b === B_DEAD) return 8;
       const p = packed(s) ? s.pack! : null;
       if (p) {
-        if (packDirty && active >= 0) buildPackPlan();
+        if (rebuild && packDirty && active >= 0) buildPackPlan();
         if (p.goal >= frameLevel(s, i)) return p.readId ? 5 : 6;
         return 7;
       }
       return s.orderStamp[i] === orderGen ? 4 : 7;
+    },
+
+    /**
+     * The plan's state in one line per segment, for the specs' diagnostic when the film does not come to rest
+     * (e2e/film-frames.ts settle; read through FilmBackdrop's `window.__filmWhy`). Read-only: never rebuilds the plan,
+     * never read by the engine.
+     */
+    debugState(): Record<string, unknown> {
+      const packs: string[] = [];
+      for (const s of segs) {
+        const p = s?.pack;
+        if (!s) continue;
+        const head = `${s.index}${s.index === active ? "*" : ""}${s.near ? "" : " far"} dec ${s.decodedCount}`;
+        if (!p) {
+          packs.push(head);
+          continue;
+        }
+        let held = 0;
+        for (let i = 0; i < s.count; i++) if (s.bytes[i] === B_HELD) held++;
+        packs.push(
+          `${head} bytes ${held}/${s.count} pack ${p.failed ? `failed (${p.failReason})` : p.known ? "known" : "unknown"}` +
+            ` read ${p.readId ? `#${p.readId} at ${p.readPos} to ${p.readTo}` : "none"} rank ${p.rank} level ${p.level} goal ${p.goal}` +
+            ` want ${p.wantFrom}-${p.wantTo} tries ${p.tries}${p.retryAt ? ` retryAt ${Math.round(p.retryAt)}` : ""}${p.rangeless ? " rangeless" : ""}` +
+            ` reads ${p.reads} frames ${p.frames}${p.known ? ` skeletonEnd ${p.skeletonEnd} usableEnd ${p.usableEnd} bytes ${p.bytes}` : ""}`,
+        );
+      }
+      return {
+        active,
+        target,
+        targetLo,
+        targetHi,
+        dir,
+        packDir,
+        packDirty,
+        packJumped,
+        wantDirty,
+        orderDirty,
+        paused,
+        offline,
+        engaged,
+        wantLen,
+        decodesInFlight,
+        maxDecodes,
+        fetchesInFlight,
+        maxFetches,
+        maxPackReads,
+        usedMB: used / 1e6,
+        reservedMB: reserved / 1e6,
+        budgetMB: budgetBytes / 1e6,
+        orphans: orphans.size,
+        decodeErrorStreak,
+        segs: packs,
+      };
     },
 
     /** The epoch of segment `index` (changes on join and retier): pass it back with the job's arrival. */

@@ -274,7 +274,13 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
 
   // ------------------------------------------------------------------ answers from the store
 
+  // The store's last answer (the specs' diagnostic only: debugState).
+  let lastAnswerAt = -1;
+  let lastAnswer = "";
+
   function onMessage(m: FromWorker) {
+    lastAnswerAt = now();
+    lastAnswer = m.t;
     if (disposed) {
       if (m.t === "decoded" && m.ok) m.bitmap.close();
       return;
@@ -634,6 +640,42 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
       if (p.failed) return `${why} (pack given up: ${p.failReason})`;
       const read = p.readId && p.known ? `, read at frame ${p.slotFrame![Math.min(p.slotAt(p.readPos), p.count - 1)]}` : "";
       return `${why} (pack ${p.known ? "known" : "header not yet read"}${read})`;
+    },
+    // Read-only, for the specs' diagnostic: the plan's state is copied before waitReason may rebuild the pack plan.
+    debugState(index, at) {
+      const plan = planner.debugState();
+      const t = now();
+      return {
+        mode,
+        msSinceAnswer: lastAnswerAt < 0 ? -1 : Math.round(t - lastAnswerAt),
+        lastAnswer,
+        jobs: { fetches: fetches.size, decodes: decodes.size, packReads: [...packReads.keys()].join(",") },
+        retryInMs: Number.isFinite(retryAt) ? Math.round(retryAt - t) : null,
+        frame: {
+          at,
+          why: WAIT_REASONS[planner.waitReason(index, at, false)],
+          wanted: planner.isWanted(index, at),
+          nearestDecoded: planner.nearestDecoded(index, at),
+          // Frames at-8 … at+8: D decoded, d decoding, B bytes held, F fetching, x given up, . nothing; ^ not wanted.
+          around: Array.from({ length: 17 }, (_, k) => {
+            const i = at - 8 + k;
+            if (!planner.usable(index, i)) return " ";
+            const c = planner.isDecoded(index, i)
+              ? "D"
+              : planner.isDecoding(index, i)
+                ? "d"
+                : planner.hasBytes(index, i)
+                  ? "B"
+                  : planner.isMissing(index, i)
+                    ? "x"
+                    : WAIT_REASONS[planner.waitReason(index, i, false)] === "file fetch running"
+                      ? "F"
+                      : ".";
+            return planner.isWanted(index, i) ? c : `${c}^`;
+          }).join(""),
+        },
+        plan,
+      };
     },
     usable: (index, i) => planner.usable(index, i),
     loaded: (index) => planner.loaded(index),

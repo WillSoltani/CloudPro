@@ -645,3 +645,23 @@ describe("film packs: the plan", () => {
     assert.ok(t.packMessages().some((m) => m.url === films[0].url), "going up, the film above is read");
   });
 });
+
+describe("film packs: the specs' diagnostic (debugState)", () => {
+  it("describes the target's frames and the open read, and sends nothing to the store", async () => {
+    const f = makeFilm("g0", 65);
+    const t = setup([f]);
+    t.loader.want(plan(0, 10, 0, [65]));
+    const before = t.loader.debugState!(0, 10) as { frame: { why: string }; plan: { segs: string[] } };
+    assert.equal(before.frame.why, "pack read open");
+    assert.match(before.plan.segs[0], /^0\* dec 0 bytes 0\/65 pack unknown read #1 /);
+    const posted = t.workers[0].posted.length;
+    t.loader.debugState!(0, 10);
+    await flush(2);
+    assert.equal(t.workers[0].posted.length, posted, "reading the state sends nothing");
+    await flush(400);
+    const after = t.loader.debugState!(0, 10) as { frame: { why: string; around: string; nearestDecoded: number } };
+    assert.equal(after.frame.why, "decoded");
+    assert.equal(after.frame.nearestDecoded, 10);
+    assert.match(after.frame.around, /^D{17}$/);
+  });
+});
