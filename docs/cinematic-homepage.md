@@ -387,7 +387,8 @@ holds for that page load; the constant to change for good is `TOUCH_LAG_MS`.
 
 ### Stage 5: viewport and feel
 
-What changed: the fixed film layers (canvas, hold keys, poster, plate layer) are as tall as the large viewport and the picture keeps
+What changed: the fixed film layers (canvas, hold keys, poster, plate layer) end on the large viewport's bottom (the canvas and the
+plate layer are that tall; the hold keys and the poster have the stage box, which starts above the viewport) and the picture keeps
 the place the small viewport's cover fit gives it, so a phone's toolbar showing or hiding changes nothing the film is laid out
 with; the clock reads cached geometry and `window.scrollY` on a scroll event; touch is smoothed at 35 ms instead of 171 ms
 (see the section above). The test-only variables and the simulation are in "Toolbar simulation" in `docs/film-lab-gate.md`.
