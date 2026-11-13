@@ -44,6 +44,16 @@ describe("backingSize", () => {
     assert.deepEqual(backingSize(390, 844, NaN, 1920), { w: 390, h: 844 });
     assert.deepEqual(backingSize(390, 844, 2, 0), { w: 780, h: 1688 }); // no cap known: the old rule
   });
+
+  it("sizes the large-viewport layer: one store whatever the toolbar does", () => {
+    // The canvas box is the layer (width x lvh, placement.ts), not the dynamic viewport: a phone gets one store for
+    // the 390 x 754 layer, and the picture is placed on the 664 px stage inside it.
+    const layer = backingSize(390, 754, 3, 432);
+    assert.deepEqual(layer, { w: 432, h: 835 });
+    assert.ok(Math.abs(layer.h - (layer.w * 754) / 390) <= 1);
+    assert.deepEqual(backingSize(360, 640, 2, 720), { w: 720, h: 1280 });
+    assert.deepEqual(backingSize(844, 390, 2, 1280), { w: 1280, h: 591 });
+  });
 });
 
 describe("growCap", () => {
