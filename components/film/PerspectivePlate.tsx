@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { MotionValue } from "framer-motion";
-import { coverRect } from "@/components/film/filmBase";
+import { LAYER_HEIGHT_CLASS, placement } from "@/components/film/placement";
+import { filmViewport, subscribeFilmViewport } from "@/components/film/viewport";
 import { useReducedMotionSafe } from "@/components/film/filmCore";
 import { matrix3dFor, projectCorners, squareToQuad } from "@/components/film/homography";
 import { REEL_FOCUS, useFilmBackdrop } from "@/components/film/FilmBackdrop";
@@ -80,12 +81,13 @@ const onClient = () => true;
 const onServer = () => false;
 
 /**
- * HTML pinned onto a quad in the film, in true perspective: a `fixed inset-0 -z-10 h-dvh` layer (the
- * canvas's own box, painted with the canvas and the hold keys, under every panel, scrim and caption)
+ * HTML pinned onto a quad in the film, in true perspective: a `fixed inset-0 -z-10` layer as tall as the large
+ * viewport (the canvas's own box, painted with the canvas and the hold keys, under every panel, scrim and caption)
  * holding one `box`-sized element with `transform-origin: 0 0`, whose `transform` is
- *   matrix3dFor(squareToQuad(projectCorners(corners[frame], coverRect(layer w, layer h, aspect, REEL_FOCUS))), w0, h0)
- * and whose opacity is `alpha[frame]`, written straight to the DOM (no React renders) whenever the
- * backdrop's `drawnSegment`/`drawnFrame` change or the layer resizes. `frame` is the frame actually on the
+ *   matrix3dFor(squareToQuad(projectCorners(corners[frame], placement(layer w, layer h, svh, aspect, REEL_FOCUS))), w0, h0)
+ * (placement.ts: where the canvas paints the frame) and whose opacity is `alpha[frame]`, written straight to the DOM
+ * (no React renders) whenever the backdrop's `drawnSegment`/`drawnFrame` change, the layer resizes or the film
+ * viewport changes (viewport.ts; a toolbar move alone is none of these). `frame` is the frame actually on the
  * canvas, not the scroll target, so the plate never runs ahead of the picture while coarse passes land.
  *
  * Render it outside any sticky stage or transformed ancestor (FilmChapter `plate`), since both would
@@ -122,6 +124,17 @@ export function PerspectivePlate({
     const t = film === entry.portrait ? portraitTrack : track;
     const { drawnSegment, drawnFrame } = backdrop;
     let shown = -2;
+    // The layer's box and the stage, read on a resize (never per frame): where the canvas paints the frame.
+    const layerBox = { w: 0, h: 0, svh: 0 };
+    const measureLayer = () => {
+      layerBox.w = layer.clientWidth;
+      layerBox.h = layer.clientHeight;
+      layerBox.svh = filmViewport().svh;
+    };
+    const placed = () => {
+      if (!layerBox.w) measureLayer();
+      return placement(layerBox.w, layerBox.h, layerBox.svh, film.aspect, REEL_FOCUS);
+    };
     // The hand-off's lift, as a track row and as a film frame.
     const liftRow = t && handoff ? liftOf(t) : -1;
     const liftFrame =
@@ -148,7 +161,7 @@ export function PerspectivePlate({
       const origin = layer.getBoundingClientRect();
       const span = Math.max(1, handoff.land - liftFrame);
       const s = snap ? 1 : smootherstep(Math.min(1, Math.max(0, (f - liftFrame) / span)));
-      const rect = coverRect(layer.clientWidth, layer.clientHeight, film.aspect, REEL_FOCUS);
+      const rect = placed();
       const from = projectCorners(t.corners[liftRow], rect);
       const x0 = box.left - origin.left;
       const y0 = box.top - origin.top;
@@ -198,7 +211,7 @@ export function PerspectivePlate({
       const corners = t.corners[k];
       const alpha = t.alpha[k] ?? 0;
       if (!corners || corners.length !== 8 || !(alpha > 0)) return hide();
-      const rect = coverRect(layer.clientWidth, layer.clientHeight, film.aspect, REEL_FOCUS);
+      const rect = placed();
       const css = matrix3dFor(squareToQuad(projectCorners(corners, rect)), w0, h0);
       if (css === "none") return hide();
       plate.style.transform = css;
@@ -213,9 +226,13 @@ export function PerspectivePlate({
     // The flight follows the chapter's clock and its live target (the release moves it with the scroll).
     const offClock = handoff?.frame.on("change", apply);
     if (handoff) window.addEventListener("scroll", apply, { passive: true });
-    const ro = new ResizeObserver(apply);
+    const relayout = () => {
+      measureLayer();
+      apply();
+    };
+    const ro = new ResizeObserver(relayout);
     ro.observe(layer);
-    window.addEventListener("resize", apply);
+    const offViewport = subscribeFilmViewport(relayout);
     apply();
     return () => {
       offSegment();
@@ -223,7 +240,7 @@ export function PerspectivePlate({
       offClock?.();
       window.removeEventListener("scroll", apply);
       ro.disconnect();
-      window.removeEventListener("resize", apply);
+      offViewport();
     };
   }, [backdrop, index, track, portraitTrack, off, w0, h0, handoff]);
 
@@ -234,7 +251,7 @@ export function PerspectivePlate({
       aria-hidden
       data-perspective-plate={index}
       data-plate-frame="-1"
-      className="pointer-events-none fixed inset-0 -z-10 h-dvh w-full overflow-hidden"
+      className={`pointer-events-none fixed inset-0 -z-10 w-full overflow-hidden ${LAYER_HEIGHT_CLASS}`}
     >
       <div
         ref={plateRef}

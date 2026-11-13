@@ -1,18 +1,24 @@
-// Frame maths for chapter compositions (part five §2c), as CSS: where the cover-fitted film frame lands in
-// a chapter's sticky composition box, so HTML can be placed at frame fractions and stay on the picture at
-// every viewport. It must agree with filmBase coverRect(), the
-// canvas's own fit (tested: components/film/frameBox.test.mjs). Pure and erasable TypeScript, so Node's
-// type stripping runs the test on this file as it stands:
+// Frame maths for chapter compositions (part five §2c), as CSS: where the film frame lands in a chapter's sticky
+// composition box, so HTML can be placed at frame fractions and stay on the picture at every viewport. It must agree
+// with placement.ts placement(), where the canvas paints the frame (tested: components/film/frameBox.test.mjs). Pure
+// and erasable TypeScript, so Node's type stripping runs the test on this file as it stands:
 //   node --experimental-strip-types --test components/film/frameBox.test.mjs
 //
-// The variables, declared on `[data-compose]` (a `container-type: inline-size` box as wide as the canvas):
+// The variables, declared on `[data-compose]` (a `container-type: inline-size` box as wide as the canvas, pinned at
+// the viewport's top like the film layers), with S the stage (`var(--film-svh, 100svh)`) and L the film layers'
+// height (`var(--film-lvh, 100lvh)`):
 //   --fa   the playing film's aspect: --fa-l (landscape) where the page's `wide` rule holds, else --fa-p
 //          (app/globals.css picks it by the same media query FilmBackdrop's orientation pick uses)
-//   --fw   max(100cqw, 100dvh · fa)          the frame's width in px (cover fit)
-//   --fh   fw / fa                            its height
-//   --fx0  (100cqw − fw) · focusX             its left edge (negative when cropped)
-//   --fy0  (100dvh − fh) · focusY             its top edge
-// The canvas is `fixed h-dvh w-full`, so dvh and the box's inline size are its exact size.
+//   --fw   max(100cqw, (S + (L − S) / (1 − focusY)) · fa)    the frame's width in px (placement.ts)
+//   --fh   fw / fa                                            its height
+//   --fx0  (100cqw − fw) · focusX                             its left edge (negative when cropped)
+//   --fy0  (S − fh) · focusY                                  its top edge
+// The canvas is `fixed`, as tall as the large viewport and as wide as the box; the picture is the stage's cover fit
+// (grown where it would not cover the canvas), so where L = S (desktop) these are the cover fit of 100cqw x 100svh.
+
+// The `.ts` extension is for Node's type stripping (the test runs this file as it stands); see homography.ts.
+// @ts-expect-error TS5097: Node's type stripping resolves only the full file name.
+import { SVH, stageHeightCss } from "./placement.ts";
 
 /** The film aspects (frame width / height) of the two cameras: 1920 × 1080 and 1080 × 2340. */
 export const FILM_ASPECT = { landscape: 1920 / 1080, portrait: 1080 / 2340 } as const;
@@ -30,10 +36,10 @@ export function frameVars(
   return {
     "--fa-l": num(aspect.landscape),
     "--fa-p": num(aspect.portrait),
-    "--fw": "max(100cqw, 100dvh * var(--fa))",
+    "--fw": `max(100cqw, calc(${stageHeightCss(focus)} * var(--fa)))`,
     "--fh": "calc(var(--fw) / var(--fa))",
     "--fx0": `calc((100cqw - var(--fw)) * ${num(focus[0])})`,
-    "--fy0": `calc((100dvh - var(--fh)) * ${num(focus[1])})`,
+    "--fy0": `calc((${SVH} - var(--fh)) * ${num(focus[1])})`,
   };
 }
 
@@ -46,7 +52,7 @@ export const fwOf = (w: number) => `calc(var(--fw) * ${num(w)})`;
 /** CSS length of a frame-height fraction. */
 export const fhOf = (h: number) => `calc(var(--fh) * ${num(h)})`;
 
-/** The same placement in px (the guard, QA): frame point (x, y) in a vw × vh box. */
+/** The same placement in px where lvh = svh (QA, desktop): frame point (x, y) in a vw × vh box (placement.ts placementPoint). */
 export function framePoint(
   vw: number,
   vh: number,

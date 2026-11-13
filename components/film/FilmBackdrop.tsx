@@ -6,6 +6,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import { motionValue, useMotionValue, useSpring, type MotionValue } from "framer-motion";
@@ -17,7 +18,16 @@ import {
   type FilmManifest,
   type HoldKeys,
 } from "@/components/film/filmCore";
-import { coverRect, manifestFor } from "@/components/film/filmBase";
+import { manifestFor } from "@/components/film/filmBase";
+import {
+  backingPlacement,
+  LAYER_HEIGHT_CLASS,
+  placement,
+  STAGE_HEIGHT_CLASS,
+  stageVars,
+} from "@/components/film/placement";
+import { rawClock, segmentMetrics, type SegmentBox } from "@/components/film/clock";
+import { filmViewport, subscribeFilmViewport } from "@/components/film/viewport";
 import { HOLD_REVEALS_KEY, HOLD_STORAGE_KEY } from "@/components/film/reel";
 import { REEL_CHROME_EVENT, type ReelChrome } from "@/components/film/useReelChrome";
 import {
@@ -55,6 +65,8 @@ const DEFAULT_LOADER: LoaderName = "budget";
 export const REEL_FOCUS: readonly [number, number] = [0.5, 0.45];
 /** `object-position` / `background-position` matching REEL_FOCUS, for layers that must line up with the canvas. */
 export const REEL_OBJECT_POSITION = `${REEL_FOCUS[0] * 100}% ${REEL_FOCUS[1] * 100}%`;
+/** The stage variables at REEL_FOCUS (placement.ts stageVars): the key layers' padding, the hero poster's box. */
+export const REEL_STAGE_VARS = stageVars(REEL_FOCUS);
 
 // Critically damped: smooths wheel steps without a slow tail.
 const SPRING = { stiffness: 140, damping: 24, mass: 1, restDelta: 0.0005 } as const;
@@ -240,8 +252,16 @@ export function breathCurve(tau: number, tauRead: number): number {
  * every entry's landscape film, anything else its portrait film where it has one; the hold keys follow
  * (`keys.portrait`). Tiers are chosen per manifest from its own widths and aspect.
  *
- * Cover fit: draw() and the key layers both place the picture with filmBase coverRect() at REEL_FOCUS,
- * the same call PerspectivePlate uses, so no overlay can drift from the canvas.
+ * Placement: the canvas, the key layers and the plate layer are as tall as the large viewport (100lvh), anchored at
+ * the top, so a phone's toolbar moving never resizes them; draw() and the key layers place the picture with
+ * placement.ts at REEL_FOCUS (the cover fit of the small-viewport stage, grown only where it would not cover the
+ * layer; coverRect() itself on desktop), the same function PerspectivePlate, RideAnchor, the fit guard, the frame
+ * variables and the hero poster use, so no overlay can drift from the canvas.
+ *
+ * Layout reads: the clock's geometry (every segment's document box, the page height; clock.ts) and the layers' box
+ * are cached and measured again only when they can change (the film viewport subscription in viewport.ts, a
+ * ResizeObserver on the body, the segments and their container, load, web fonts, a registry change); a scroll event
+ * reads window.scrollY only. Registrations in one commit reconcile once (a microtask).
  *
  * Frames: this component owns the clock, the draw call, the hold keys, the chrome and the registration; which
  * frames exist in memory is the frame loader's (components/film/loader: the FrameLoader interface in types.ts,
@@ -277,46 +297,57 @@ export function FilmBackdrop({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysRef = useRef<HTMLDivElement>(null);
-  // 100svh in px: a chapter's `moveVh` is in small-viewport units, like its spacer.
-  const probeRef = useRef<HTMLDivElement>(null);
   // The registry: segments add themselves from their effects. A ref, never state, so registering
   // never re-renders the page.
   const registry = useRef(new Map<number, SegmentRegistration>());
   // Set while the backdrop runs, so a segment that registers late joins it.
   const resync = useRef<(() => void) | null>(null);
+  // Registrations in one commit (a remount, StrictMode's re-registration, segments mounting together) reconcile
+  // once, in a microtask after the last of them: one measure and one draw, not one per segment.
+  const resyncQueued = useRef(false);
   const drawn = useRef(new Set<number>());
   const drawnListeners = useRef(new Set<() => void>());
   // The clock targets segment 0 (true until the first measure: the SSR poster's own state).
   const atHero = useRef(true);
 
-  const [api] = useState<BackdropApi>(() => ({
-    reel,
-    // By name, not identity: a Fast Refresh of reel.ts re-creates the entries while this api (and the reel
-    // it captured) lives on, so identity would orphan every segment until a full reload.
-    indexOf: (film) => {
-      const name = "landscape" in film ? film.landscape.name : film.name;
-      return reel.findIndex((e) => e.landscape.name === name || e.portrait?.name === name);
-    },
-    manifestAt: (index) => (reel[index] ? manifestFor(reel[index], pickFilmOrientation()) : undefined),
-    register: (segment) => {
-      registry.current.set(segment.index, segment);
-      resync.current?.();
-      return () => {
-        if (registry.current.get(segment.index) === segment) registry.current.delete(segment.index);
+  const [api] = useState<BackdropApi>(() => {
+    const queueResync = () => {
+      if (resyncQueued.current || !resync.current) return;
+      resyncQueued.current = true;
+      queueMicrotask(() => {
+        resyncQueued.current = false;
         resync.current?.();
-      };
-    },
-    subscribeDrawn: (onChange) => {
-      drawnListeners.current.add(onChange);
-      return () => {
-        drawnListeners.current.delete(onChange);
-      };
-    },
-    hasDrawn: (index) => drawn.current.has(index),
-    posterUp: () => atHero.current && !drawn.current.has(0),
-    drawnSegment: motionValue(-1),
-    drawnFrame: motionValue(-1),
-  }));
+      });
+    };
+    return {
+      reel,
+      // By name, not identity: a Fast Refresh of reel.ts re-creates the entries while this api (and the reel
+      // it captured) lives on, so identity would orphan every segment until a full reload.
+      indexOf: (film) => {
+        const name = "landscape" in film ? film.landscape.name : film.name;
+        return reel.findIndex((e) => e.landscape.name === name || e.portrait?.name === name);
+      },
+      manifestAt: (index) => (reel[index] ? manifestFor(reel[index], pickFilmOrientation()) : undefined),
+      register: (segment) => {
+        registry.current.set(segment.index, segment);
+        queueResync();
+        return () => {
+          if (registry.current.get(segment.index) === segment) registry.current.delete(segment.index);
+          queueResync();
+        };
+      },
+      subscribeDrawn: (onChange) => {
+        drawnListeners.current.add(onChange);
+        return () => {
+          drawnListeners.current.delete(onChange);
+        };
+      },
+      hasDrawn: (index) => drawn.current.has(index),
+      posterUp: () => atHero.current && !drawn.current.has(0),
+      drawnSegment: motionValue(-1),
+      drawnFrame: motionValue(-1),
+    };
+  });
 
   const reduced = useReducedMotionSafe();
   const scrolled = useMotionValue(0);
@@ -364,7 +395,7 @@ export function FilmBackdrop({
     const effective = newEffectiveTarget();
 
     // Hold-key layers (rendered below), indexed by segment. Each loads on approach (decoded first, then
-    // set as the layer's background, sized and placed with coverRect); `keyReady[i]` once it is on the
+    // set as the layer's background, sized and placed with the placement); `keyReady[i]` once it is on the
     // layer. A layer whose orientation has no key stays empty.
     const keyLayers: (HTMLElement | undefined)[] = [];
     const keySrc: (string | undefined)[] = [];
@@ -388,6 +419,21 @@ export function FilmBackdrop({
 
     const segments = new Map<number, Segment>();
     const byEl = new Map<Element, Segment>();
+
+    // The film layers' box in CSS px (the canvas's: as wide as the layout viewport, as tall as the large one) and the
+    // stage's height (the svh probe), read when the viewport changes (sizeBacking), so the placement (placement.ts)
+    // never reads layout per tick. A toolbar move changes none of them.
+    const box = { w: 0, h: 0, svh: 0 };
+    const measureBox = () => {
+      box.w = canvas.clientWidth;
+      box.h = canvas.clientHeight;
+      box.svh = filmViewport().svh;
+    };
+    // The picture's rectangle on the layers for a frame of `aspect`, in CSS px.
+    const placed = (aspect: number) => {
+      if (!box.w) measureBox();
+      return placement(box.w, box.h, box.svh, aspect, REEL_FOCUS);
+    };
 
     // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load
     // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab). Its
@@ -448,6 +494,7 @@ export function FilmBackdrop({
 
     const onLoad = () => {
       settleUntil = performance.now() + SETTLE_MS;
+      relayout(); // images and late styles may have moved the segments
     };
     if (settleUntil === Infinity) window.addEventListener("load", onLoad, { once: true });
 
@@ -495,7 +542,8 @@ export function FilmBackdrop({
           ? sorted.filter((w) => pixels(w) <= COARSE_MAX_PIXELS)
           : sorted;
       if (!pool.length) pool.push(sorted[0]);
-      const span = Math.max(canvas.clientWidth, canvas.clientHeight * film.aspect);
+      // The width the picture is painted at (the placement's; the cover fit of the canvas box on desktop).
+      const span = placed(film.aspect).width;
       const need = pixels(span * Math.min(dpr, 1.5) * 0.75 * (1 - TIER_SLACK));
       return pool.find((w) => pixels(w) >= need) ?? pool[pool.length - 1];
     };
@@ -528,7 +576,8 @@ export function FilmBackdrop({
     // A hold key fully covers the canvas.
     const keyUp = () => keyShown.some((o, i) => o >= 0.999 && keyReady[i]);
 
-    // Cover-fit (coverRect) at the reel's focus point on the DPR-sized canvas.
+    // The placement (placement.ts backingPlacement) at the reel's focus point on the DPR-sized canvas: the stage's cover
+    // fit, coverRect of the backing store itself on desktop.
     const draw = () => {
       raf = 0;
       canvas.dataset.reel = reelAt.toFixed(3);
@@ -549,7 +598,7 @@ export function FilmBackdrop({
         stats.held++;
         return;
       }
-      const rect = coverRect(canvas.width, canvas.height, held.width / held.height, REEL_FOCUS);
+      const rect = backingPlacement(canvas.width, canvas.height, box.h, box.svh, held.width / held.height, REEL_FOCUS);
       ctx.drawImage(held.image, rect.left, rect.top, rect.width, rect.height);
       drawnSeg = targetSeg;
       drawnFrame = i;
@@ -601,7 +650,7 @@ export function FilmBackdrop({
       const layer = keyLayers[i];
       const aspect = keyAspect[i];
       if (!layer || !aspect) return;
-      const r = coverRect(canvas.clientWidth, canvas.clientHeight, aspect, REEL_FOCUS);
+      const r = placed(aspect);
       layer.style.backgroundSize = `${r.width}px ${r.height}px`;
       layer.style.backgroundPosition = `${r.left}px ${r.top}px`;
     };
@@ -678,43 +727,40 @@ export function FilmBackdrop({
       return 1 + b.scale * k * k;
     };
 
-    // u: a segment's share of its clock unit at scroll y (px past its top), see the clock above.
-    const uOf = (s: Segment, y: number) => {
-      if (y <= 0) return 0;
-      if (s.range > 0 && y < s.range) return (s.mu * y) / s.range;
-      if (s.after <= 0) return 1;
-      return clamp01(s.mu + ((1 - s.mu) * (y - s.range)) / s.after);
-    };
-
-    // Measures every segment (m, q, μ, read pin, adjacency) and returns the raw clock c.
-    const measure = () => {
+    // The clock's geometry (components/film/clock.ts): every segment's document top and height and the page's sizes,
+    // measured only when they can change (a viewport change, a content resize, load, fonts, a registry change: each
+    // marks it stale) and cached, so a scroll event reads window.scrollY and nothing else. `measures` in the counters
+    // counts these real layout measurements.
+    let boxes: SegmentBox[] = [];
+    let metrics: ReturnType<typeof segmentMetrics> = [];
+    let geometryStale = true;
+    const remeasure = () => {
+      geometryStale = false;
       stats.measures++;
       const root = document.documentElement;
       const viewport = root.clientHeight;
-      const svh = probeRef.current?.offsetHeight || viewport;
+      const svh = filmViewport().svh || viewport;
+      const scrollY = window.scrollY;
       const list = [...segments.values()].sort((a, b) => a.reg.index - b.reg.index);
-      const rects = list.map((s) => s.reg.el.getBoundingClientRect());
-      // Scroll left from the viewport's top to the end of the page, for the last segment's D.
-      const toEnd = root.scrollHeight - viewport - window.scrollY;
-      let c = 0;
-      list.forEach((s, k) => {
-        const rect = rects[k];
-        const next = rects[k + 1];
-        const move = Math.max(
-          0,
-          s.reg.moveVh !== undefined ? s.reg.moveVh * svh : rect.height - viewport,
-        );
-        const distance = next ? next.top - rect.top : toEnd - rect.top;
-        s.range = move;
-        s.after = Math.max(0, distance - move);
-        s.mu = move + s.after > 0 ? move / (move + s.after) : 1;
-        s.read = s.reg.readVh ? Math.min(s.after, s.reg.readVh * svh) : 0;
-        s.reg.tauRead?.set(s.after > 0 ? s.read / s.after : 0);
-        s.adjacent = !!next && Math.abs(next.top - rect.bottom) < 1;
-        if (rect.top > 0) return; // not started
-        c = Math.max(c, s.reg.index + uOf(s, -rect.top));
+      boxes = list.map((s) => {
+        const rect = s.reg.el.getBoundingClientRect();
+        return { index: s.reg.index, top: rect.top + scrollY, height: rect.height, moveVh: s.reg.moveVh, readVh: s.reg.readVh };
       });
-      return c;
+      metrics = segmentMetrics(boxes, { viewport, svh, scrollHeight: root.scrollHeight });
+      list.forEach((s, k) => {
+        const m = metrics[k];
+        s.range = m.range;
+        s.after = m.after;
+        s.mu = m.mu;
+        s.read = m.read;
+        s.adjacent = m.adjacent;
+        s.reg.tauRead?.set(s.after > 0 ? s.read / s.after : 0);
+      });
+    };
+    // The raw clock c at the current scroll position (a layout measurement only when the geometry is stale).
+    const measure = (scrollY: number) => {
+      if (geometryStale) remeasure();
+      return rawClock(boxes, metrics, scrollY);
     };
 
     // The clock split into segment, move progress, tail fraction and the legacy reel position.
@@ -806,8 +852,9 @@ export function FilmBackdrop({
 
     const update = () => {
       if (!segments.size) return;
-      if (window.scrollY !== 0) loader.engage(); // the idle gate lifts once (idempotent)
-      const c = measure();
+      const scrollY = window.scrollY;
+      if (scrollY !== 0) loader.engage(); // the idle gate lifts once (idempotent)
+      const c = measure(scrollY);
       const leap = Math.abs(c - spring.get());
       steer(c - scrolled.get());
       scrolled.set(c);
@@ -919,7 +966,7 @@ export function FilmBackdrop({
         if (layer.style.transform !== transform) {
           if (transform) {
             const b = segments.get(i)?.reg.breath;
-            const r = coverRect(canvas.clientWidth, canvas.clientHeight, keyAspect[i] || 16 / 9, REEL_FOCUS);
+            const r = placed(keyAspect[i] || 16 / 9);
             if (b) {
               layer.style.transformOrigin = `${r.left + r.width * b.origin[0]}px ${r.top + r.height * b.origin[1]}px`;
             }
@@ -994,10 +1041,12 @@ export function FilmBackdrop({
         });
         io.observe(reg.el);
       }
+      observeLayout();
+      geometryStale = true; // the registry changed: one measure for the whole batch
       update();
       loader.rerank(); // re-rank every segment around the (new) target
       onReel(position.get());
-      resize(); // a segment that joined with a wider tier than any before it may enlarge the canvas (once)
+      sizeBacking(); // a segment that joined with a wider tier than any before it may enlarge the canvas (once)
     };
 
     // The canvas backing store never needs to be wider than the widest frame tier this page load uses (components/film/
@@ -1007,18 +1056,21 @@ export function FilmBackdrop({
     // and dpr, not from the backing store, so this cannot feed back into the tier choice.
     const reelMaxWidth = reel.reduce((m, e) => Math.max(m, ...manifestFor(e, pickFilmOrientation()).widths), 0);
     let backingCap = 0;
-    // The canvas backing store from the CSS box and the widths in use; the key layers follow the box.
+    // The canvas backing store from the CSS box (the large-viewport layer, so a toolbar move never reallocates it) and
+    // the widths in use; the key layers follow the box and the stage.
     const sizeBacking = () => {
+      const stageBefore = box.svh;
+      measureBox();
       let w: number;
       let h: number;
       if (fullBacking) {
-        w = Math.round(canvas.clientWidth * dpr);
-        h = Math.round(canvas.clientHeight * dpr);
+        w = Math.round(box.w * dpr);
+        h = Math.round(box.h * dpr);
       } else {
         let inUse = 0;
         for (const t of segments.values()) inUse = Math.max(inUse, loader.width(t.reg.index));
         backingCap = growCap(backingCap, inUse, reelMaxWidth);
-        ({ w, h } = backingSize(canvas.clientWidth, canvas.clientHeight, dpr, backingCap));
+        ({ w, h } = backingSize(box.w, box.h, dpr, backingCap));
       }
       w = Math.max(1, w);
       h = Math.max(1, h);
@@ -1037,12 +1089,44 @@ export function FilmBackdrop({
         drawnSegmentMV.set(-1);
         drawnFrameMV.set(-1);
         draw(); // …so repaint before the browser presents it
+      } else if (box.svh !== stageBefore && drawnSeg >= 0) {
+        // Same backing store, new stage: the placement moved, so paint the frame again where it now lands.
+        drawnFrame = -1;
+        draw();
       }
       keyLayers.forEach((_, i) => layoutKey(i));
     };
+    // Something that moves the segments or resizes the page without a scroll event: measure again, then update.
+    const relayout = () => {
+      geometryStale = true;
+      update();
+    };
+    // The viewport changed (width, large viewport or stage; never a toolbar move alone: components/film/viewport.ts).
     const resize = () => {
       sizeBacking();
-      update();
+      relayout();
+    };
+
+    // The geometry's other sources of change: the body and the segments' container (content above or between the
+    // segments: the Projects filter, images, the stacked compositions), the segments themselves.
+    const layout = new ResizeObserver(() => relayout());
+    const layoutObserved = new Set<Element>();
+    const observeLayout = () => {
+      const els = [...segments.values()].map((s) => s.reg.el);
+      let container = els[0]?.parentElement ?? null;
+      while (container && !els.every((el) => container!.contains(el))) container = container.parentElement;
+      const want = new Set<Element>([document.body, ...els]);
+      if (container) want.add(container);
+      for (const el of layoutObserved) {
+        if (want.has(el)) continue;
+        layout.unobserve(el);
+        layoutObserved.delete(el);
+      }
+      for (const el of want) {
+        if (layoutObserved.has(el)) continue;
+        layout.observe(el);
+        layoutObserved.add(el);
+      }
     };
 
     // The loader may pause while the page is hidden and retry failed fetches when the network returns.
@@ -1055,15 +1139,18 @@ export function FilmBackdrop({
     // The boot key is the first thing this page needs on a deep link: before any frame request.
     if (bootHold >= 0) loadKey(bootHold);
 
+    // The canvas box itself (a scroll bar appearing changes its width without a resize event).
     const ro = new ResizeObserver(resize);
     ro.observe(canvas);
-    // Layout changes above a segment (fonts, the Projects filter) move it without a scroll event.
-    const layout = new ResizeObserver(() => update());
-    layout.observe(document.body);
+    const offViewport = subscribeFilmViewport(resize);
+    // Web fonts change line heights, so the segments' tops, once they have loaded.
+    document.fonts?.ready.then(() => {
+      if (!cancelled) relayout();
+    });
 
     const unsubscribe = position.on("change", onReel);
+    // Per scroll event: window.scrollY only (the geometry is cached).
     window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
     window.addEventListener("pagehide", saveBoot);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("online", onOnline);
@@ -1079,7 +1166,7 @@ export function FilmBackdrop({
       delete root.dataset.reelSection;
       unsubscribe();
       window.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
+      offViewport();
       window.removeEventListener("pagehide", saveBoot);
       window.removeEventListener("load", onLoad);
       document.removeEventListener("visibilitychange", onVisibility);
@@ -1096,31 +1183,43 @@ export function FilmBackdrop({
 
   return (
     <FilmBackdropContext.Provider value={api}>
-      {/* h-dvh: the dynamic viewport, so it never leaves a strip of flat base when a phone's toolbar
-          collapses. Transparent until its first paint (see draw). */}
-      <div ref={probeRef} aria-hidden className="pointer-events-none invisible fixed top-0 left-0 h-svh w-0" />
+      {/* The viewport probes (components/film/viewport.ts): the stage (svh: a chapter's `moveVh` is in small-viewport
+          units, like its spacer) and the film layers' height (the large viewport). */}
+      <div
+        aria-hidden
+        data-film-probe="stage"
+        className={`pointer-events-none invisible fixed top-0 left-0 w-0 ${STAGE_HEIGHT_CLASS}`}
+      />
+      <div
+        aria-hidden
+        data-film-probe="layer"
+        className={`pointer-events-none invisible fixed top-0 left-0 w-full ${LAYER_HEIGHT_CLASS}`}
+      />
+      {/* As tall as the large viewport, anchored at the top, so a phone's toolbar moving never resizes it (the picture
+          is placed on the small-viewport stage: placement.ts). Transparent until its first paint (see draw). */}
       <canvas
         ref={canvasRef}
         aria-hidden
-        className="pointer-events-none fixed inset-0 -z-10 h-dvh w-full opacity-0"
+        className={`pointer-events-none fixed inset-0 -z-10 w-full opacity-0 ${LAYER_HEIGHT_CLASS}`}
       />
       {/* Hold keys: fixed like the canvas (a still inside a segment's stage would scroll away with it
-          and tear against the canvas), same cover crop and focus, painted just above it. Background
+          and tear against the canvas), same box, placement and focus, painted just above it. Background
           layers rather than <img>, so the boot style in app/page.tsx can show one before hydration
           without touching React-rendered attributes. */}
-      <div ref={keysRef} aria-hidden className="contents">
+      <div ref={keysRef} aria-hidden className="contents" style={REEL_STAGE_VARS as CSSProperties}>
         {Array.from({ length: Math.max(keys.landscape.length, keys.portrait.length) }, (_, i) => {
           const src = keys.landscape[i];
           const portraitSrc = keys.portrait[i];
-          // The CSS cover fit (bg-cover at REEL_OBJECT_POSITION) is the boot script's pre-JS geometry;
-          // the backdrop then sets the same box in px from coverRect once the key has decoded.
+          // The boot script's pre-JS geometry is the CSS cover fit at REEL_OBJECT_POSITION of the content box, which
+          // the bottom padding (lvh − svh, --film-stage-pad) makes the stage: the placement wherever the stage's fit
+          // covers the layer. The backdrop then sets the placement in px once the key has decoded.
           return src || portraitSrc ? (
             <div
               key={`${i}:${src}:${portraitSrc}`}
               data-key={i}
               data-src={src}
               data-src-portrait={portraitSrc !== src ? portraitSrc : undefined}
-              className="pointer-events-none fixed inset-0 -z-10 h-dvh w-full bg-cover bg-no-repeat opacity-0"
+              className={`pointer-events-none fixed inset-0 -z-10 w-full bg-cover bg-no-repeat bg-origin-content opacity-0 supports-[height:100lvh]:pb-(--film-stage-pad) ${LAYER_HEIGHT_CLASS}`}
               style={{ backgroundPosition: REEL_OBJECT_POSITION }}
             />
           ) : null;

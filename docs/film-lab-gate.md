@@ -171,13 +171,41 @@ page load, the maximum `width` over the segments that have joined (each picks it
 during a page load: a later, wider tier may enlarge the canvas once, a slow-network retier to a smaller tier never shrinks
 it. Before any segment has joined the widest width the reel offers for this orientation stands in, so the first paint is
 never undersized; in practice the canvas is allocated once, at load, after the segments register (`canvasResizes` counts real
-reallocations only, and the specs allow at most 2 after a load and a short scroll). `tier()`, `draw()`'s cover fit, the hold
-keys and the overlays do not read the backing size.
+reallocations only, and the specs allow at most 2 after a load and a short scroll). The CSS box is the large-viewport layer
+(below), so a phone's toolbar moving never reallocates it. `tier()`, `draw()`'s placement, the hold keys and the overlays do not
+read the backing size.
 
 A 1440x900 laptop at DPR 2 gets 1920x1200 instead of 2880x1800; a 390x844 phone gets 432x935 (a 432 wide portrait tier) instead
 of 780x1688. For an A/B on a real phone open the page with **`?backing=full`**: that page load uses the old rule
 (round(CSS size x DPR capped at 2), no width cap). The flag is read once, when the engine starts, and the HUD line shows which
 size is in use.
+
+## Viewport and layout reads
+
+A phone's toolbar moving changes the dynamic viewport (dvh, `window.innerHeight`) and fires `resize`. Nothing the film is laid
+out with changes with it any more:
+
+- **The layers.** The canvas, the hold-key layers and the perspective-plate layer are `fixed` at the top and as tall as the
+  large viewport (`h-[var(--film-lvh,100lvh)]`, 100vh where lvh is unsupported; `LAYER_HEIGHT_CLASS`), so the backing store is
+  sized once for that box. The svh probe is `var(--film-svh,100svh)`; a second probe carries the layer height. Nothing sets the
+  two variables in production: they exist so a spec can simulate the toolbar's states on `:root`.
+- **The picture.** `components/film/placement.ts` is the one placement: the cover fit of the small-viewport stage (layer width x
+  svh, focus `REEL_FOCUS`), which is where the picture sat at first view before (the toolbar is shown on load), grown by the
+  minimum that covers the layer where the stage's fit would leave a strip at the bottom (a tall, narrow, height-limited
+  viewport). Where lvh = svh (desktop) it is `coverRect` itself, operation for operation. `draw()` (`backingPlacement`), the key
+  layers' background size and position, `PerspectivePlate`, `RideAnchor`, the fit guard, the frame variables (`frameBox.ts`) and
+  the hero poster (`--film-stage-h` / `--film-stage-top`, the browser's own cover fit in a box that the placement makes exact)
+  all use it.
+- **Resize work.** `components/film/viewport.ts` is one shared subscription that notifies only when the layout viewport's width,
+  the large viewport's height or the stage's height changes (window `resize` plus a ResizeObserver on the probes), never for a
+  toolbar move alone. The backdrop, the fit guard (which now judges fit against the stage, not `innerHeight`),
+  `PerspectivePlate`, `RideAnchor` and `FlowReveal` listen to it instead of `resize`.
+- **Scroll work.** The clock's geometry (each segment's document top and height, the page height, the root's client height,
+  svh; `components/film/clock.ts`) is cached and measured again on the viewport subscription, a ResizeObserver on the body, the
+  segments and their container, `load`, `document.fonts.ready` and a registry change; a scroll event reads `window.scrollY` only,
+  and the clock is the same arithmetic as before (`clock.test.ts` checks it against the old per-scroll measure). `measures` counts
+  real layout measurements: at 390x844, 200 scroll events cost 200 before and 0 now (4 at load in both). Registrations in one
+  commit reconcile once (a microtask).
 
 ## The specs
 

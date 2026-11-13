@@ -6,23 +6,29 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { FILM_ASPECT, columnTrackList, framePoint, frameVars, fx, fy } from "./frameBox.ts";
 import { coverRect } from "./filmBase.ts";
+import { placement } from "./placement.ts";
 
 const FOCUS = [0.5, 0.45];
 const close = (a, b, tol, what) =>
   assert.ok(Math.abs(a - b) <= tol, `${what}: got ${a}, expected ${b} (tol ${tol})`);
 
-/** Evaluate a CSS length expression built from the frame variables, in px, for a vw × vh box. */
-function evalCss(expr, vars, vw, vh) {
+/**
+ * Evaluate a CSS length expression built from the frame variables, in px, for a vw × vh box (the stage, svh) whose
+ * film layers are `lvh` tall (default: vh, as on desktop). A variable's fallback stands in where it is not set.
+ */
+function evalCss(expr, vars, vw, vh, lvh = vh) {
   let s = expr;
   for (let i = 0; i < 10 && s.includes("var("); i++) {
-    s = s.replace(/var\((--[\w-]+)\)/g, (_, name) => {
-      assert.ok(name in vars, `unknown variable ${name}`);
-      return `(${vars[name]})`;
+    s = s.replace(/var\((--[\w-]+)(?:,\s*([^()]+))?\)/g, (_, name, fallback) => {
+      if (name in vars) return `(${vars[name]})`;
+      assert.ok(fallback, `unknown variable ${name}`);
+      return fallback;
     });
   }
   s = s
     .replace(/100cqw/g, String(vw))
-    .replace(/100dvh/g, String(vh))
+    .replace(/100svh/g, String(vh))
+    .replace(/100lvh/g, String(lvh))
     .replace(/(\d+(?:\.\d+)?)px/g, "$1")
     .replace(/calc\(/g, "(")
     .replace(/max\(/g, "Math.max(")
@@ -90,5 +96,30 @@ test("column tracks centre each column on its anchor, ≥ 24 px inside the viewp
       assert.ok(x >= 24 - 0.05 && x + w <= vw - 24 + 0.05, `${vw}x${vh} column ${k} edge: ${x}..${x + w}`);
       x += w;
     });
+  }
+});
+
+test("frame variables reproduce the placement where the large viewport is taller than the stage (phones, tablets)", () => {
+  for (const [orientation, aspect] of Object.entries(FILM_ASPECT)) {
+    const vars = { ...frameVars(FOCUS), "--fa": String(aspect) };
+    for (const [vw, svh, lvh] of [
+      [390, 664, 754],
+      [360, 560, 640],
+      [320, 460, 528],
+      [844, 340, 390],
+      [300, 700, 800],
+      [1180, 740, 820],
+    ]) {
+      const r = placement(vw, lvh, svh, aspect, FOCUS);
+      const what = `${orientation} ${vw}x${svh}/${lvh}`;
+      close(evalCss("var(--fw)", vars, vw, svh, lvh), r.width, 0.01, `${what} fw`);
+      close(evalCss("var(--fh)", vars, vw, svh, lvh), r.height, 0.02, `${what} fh`);
+      close(evalCss("var(--fx0)", vars, vw, svh, lvh), r.left, 0.01, `${what} fx0`);
+      close(evalCss("var(--fy0)", vars, vw, svh, lvh), r.top, 0.02, `${what} fy0`);
+      for (const p of [[0, 0], [0.5, 0.45], [1, 1]]) {
+        close(evalCss(fx(p[0]), vars, vw, svh, lvh), r.left + r.width * p[0], 0.02, `${what} fx(${p[0]})`);
+        close(evalCss(fy(p[1]), vars, vw, svh, lvh), r.top + r.height * p[1], 0.03, `${what} fy(${p[1]})`);
+      }
+    }
   }
 });

@@ -203,7 +203,7 @@ summed distance to the effective target (`draws`, `exactDraws`, `fallbackDraws`,
 with the canvas not showing the effective target (`staleTicks`), the time spent so (`staleMs`) and the longest continuous stretch
 (`staleMsMax`). The effective target (`effectiveFrame`, beside the raw `targetFrame`) is the target frame, or, where the engine never
 loads that frame by design (odd breathing-tail frames on a coarse pointer, frames between the reduced-motion stills), the nearest
-frame it does load. Also `held` (draw declined because a nearer frame was coming); `canvasResizes` (backing-store reallocations); `measures` (layout read batches). The script's
+frame it does load. Also `held` (draw declined because a nearer frame was coming); `canvasResizes` (backing-store reallocations); `measures` (layout measurements of the clock's geometry: on load, resizes and content changes, no longer per scroll event). The script's
 columns: "exact %" = exactDraws / draws, "stale %" = staleTicks / ticks, "mean fallback dist" = fallbackDistance / draws (an exact
 paint counts 0), "settle ms" = time from the scroll stopping until the canvas shows the effective target (null: not within 10 s). Full
 list and where the engine updates each: `docs/film-lab-gate.md`.
