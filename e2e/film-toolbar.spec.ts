@@ -328,8 +328,10 @@ for (const [name, viewport, mobile] of [
       const s = await snapshot(page);
       expect(s.keys.length).toBeGreaterThan(0);
       for (const k of s.keys) {
+        // The layer's own box, exactly (the canvas's: as tall as 100lvh, which WebKit gives as 843.984375 at 844).
         expect(k.box, `key ${k.i} box`).toEqual(s.canvas);
-        expect([k.box.top, k.box.height], `key ${k.i} top and height`).toEqual([0, viewport.height]);
+        expect(k.box.top, `key ${k.i} top`).toBe(0);
+        expect(Math.abs(k.box.height - viewport.height), `key ${k.i} height ${k.box.height}: the viewport's, to a layout unit`).toBeLessThanOrEqual(1 / 64);
       }
       // A laid-out key's CSS fit and its px agree here as well.
       const css = await cssKeyPictures(page, OBJECT_POSITION);
