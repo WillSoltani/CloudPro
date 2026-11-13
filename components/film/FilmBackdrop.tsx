@@ -33,8 +33,18 @@ import {
 import { FilmHud } from "@/components/film/FilmHud";
 import { backingSize, growCap, MAX_DPR, wantsFullBacking } from "@/components/film/backing";
 import { createLegacyLoader } from "@/components/film/loader/legacy";
+import { createBudgetLoader } from "@/components/film/loader/budget";
+import { budgetOverrideBytes } from "@/components/film/loader/budget-bytes";
 import { readConnection, saveDataOn } from "@/components/film/loader/network";
-import type { FrameLoader, WantPlan } from "@/components/film/loader/types";
+import { loaderFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
+import type { FrameLoader, LoaderEnv, WantPlan } from "@/components/film/loader/types";
+
+/**
+ * The frame loader a page load runs unless `?loader=legacy|budget|budget-main` names another (components/film/loader/
+ * select.ts). "budget": the budget loader, decoding in the film worker; it falls back to main-thread decodes on its own,
+ * and the page runs the legacy loader where it lacks fetch, Blob or createImageBitmap.
+ */
+const DEFAULT_LOADER: LoaderName = "budget";
 
 /**
  * One crop point for the whole reel (x, y in 0–1): segments share boundary frames, so a per-film focus
@@ -233,7 +243,8 @@ export function breathCurve(tau: number, tauRead: number): number {
  *
  * Frames: this component owns the clock, the draw call, the hold keys, the chrome and the registration; which
  * frames exist in memory is the frame loader's (components/film/loader: the FrameLoader interface in types.ts,
- * the legacy loader in legacy.ts). It is picked in one place in the effect (`const loader = createLegacyLoader(…)`).
+ * the budget loader in budget.ts, the legacy loader in legacy.ts). It is picked in one place in the effect
+ * (DEFAULT_LOADER, or `?loader=`).
  * Each segment joins it with the tier tier() picks from the canvas box (`data-width`, the backing cap and the
  * counters read the loader's width); every clock tick hands it what the clock wants (want: the active segment,
  * its target frame, the direction of travel, where the neighbours are entered); draw() paints `loader.nearest`
@@ -376,9 +387,12 @@ export function FilmBackdrop({
     const segments = new Map<number, Segment>();
     const byEl = new Map<Element, Segment>();
 
-    // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load. Its
+    // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load
+    // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab). Its
     // counters reach `window.__filmStats` through the one adapter in filmStats.ts.
-    const loader: FrameLoader = createLegacyLoader({
+    const search = window.location.search;
+    const loaderName = runnableLoader(loaderFromQuery(search, DEFAULT_LOADER), pageCaps());
+    const loaderEnv: LoaderEnv = {
       stats: loaderStatsFor(instrument),
       connection,
       // The idle gate opens at once when the page has already moved from the top (a hash jump, a restored position),
@@ -397,7 +411,14 @@ export function FilmBackdrop({
           if (!cancelled) sizeBacking();
         });
       },
-    });
+    };
+    const loader: FrameLoader =
+      loaderName === "legacy"
+        ? createLegacyLoader(loaderEnv)
+        : createBudgetLoader(loaderEnv, {
+            mainThread: loaderName === "budget-main",
+            budgetBytes: budgetOverrideBytes(search) ?? undefined,
+          });
     stats.mode = loader.mode;
     let cancelled = false;
     let raf = 0;

@@ -5,7 +5,8 @@ import type { ConnectionInfo } from "./network";
  * The seam between the film engine (components/film/FilmBackdrop.tsx) and the code that decides which frames exist in
  * memory. FilmBackdrop owns the clock, the draw call, the hold keys, the chrome and the registration; a FrameLoader
  * owns the requests, the decoded frames and their eviction. FilmBackdrop picks one loader per page load
- * (`createLegacyLoader` in ./legacy.ts today) and talks to it only through this interface, so another loader can be
+ * (`createBudgetLoader` in ./budget.ts by default, `createLegacyLoader` in ./legacy.ts; ./select.ts) and talks to it
+ * only through this interface, so another loader can be
  * dropped in without touching the clock, the hold keys, the breathing tails, the overlays or the choreography.
  *
  * A loader knows nothing of the page beyond Image, performance and navigator.connection (passed in `LoaderEnv`):
@@ -50,7 +51,10 @@ export type WantPlan = {
   entry: (index: number) => number;
 };
 
-/** A decoded frame for draw(): the nearest one held to the frame asked for. */
+/**
+ * A decoded frame for draw(): the nearest one held to the frame asked for. A loader may hand out the same object on
+ * every call (the budget loader does): read it at once, never keep it.
+ */
 export type HeldFrame = {
   frame: number;
   image: CanvasImageSource;

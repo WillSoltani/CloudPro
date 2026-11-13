@@ -797,11 +797,15 @@ export function createBudgetPlanner(config: PlannerConfig) {
       return true;
     },
 
-    /** A fetch failed. True when the frame is now missing (tries spent): report it once. */
-    fetchFailed(segIndex: number, frame: number, epoch: number, now: number): boolean {
+    /**
+     * A fetch failed. True when the frame is now missing (tries spent): report it once. `final`: the server answered
+     * that the frame cannot be had (a 404), so no try is left.
+     */
+    fetchFailed(segIndex: number, frame: number, epoch: number, now: number, final = false): boolean {
       fetchesInFlight--;
       const s = segs[segIndex];
       if (!s || s.epoch !== epoch) return false;
+      if (final) s.tries[frame] = FETCH_TRIES - 1;
       const tries = ++s.tries[frame];
       if (tries >= FETCH_TRIES) {
         s.bytes[frame] = B_DEAD;
@@ -865,9 +869,43 @@ export function createBudgetPlanner(config: PlannerConfig) {
       }
       s!.retryAt[frame] = now + RETRY_BASE_MS * 2 ** (tries - 1);
       if (s!.retryAt[frame] < retryWake) retryWake = s!.retryAt[frame];
-      // The fetch order may have passed it: it is fetched again from the target-first check or the next re-rank.
+      // The fetch order may have passed it: the scan starts again from the top of the order.
       orderDirty = true;
+      cursor = 0;
       return false;
+    },
+
+    /**
+     * A fetch was cancelled before it produced anything (the decoding worker stopped): its slot is freed and the frame
+     * is fetched again later. Not a try.
+     */
+    fetchCancelled(segIndex: number, frame: number, epoch: number) {
+      fetchesInFlight--;
+      const s = segs[segIndex];
+      if (!s || s.epoch !== epoch) return;
+      if (s.bytes[frame] === B_FETCHING) s.bytes[frame] = B_NONE;
+      cursor = 0;
+    },
+
+    /** A decode was cancelled before it produced a frame (the decoding worker stopped): its reservation is released. Not a try. */
+    decodeCancelled(segIndex: number, frame: number, epoch: number) {
+      decodesInFlight--;
+      const s = segs[segIndex];
+      if (settleOrphan(s, frame, epoch)) return;
+      s!.dec[frame] = D_NONE;
+      reserved -= s!.frameBytes;
+    },
+
+    /**
+     * Every compressed byte held is gone (the worker that held them stopped): each frame's bytes are dropped
+     * (onBytesDropped) and will be fetched again. Call after cancelling the decodes in flight. Decoded frames stay.
+     */
+    forgetBytes() {
+      for (const s of segs) {
+        if (!s) continue;
+        for (let i = 0; i < s.count; i++) if (s.dec[i] !== D_DECODING) dropBytes(s, i);
+      }
+      cursor = 0;
     },
 
     /** The epoch of segment `index` (changes on join and retier): pass it back with the job's arrival. */
