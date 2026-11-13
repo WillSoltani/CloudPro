@@ -192,6 +192,8 @@ for (const mode of MODES) {
           await moveToolbar(control, "shown", mode);
           const ref = await snapshot(control);
           expect(done.scrollY, "same scroll end").toBe(res.scrollY);
+          const refRaw = (await readFilmStats(control))!.rawClock;
+          expect(refRaw, "raw clock at the same scroll position (the same geometry)").toBe(stats.rawClock);
           expect(ref.clock, "clock at the same scroll position").toBe(end.clock);
           expect([ref.segment, ref.frame], "frame at the same scroll position").toEqual([end.segment, end.frame]);
         } finally {

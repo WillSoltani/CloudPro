@@ -243,9 +243,30 @@ export function snapshot(page: Page): Promise<Snap> {
  * (the scroll position, the target, what is painted, the engine's and the loader's state) in the message.
  */
 async function settleOrThrow(page: Page, what: string): Promise<void> {
-  if (await settle(page)) return;
-  const y = await page.evaluate(() => window.scrollY);
-  throw new Error(`the film did not come to rest ${what}: ${unsettledAt(page, y)}`);
+  if (!(await settle(page))) {
+    const y = await page.evaluate(() => window.scrollY);
+    throw new Error(`the film did not come to rest ${what}: ${unsettledAt(page, y)}`);
+  }
+  // settle() rests on the painted frame and an unchanged 3-decimal clock; the smoothing's last thousandth of a clock
+  // unit can still be under way then, for as long as the machine is slow. Wait for the shown clock to have landed on
+  // the raw one (the spring ends on its target exactly), so two pages at one scroll position show the same clock.
+  try {
+    await page.waitForFunction(
+      () => {
+        const c = document.querySelector<HTMLCanvasElement>("canvas[data-clock]");
+        return !!c && !!window.__filmStats && c.dataset.clock === window.__filmStats.rawClock.toFixed(3);
+      },
+      undefined,
+      { timeout: 30_000 },
+    );
+  } catch {
+    const now = await page.evaluate(() => ({
+      y: window.scrollY,
+      shown: document.querySelector<HTMLCanvasElement>("canvas[data-clock]")?.dataset.clock,
+      raw: window.__filmStats?.rawClock,
+    }));
+    throw new Error(`the shown clock did not land on the raw clock ${what}: ${JSON.stringify(now)}`);
+  }
 }
 
 /** Moves the simulated toolbar (see ToolbarMode) and lets the page react. */
