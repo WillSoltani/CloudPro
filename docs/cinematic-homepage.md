@@ -439,6 +439,29 @@ before and 28.2, 31.7, 40.2 % after; frame-interval maxima of 0.1 to 15 s show t
 what is measured and drawn per toolbar move and per scroll event, not frame delivery; a clean comparison needs a quiet machine.
 Canvas resizes were 0 in every pass, before and after.
 
+**Hold keys before the backdrop runs** (review fix). On a reload or a `#section` deep link into a hold, the boot style in
+`app/page.tsx` shows the key before any script, with the key layer's own CSS. That layer was the canvas's box with a bottom
+padding of lvh − svh, so its cover fit was the stage's plain fit; `placement()` grows that fit where it would not cover the
+lvh-tall layer, and there the key zoomed about the focus when the backdrop set its px (by the maths: 0.75 % at 360x684 in 740,
+1.5 % at 411x802 in 858, 4.2 % at 411x826 in 882; none on the iPhone shapes, which are width-limited). The key layers now have
+the hero poster's box (`STAGE_BOX_CLASS` in `components/film/placement.ts`: top `--film-stage-top`, height `--film-stage-h`,
+its bottom on the large viewport's), whose cover fit is the placement in every case, so nothing moves when the backdrop takes
+over. On desktop, wherever lvh = svh and without lvh support the key box is exactly what it was (top 0, full height). The
+backdrop's px and the breath's origin are offset by the box's top (`stageBox()`), and the push saved for a reload is a new field
+(`b`) so a record in the old meaning is never applied. Checked by `placement.test.ts` (the CSS of the class evaluated against
+`placement()` for no-grow and grow viewports; it failed on the old padding box) and by `film-toolbar.spec.ts` at 411x826 in 882
+(the CSS-only fit of each laid-out key against its px, the key box against the poster box, the breath origin and the reload; the
+fit check failed on the old build with 411x890.5 against 428.2x927.8), and at 1440x900 and 390x844 (top 0, full height). The
+toolbar spec now also compares the key boxes, the poster box and the frame variables in the mode where the window, and so dvh,
+moves (a dvh key layer, a dvh poster and 100dvh frame variables were each tried and each failed it). `npm run test:film-unit`
+now runs `frameBox.test.mjs` too, and the feel spec's timing comparison is a fake-clock unit test (`smoothing.test.ts`: 60 Hz,
+30 Hz, 50 and 100 ms frames, an uneven mix); the browser spec asserts only what holds at any machine speed.
+
+What a visitor sees differently: the first view on tall Android phones (20:9 and taller, where `placement()` grows the scale) is
+1 to 4 % larger than before stage 5, the grow the settled geometry decision accepts. The phone canvas's backing store is about
+13 % taller (it covers the large viewport, 432x835 for 432x736 at 390x664 in 754). The navbar and the scroll-to-top button
+still run their resize handlers on every toolbar move; they are a later stage.
+
 **Owner sheet** (PNG contact sheets, not committed; handed over with the stage's report; real frames, before and after, toolbar shown and hidden at the hero, inside the second film and
 at a reading hold; 1440x900 before and after, which are pixel for pixel the same apart from the pulsing status dot).
 
