@@ -38,7 +38,7 @@ import { createBudgetLoader } from "@/components/film/loader/budget";
 import { withLegacyFallback } from "@/components/film/loader/fallback";
 import { budgetOverrideBytes } from "@/components/film/loader/budget-bytes";
 import { readConnection, saveDataOn } from "@/components/film/loader/network";
-import { loaderFromQuery, packsFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
+import { loaderFromQuery, packOriginFromQuery, packsFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
 import type { FrameLoader, LoaderEnv, WantPlan } from "@/components/film/loader/types";
 
 /**
@@ -427,6 +427,7 @@ export function FilmBackdrop({
                 mainThread: loaderName === "budget-main",
                 budgetBytes: budgetOverrideBytes(search) ?? undefined,
                 packs: packsFromQuery(search),
+                packOrigin: packOriginFromQuery(search, window.location.hostname) ?? undefined,
                 onUnusable,
               }),
             createLegacyLoader,

@@ -280,6 +280,20 @@ async function walk(loader: FrameLoader, counts: number[], dir: 1 | -1, step = 4
 const decodedUrls = (bitmaps: FakeBitmap[]) => bitmaps.map((b) => b.url);
 const packRequests = (t: { requests: Request[] }) => t.requests.length;
 
+describe("film packs: lab pack origin", () => {
+  it("packOrigin moves the pack's URL to the local origin and leaves the frame files where they are", async () => {
+    const f = makeFilm("o0", 33);
+    const t = setup([f], {
+      budget: { packOrigin: "http://127.0.0.1:3008", resolveUrl: (u) => new URL(u, "https://cdn.example").href },
+    });
+    t.loader.want(plan(0, 0, 0, [33]));
+    await flush(20);
+    const msgs = t.packMessages();
+    assert.ok(msgs.length >= 1);
+    assert.equal(msgs[0].url, `http://127.0.0.1:3008${f.url}`);
+  });
+});
+
 describe("film packs: reading", () => {
   it("delivers the hold frames and the skeleton before the rest, in arbitrary chunks", async () => {
     const f = makeFilm("p0", 97);

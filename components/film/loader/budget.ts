@@ -1,5 +1,6 @@
 import type { FilmManifest } from "../filmCore";
 import { frameUrl, packFor, packUrl } from "../filmBase";
+import { rehostUrl } from "./select";
 import { pickFrameBudgetBytes, tierFrameBytes } from "./budget-bytes";
 import {
   createBudgetPlanner,
@@ -86,6 +87,8 @@ export type BudgetOptions = {
   readyTimeoutMs?: number;
   /** Read films from their packs where the manifest names one (default true; `?pack=0` turns it off). */
   packs?: boolean;
+  /** LAB ONLY (`?packorigin=`, select.ts packOriginFromQuery): read packs from this origin, frames from where they are. */
+  packOrigin?: string;
   /**
    * Main-thread decodes cannot decode the frames either (DECODE_FALLBACK_ERRORS frames failed in a row): this loader
    * cannot show the film here. Called once; the caller disposes it and runs the legacy loader (./fallback.ts).
@@ -525,7 +528,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   // The pack segment `index` reads at `width`, if any (not with `?pack=0`, not for reduced-motion stills).
   const choosePack = (index: number, film: FilmManifest, width: number, stills: boolean) => {
     const url = packsOn && !stills ? packUrl(film, width) : null;
-    planner.setPack(index, url ? resolveUrl(url) : null, url ? packFor(film, width) : null);
+    planner.setPack(index, url ? (options.packOrigin ? rehostUrl(resolveUrl(url), options.packOrigin) : resolveUrl(url)) : null, url ? packFor(film, width) : null);
     packGauges();
   };
 

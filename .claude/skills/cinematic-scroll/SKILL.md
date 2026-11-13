@@ -21,6 +21,7 @@ All copy is real HTML. Reuse the technique, never pear.no's imagery, layout or w
 | Keys | `cp` of a film's last frame at its top tier; `scripts/films/export-key.sh` only for a still that is not a frame |
 | Stills / sequence / join QA | `scripts/films/film-qa.py` (`seq`, `join`, `still`, `clip`, `lamp`, sheets, ledger) |
 | Frames → CDN | `scripts/films/sync-film.sh` + the `CloudPortfolioFilms` stack (`infra/lib/films-stack.ts`) |
+| Packs (one file per film and width; a new or re-cut film needs its packs built too: `npm run film:pack -- --from-cdn <film> --write-manifest`, upload, `--check-cdn`, then ship the manifest; `docs/film-lab-gate.md` "Packs") | `scripts/films/pack.mjs` |
 | Page | `components/film/`: `FilmBackdrop` (canvas + clock), `FilmChapter`, `Reveal`/`FlowReveal`, `FrameLayout`, `ChapterHead`, `tones.ts`, `sectionTokens.ts`, `RackPlate`/`PerspectivePlate`, `choreo.ts`, `reel.ts`, `useReelChrome`; the hero `BeaconHero` |
 | Browser QA | `scroll-qa` agent (Playwright MCP; probes in `films-src/qa/part5/`) |
 | Brief, decisions | `docs/cinematic-homepage.md`; storyboards `films-src/rack/storyboard.md` (with its G2' decisions), `films-src/tower2/storyboard.md` |

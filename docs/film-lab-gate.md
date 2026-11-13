@@ -20,7 +20,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Rules every loader shares (usable frames, network class), their unit tests | `components/film/loader/usable.ts`, `network.ts`, `shared.test.ts` |
 | The budget loader's pure planner and byte arithmetic, their unit tests | `components/film/loader/budget-plan.ts`, `budget-bytes.ts`, `budget-plan.test.ts`, `budget-bytes.test.ts` |
 | The budget loader (the default), its film worker and frame store, the message protocol, the loader choice; unit tests with a fake worker and fetch | `components/film/loader/budget.ts`, `frame-worker.js` (+ `frame-worker.d.ts`), `frame-worker-protocol.ts`, `select.ts`; `budget.test.ts` |
-| Film packs (stage 7): the format, writer and streaming reader shared by the scripts, the page and the worker; the builder; their unit tests | `components/film/loader/pack-format.mjs` (+ `.d.mts`), `scripts/films/pack.mjs`, `scripts/films/pack-lib.mjs`; `pack-format.test.ts`, `components/film/packs.test.ts`, `scripts/films/pack-lib.test.mjs` (see "Packs") |
+| Film packs (stage 7): the format, writer and streaming reader shared by the scripts, the page and the worker; the builder; their unit tests | `components/film/loader/pack-format.mjs` (+ `.d.mts`), `scripts/films/pack.mjs`, `scripts/films/pack-lib.mjs`, the lab pack server `scripts/films/pack-serve.mjs` (`pack-serve.test.mjs`); `pack-format.test.ts`, `components/film/packs.test.ts`, `scripts/films/pack-lib.test.mjs` (see "Packs") |
 | Film packs at run time: the pack reads in the frame store, the pack plan in the planner, its byte arithmetic; unit tests with a fake server that streams packs in arbitrary chunks | `components/film/loader/frame-worker.js` (pack reads), `budget-plan.ts` (`nextPackOp`), `pack-plan.ts`; `pack-loader.test.ts`; spec `e2e/film-packs.spec.ts` (see "Packs at run time") |
 | CI job | `film` in `.github/workflows/ci.yml` ("Film specs (placeholder frames)") |
 
@@ -99,6 +99,26 @@ frame's bytes with the downloaded file both through the table and through `PackB
 `--verify` re-checks built packs against the CDN's frames; `--check-cdn [--full]` checks the pack a manifest names as the page
 will read it (HEAD: 200, size, `application/octet-stream`, CORS; a Range read of the header: 206, a readable Content-Range,
 the header parses and agrees with the entry and the frame count; the last 16 bytes; `--full` the content hash).
+
+**Shipping packs: upload first, deploy after.** A manifest that names a pack the CDN does not hold makes every first visit
+ask for it, get a 404 and fall back to one file per frame (correct, but slower than today's idle gate by one wasted request), so
+the order is: (1) build with `npm run film:pack -- --from-cdn <film>|--all --write-manifest` (the output goes to the `--out` tree,
+never into git; the manifest entries are the only committed change) and `--verify` it; (2) the packs are uploaded to the
+films bucket under the same path as the output tree (`films/<name>/<width>/pack-<hash>.bin`, `Cache-Control: public,
+max-age=31536000, immutable`, `Content-Type: application/octet-stream`; `sync-film.sh` uploads only `*.webp`, so this is a
+separate step done by whoever owns the bucket); (3) `npm run film:pack -- --check-cdn --all [--full]` against the CDN; (4) only
+then merge the manifests and deploy. A new or re-cut film gets a new name (frames are immutable) and its packs built the same way;
+`build-film.sh` writes a manifest without `packs`, which is correct until the packs exist.
+
+**Measuring packs before they are uploaded (lab only).** `node scripts/films/pack-serve.mjs [--root <out tree>] [--port 3008]
+[--log f]` serves the built packs on 127.0.0.1 with the CDN's behaviour for them (`Access-Control-Allow-Origin: *`, the exposed
+headers, `Accept-Ranges`, 206 with `Content-Range`, strong ETag, `immutable`, a one hour preflight; nothing else is served). A page
+on `127.0.0.1` or `localhost` with **`?packorigin=http://127.0.0.1:3008`** reads its packs from there (same path, other origin)
+while the frames stay where the manifest puts them (`select.ts` `packOriginFromQuery`: ignored on any other page host and for any
+other origin; `rehostUrl`). In the gate: `--query "packorigin=http://127.0.0.1:3008"`. The gate throttles every request of the page, so
+on the slow-phone profile the local packs are throttled like the CDN's frames; on the other profiles they come over loopback, faster
+than the CDN would serve them. The server is HTTP/1.1 (Node), the CDN HTTP/2. Real-frame A/B and what it showed: "Stage 7: packs"
+in `docs/cinematic-homepage.md`.
 
 **Placeholder packs.** `npm run film:placeholder` also writes a pack for every film and width from the placeholder frames,
 in the real format and order, named as the manifest's `packs[width].file` when there is one (its sizes then differ from the
@@ -180,7 +200,7 @@ URL says **`?loader=legacy`**, **`?loader=budget`** or **`?loader=budget-main`**
 thread from the start). The page falls back on its own (`select.ts` `runnableLoader`): without `Worker` it runs
 `budget-main`, without `fetch`, `Blob` or `createImageBitmap` the legacy loader. **`?budget=<MB>`** (MiB, 8 to 4096) forces the
 budget loader's decoded-frame budget for the page load, so a desktop browser can run with a phone's figure. **`?pack=0`** turns film packs
-off (see "Packs at run time"). A loader reports through the
+off (see "Packs at run time"); the lab-only **`?packorigin=`** moves the packs to a local origin (see "Packs"). A loader reports through the
 narrow `LoaderStats` hook (requests with refetches, decodes, failures, in flight, frames alive and their bytes; for a loader
 that reserves decodes and keeps compressed bytes also decode start and end, bytes held, its budget and a change of name),
 turned into `window.__filmStats` by the one adapter `loaderStatsFor` in `filmStats.ts`, so the counters keep the same
