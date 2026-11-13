@@ -177,9 +177,16 @@ export async function openHome(page: Page, query = ""): Promise<void> {
  * frame or, where the engine never loads that frame by design, such as an odd breathing-tail frame on a phone, a
  * nearest frame it does load: `effectiveFrame`) and has stayed there, with the clock unchanged, for three looks
  * 60 ms apart. It also accepts any frame of the target segment once nothing is in flight and nothing has changed
- * for six looks (a frame that failed to load). Resolves false after `timeoutMs`
- * (the caller decides whether that is a failure). It reads the counters and the canvas hooks only; no threshold
- * on how fast anything is.
+ * for six looks (a frame that failed to load). Resolves false after `timeoutMs` of the page's own run time (the caller
+ * decides whether that is a failure). It reads the counters and the canvas hooks only; no threshold on how fast
+ * anything is.
+ *
+ * The page's run time, not the wall clock: a gap of more than FROZEN_MS between two looks is time the page did not
+ * run (a long task, the machine paging the browser out: 107 s in one task was recorded on a loaded machine), so it
+ * does not count against `timeoutMs`, and the looks before it do not count towards resting (the three or six looks
+ * must follow each other after it). A stop therefore fails only when the page ran for `timeoutMs` without coming to
+ * rest. The wall clock still bounds the wait, at FROZEN_WALL_FACTOR x `timeoutMs`. A stop that settles after such a
+ * freeze is logged (`[settle] page frozen …`).
  *
  * When it gives up it takes a diagnostic snapshot in the same page call (`settleNote` and `unsettledAt` put it in a
  * failure message; it is also logged): the target, what is painted, the canvas hooks, the counters that matter, the
@@ -189,7 +196,7 @@ export async function openHome(page: Page, query = ""): Promise<void> {
  * changing mean the engine stopped (a stall); a key that keeps changing means the target or the canvas never rests.
  */
 export async function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
-  const r = await page.evaluate(async (limit) => {
+  const r = await page.evaluate(async ({ limit, frozenMs, wallFactor }) => {
     type Seen = { lt?: [number, number][] };
     const w = window as unknown as Window & { __settleSeen?: Seen };
     const seen: Seen = (w.__settleSeen ??= {});
@@ -212,19 +219,30 @@ export async function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
     let looks = 0;
     let prev = t0;
     let maxGap = 0;
-    let gapsOver1s = 0;
+    let ran = 0;
+    let frozen = 0;
+    let frozenTotal = 0;
     let keyChanges = 0;
     let restingLooks = 0;
     let exactLooks = 0;
     const firstKey: string[] = [];
-    while (performance.now() - t0 < limit) {
+    const frozenNote = () => ({ frozen, frozenMs: Math.round(frozenTotal), maxGapMs: Math.round(maxGap), wallMs: Math.round(performance.now() - t0) });
+    while (ran < limit && performance.now() - t0 < limit * wallFactor) {
       await new Promise((r) => setTimeout(r, 60));
       const now = performance.now();
       const gap = now - prev;
       prev = now;
       looks++;
       if (gap > maxGap) maxGap = gap;
-      if (gap > 1000) gapsOver1s++;
+      if (gap > frozenMs) {
+        // The page did not run: not counted, and resting starts again after it.
+        frozen++;
+        frozenTotal += gap;
+        stable = 0;
+        last = "";
+      } else {
+        ran += gap;
+      }
       const s = window.__filmStats;
       const c = document.querySelector<HTMLCanvasElement>("canvas[data-segment]");
       if (!s || !c) continue;
@@ -236,7 +254,7 @@ export async function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
       if (resting) restingLooks++;
       if (!firstKey.length) firstKey.push(key);
       if (resting && key === last) {
-        if (++stable >= (exact ? 3 : 6)) return { ok: true as const };
+        if (++stable >= (exact ? 3 : 6)) return { ok: true as const, frozen: frozen ? frozenNote() : null };
       } else {
         stable = 0;
       }
@@ -256,11 +274,14 @@ export async function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
     }
     return {
       ok: false as const,
+      frozen: null,
       snapshot: {
         windowMs: Math.round(end - t0),
+        ranMs: Math.round(ran),
         looks,
         maxGapMs: Math.round(maxGap),
-        gapsOver1s,
+        frozen,
+        frozenMs: Math.round(frozenTotal),
         keyChanges,
         restingLooks,
         exactLooks,
@@ -295,16 +316,22 @@ export async function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
         engine: why,
       },
     };
-  }, timeoutMs);
+  }, { limit: timeoutMs, frozenMs: FROZEN_MS, wallFactor: FROZEN_WALL_FACTOR });
   if (r.ok) {
     giveUps.delete(page);
+    if (r.frozen) console.log(`[settle] page frozen ${r.frozen.frozen}x for ${r.frozen.frozenMs} ms in all (longest gap ${r.frozen.maxGapMs} ms); settled after ${r.frozen.wallMs} ms of wall time`);
     return true;
   }
   const note = formatSnapshot(r.snapshot);
   giveUps.set(page, note);
-  console.log(`[settle] gave up after ${timeoutMs} ms at scrollY ${await page.evaluate(() => window.scrollY).catch(() => "?")}:\n${note}`);
+  console.log(`[settle] gave up after ${timeoutMs} ms of page run time at scrollY ${await page.evaluate(() => window.scrollY).catch(() => "?")}:\n${note}`);
   return false;
 }
+
+/** A gap between two of settle()'s looks longer than this (ms) is time the page did not run. */
+export const FROZEN_MS = 1_000;
+/** settle() waits at most this many times its run-time limit of wall time, however long the page is frozen. */
+export const FROZEN_WALL_FACTOR = 6;
 
 /** The snapshot as lines: one per field, the engine's state split into its parts, one line per segment of the plan. */
 function formatSnapshot(snap: Record<string, unknown>): string {
