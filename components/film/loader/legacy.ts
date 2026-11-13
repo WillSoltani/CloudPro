@@ -1,7 +1,9 @@
 import type { FilmManifest } from "../filmCore";
 import { frameUrl } from "../filmBase";
 import { frameBytes } from "../filmStats";
+import { connectionSlow, heroTimesSlow, maxInflightFor, saveDataOn, SLOW_INFLIGHT, TIMED_FRAMES } from "./network";
 import type { FrameLoader, HeldFrame, ImageLike, JoinOptions, LoaderEnv, WantPlan } from "./types";
+import { isUsable } from "./usable";
 
 /**
  * The legacy frame loader: the loader FilmBackdrop has always had, moved behind the FrameLoader seam (./types.ts) with
@@ -16,13 +18,10 @@ const STRIDES = [16, 8, 4, 2, 1];
 // fetches only its stride-ENGAGE_STRIDE skeleton (plus 0, M and last) and the next segment its 0, M and
 // last: an idle phone no longer downloads two films before the first scroll.
 const ENGAGE_STRIDE = 4;
-// A slow network (navigator.connection's effectiveType, or the timed first hero frames where there is none):
-// the smallest tier, and at most this many requests in flight.
-const SLOW_INFLIGHT = 3;
-// Without navigator.connection: the first this-many hero frames are timed; a median above SLOW_FRAME_MS
-// moves every segment not yet started to the smallest tier (at the next segment boundary).
-const TIMED_FRAMES = 8;
-const SLOW_FRAME_MS = 400;
+// A slow network (navigator.connection's effectiveType, or the timed first hero frames where there is none: the
+// shared rules in ./network.ts): the smallest tier, and at most SLOW_INFLIGHT requests in flight. Without
+// navigator.connection the first TIMED_FRAMES hero frames are timed; a median above SLOW_FRAME_MS moves every segment
+// not yet started to the smallest tier (at the next segment boundary).
 
 type Segment = {
   index: number;
@@ -52,17 +51,10 @@ export function createLegacyLoader(env: LoaderEnv): FrameLoader {
   const connection = env.connection;
   const ImageCtor: new () => ImageLike = env.Image ?? (Image as unknown as new () => ImageLike);
   const timing = env.timing ?? performance;
-  const saveData = connection?.saveData === true;
-  // A slow network by the browser's own class (2g, slow-2g, 3g). Not by downlink: Chrome's first estimate
-  // reads 1.45–1.75 Mb/s on fast connections too (and never moves for localhost), so it sent desktops to
-  // the smallest tier.
-  // Slow: a 2g/3g class, or a 4g link that is both laggy and thin (Chrome reports rtt 0 and a low early
-  // downlink estimate on fast links, so downlink alone must never decide).
-  let slow =
-    !!connection &&
-    (["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "") ||
-      ((connection.rtt ?? 0) >= 100 && (connection.downlink ?? Infinity) < 2));
-  let maxInflight = saveData || slow ? SLOW_INFLIGHT : 6;
+  const saveData = saveDataOn(connection);
+  // A slow network by the browser's own class (network.ts connectionSlow).
+  let slow = connectionSlow(connection);
+  let maxInflight = maxInflightFor(saveData, slow);
 
   const segments = new Map<number, Segment>();
   const arrive = new Set<(index: number, frame: number) => void>();
@@ -87,19 +79,10 @@ export function createLegacyLoader(env: LoaderEnv): FrameLoader {
     for (let k = 0; k < s.frames.length; k++) if (s.frames[k]) stats.dropped(bytes);
   };
 
-  // The frames this page load ever requests, so the only ones the canvas can show: the move (0…M); tail frames
-  // (after M) only while tails play, and only the even ones on coarse pointers; under reduced motion only the
-  // stills. rank() requests by it, and the counters score against it (filmStats aimAt), so a frame never loaded by
-  // design is never counted as lag.
-  const usable = (s: Segment, i: number) => {
-    const end = s.opts.moveEnd;
-    const stills = s.opts.reducedStills;
-    if (stills) {
-      for (const k of stills) if (k === i) return true;
-      return false;
-    }
-    return i <= end || (s.opts.tailFrames > 0 && (!s.opts.evenTailOnly || (i - end) % 2 === 0));
-  };
+  // The frames this page load ever requests, so the only ones the canvas can show (the shared rule, ./usable.ts).
+  // rank() requests by it, and the counters score against it (filmStats aimAt), so a frame never loaded by design is
+  // never counted as lag.
+  const usable = (s: Segment, i: number) => isUsable(s.opts, i);
 
   // Request order around `target`: the target itself, M, last and 0 (always resident), then each
   // coarse-to-fine pass nearest-first, so the frames that matter now arrive first. Only usable frames.
@@ -234,10 +217,7 @@ export function createLegacyLoader(env: LoaderEnv): FrameLoader {
     const timed = timing.getEntriesByName(url).at(-1);
     if (!timed || !(timed.duration > 0)) return;
     heroTimes.push(timed.duration);
-    if (heroTimes.length < TIMED_FRAMES) return;
-    const sorted = [...heroTimes].sort((a, b) => a - b);
-    const mid = sorted.length / 2;
-    if ((sorted[mid - 1] + sorted[mid]) / 2 > SLOW_FRAME_MS) {
+    if (heroTimesSlow(heroTimes)) {
       slow = true;
       maxInflight = SLOW_INFLIGHT;
     }
@@ -261,6 +241,7 @@ export function createLegacyLoader(env: LoaderEnv): FrameLoader {
       t.loaded = 0;
       t.width = width;
       env.onLoaded?.(t.index, 0);
+      env.onWidth?.(t.index, width);
     }
     for (const release of released) release();
   };
@@ -408,6 +389,10 @@ export function createLegacyLoader(env: LoaderEnv): FrameLoader {
     },
 
     isSlow: () => slow,
+
+    // Not used by this loader: it never paused for a hidden page, and a failed frame is not retried.
+    visibility() {},
+    network() {},
 
     dispose() {
       cancelled = true;

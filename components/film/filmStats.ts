@@ -1,3 +1,5 @@
+import type { LoaderStats } from "./loader/types";
+
 /**
  * The film engine's counters (components/film/FilmBackdrop.tsx), published as `window.__filmStats` on the
  * home page (production builds too) and shown by the `?hud=1` overlay (FilmHud). The lab gate
@@ -6,24 +8,42 @@
  * One plain object for the whole page load, updated in place where the engine already does the work: no
  * allocation per tick. Counters only grow until a reset; gauges (framesAlive, decodedMB, inflight, the current
  * values) always describe now and survive a reset. Everything here but `filmInstrument` is pure, so it is
- * unit-tested (filmStats.test.ts).
+ * unit-tested (filmStats.test.ts). A loader reports through the `LoaderStats` hook (components/film/loader/types.ts);
+ * `loaderStatsFor` is the one adapter from those calls to this object.
  */
 export type FilmStats = {
-  /** The frame loader that fills the canvas (components/film/loader): "legacy" is legacy.ts; later loaders set their own name. */
+  /**
+   * The frame loader that fills the canvas now (components/film/loader): "legacy" is legacy.ts, "budget" the budget
+   * loader decoding in a worker, "budget-main" the same decoding on the main thread. May change during a page load.
+   */
   mode: string;
-  /** Frame requests started (an <img> given a frame URL). */
+  /** Network requests for frames started (legacy: an <img> given a frame URL; budget: a fetch of a frame's bytes). */
   requests: number;
-  /** Requests for a frame (same film, width and index) already requested earlier in this page load. */
+  /**
+   * Requests for a frame (same film, width and index) already requested earlier in this page load (budget: whose bytes
+   * had been fetched before; 0 while the bytes are kept).
+   */
   refetches: number;
   /** Frames that finished decoding and joined their segment (a request evicted or torn down meanwhile is not counted). */
   decodes: number;
+  /** Decodes of a frame decoded before on this page load, from bytes kept since (budget loaders; 0 for legacy). */
+  redecodes: number;
+  /** Decodes that ran in a worker / on the main thread with createImageBitmap (budget loaders; 0 for legacy). */
+  workerDecodes: number;
+  mainThreadDecodes: number;
+  /** Summed and mean time of those decodes, in ms (budget loaders; 0 for legacy). */
+  decodeMsTotal: number;
+  decodeMsMean: number;
+  /** Decodes running now, and the most at once (budget loaders; 0 for legacy, whose decodes are its requests). */
+  decodeInFlight: number;
+  decodeInFlightPeak: number;
   /** Frames that failed to load or decode (a request cancelled by evict, dispose or teardown is not counted). */
   failures: number;
   /** Highest number of requests in flight at once. */
   inflightPeak: number;
   /** Requests in flight now (gauge). */
   inflight: number;
-  /** Decoded frames held now, across all segments (gauge). */
+  /** Decoded frames held now, across all segments (gauge); for a budget loader including decodes that have reserved their bytes. */
   framesAlive: number;
   framesAlivePeak: number;
   /** Bytes of the frames held now, estimated as width × round(width / aspect) × 4 per frame (gauge). */
@@ -31,6 +51,11 @@ export type FilmStats = {
   /** decodedBytes in MB (10^6 bytes), now and at its peak. */
   decodedMB: number;
   decodedMBPeak: number;
+  /** The decoded-frame budget of this page load in MB (10^6 bytes; budget loaders; 0 for legacy, which has none). */
+  budgetMB: number;
+  /** Compressed frame bytes held in MB, now and at its peak (budget loaders; 0 for legacy, which keeps none). */
+  bytesHeldMB: number;
+  bytesHeldMBPeak: number;
   /** Canvas paints. */
   draws: number;
   /**
@@ -92,6 +117,13 @@ export function newFilmStats(mode = "legacy"): FilmStats {
     requests: 0,
     refetches: 0,
     decodes: 0,
+    redecodes: 0,
+    workerDecodes: 0,
+    mainThreadDecodes: 0,
+    decodeMsTotal: 0,
+    decodeMsMean: 0,
+    decodeInFlight: 0,
+    decodeInFlightPeak: 0,
     failures: 0,
     inflightPeak: 0,
     inflight: 0,
@@ -100,6 +132,9 @@ export function newFilmStats(mode = "legacy"): FilmStats {
     decodedBytes: 0,
     decodedMB: 0,
     decodedMBPeak: 0,
+    budgetMB: 0,
+    bytesHeldMB: 0,
+    bytesHeldMBPeak: 0,
     draws: 0,
     exactDraws: 0,
     fallbackDraws: 0,
@@ -170,10 +205,17 @@ export function resetFilmStats(s: FilmStats, clock: StaleClock, now: number): vo
   s.requests = 0;
   s.refetches = 0;
   s.decodes = 0;
+  s.redecodes = 0;
+  s.workerDecodes = 0;
+  s.mainThreadDecodes = 0;
+  s.decodeMsTotal = 0;
+  s.decodeMsMean = 0;
   s.failures = 0;
   s.inflightPeak = s.inflight;
+  s.decodeInFlightPeak = s.decodeInFlight;
   s.framesAlivePeak = s.framesAlive;
   s.decodedMBPeak = s.decodedMB;
+  s.bytesHeldMBPeak = s.bytesHeldMB;
   s.draws = 0;
   s.exactDraws = 0;
   s.fallbackDraws = 0;
@@ -218,6 +260,31 @@ export function countRequest(s: FilmStats, repeated: boolean, inflight: number):
   if (repeated) s.refetches++;
   s.inflight = inflight;
   if (inflight > s.inflightPeak) s.inflightPeak = inflight;
+}
+
+/** A decode starts (budget loaders): `inflight` decodes run after it; `redecode` when the frame was decoded before. */
+export function countDecodeStart(s: FilmStats, redecode: boolean, inflight: number): void {
+  if (redecode) s.redecodes++;
+  s.decodeInFlight = inflight;
+  if (inflight > s.decodeInFlightPeak) s.decodeInFlightPeak = inflight;
+}
+
+/** A decode settles (budget loaders): `ok` counts it as a decode run `where`, taking `ms`. */
+export function countDecodeEnd(s: FilmStats, ok: boolean, where: "worker" | "main", ms: number, inflight: number): void {
+  s.decodeInFlight = inflight;
+  if (!ok) return;
+  s.decodes++;
+  if (where === "worker") s.workerDecodes++;
+  else s.mainThreadDecodes++;
+  s.decodeMsTotal += ms;
+  const timed = s.workerDecodes + s.mainThreadDecodes;
+  s.decodeMsMean = timed > 0 ? s.decodeMsTotal / timed : 0;
+}
+
+/** The compressed frame bytes held now (budget loaders). */
+export function holdBytes(s: FilmStats, bytes: number): void {
+  s.bytesHeldMB = bytes / 1e6;
+  if (s.bytesHeldMB > s.bytesHeldMBPeak) s.bytesHeldMBPeak = s.bytesHeldMB;
 }
 
 /** A canvas paint of frame `painted` while the effective target is `eff` (see aimAt). */
@@ -268,7 +335,7 @@ declare global {
   }
 }
 
-type Instrument = {
+export type Instrument = {
   stats: FilmStats;
   clock: StaleClock;
   /** `film/width/index` of every frame requested in this page load (refetches). */
@@ -277,13 +344,58 @@ type Instrument = {
 let instrument: Instrument | null = null;
 
 /**
+ * The adapter from a frame loader's `LoaderStats` calls (components/film/loader/types.ts) to the page's counters, so
+ * `window.__filmStats` keeps one meaning whichever loader runs. A refetch is a request for a film, width and frame
+ * already requested in this page load. Pure apart from writing `inst` (unit-tested with a fresh instrument).
+ */
+export function loaderStatsFor(inst: Instrument): LoaderStats {
+  const { stats, requested } = inst;
+  return {
+    requested: (film, width, frame, inflight) => {
+      const key = `${film}/${width}/${frame}`;
+      const repeated = requested.has(key);
+      if (!repeated) requested.add(key);
+      countRequest(stats, repeated, inflight);
+    },
+    released: (inflight) => {
+      stats.inflight = inflight;
+    },
+    decoded: (bytes) => {
+      stats.decodes++;
+      holdFrame(stats, bytes);
+    },
+    dropped: (bytes) => dropFrame(stats, bytes),
+    failed: () => {
+      stats.failures++;
+    },
+    decodeStarted: (bytes, inflight, redecode) => {
+      holdFrame(stats, bytes);
+      countDecodeStart(stats, redecode, inflight);
+    },
+    decodeEnded: (ok, where, ms, inflight) => countDecodeEnd(stats, ok, where, ms, inflight),
+    bytesHeld: (bytes) => holdBytes(stats, bytes),
+    budget: (bytes) => {
+      stats.budgetMB = bytes / 1e6;
+    },
+    mode: (mode) => {
+      stats.mode = mode;
+    },
+  };
+}
+
+/** A fresh instrument that is not published on `window` (tests). */
+export function newInstrument(mode = "legacy"): Instrument {
+  return { stats: newFilmStats(mode), clock: newStaleClock(), requested: new Set() };
+}
+
+/**
  * The page's one instrument, created on first use and published on `window`. Client only: call it from an
  * effect, never during render. It outlives the engine's effect (a re-run, a client navigation), as the page
  * load does.
  */
 export function filmInstrument(): Instrument {
   if (!instrument) {
-    const inst: Instrument = { stats: newFilmStats(), clock: newStaleClock(), requested: new Set() };
+    const inst = newInstrument();
     instrument = inst;
     window.__filmStats = inst.stats;
     window.__filmStatsReset = () => resetFilmStats(inst.stats, inst.clock, performance.now());
