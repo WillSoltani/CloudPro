@@ -319,14 +319,24 @@ export async function settle(page: Page, timeoutMs = 20_000): Promise<boolean> {
   }, { limit: timeoutMs, frozenMs: FROZEN_MS, wallFactor: FROZEN_WALL_FACTOR });
   if (r.ok) {
     giveUps.delete(page);
-    if (r.frozen) console.log(`[settle] page frozen ${r.frozen.frozen}x for ${r.frozen.frozenMs} ms in all (longest gap ${r.frozen.maxGapMs} ms); settled after ${r.frozen.wallMs} ms of wall time`);
+    if (r.frozen) {
+      const y = await page.evaluate(() => window.scrollY).catch(() => "?");
+      console.log(`[settle] page frozen ${r.frozen.frozen}x for ${r.frozen.frozenMs} ms in all (longest gap ${r.frozen.maxGapMs} ms); settled after ${r.frozen.wallMs} ms of wall time (${pageName(page)}, scrollY ${y})`);
+    }
     return true;
   }
   const note = formatSnapshot(r.snapshot);
   giveUps.set(page, note);
-  console.log(`[settle] gave up after ${timeoutMs} ms of page run time at scrollY ${await page.evaluate(() => window.scrollY).catch(() => "?")}:\n${note}`);
+  console.log(`[settle] gave up after ${timeoutMs} ms of page run time (${pageName(page)}, scrollY ${await page.evaluate(() => window.scrollY).catch(() => "?")}):\n${note}`);
   return false;
 }
+
+/** The page for a log line: its path and query, and the viewport. */
+const pageName = (page: Page) => {
+  const u = new URL(page.url());
+  const v = page.viewportSize();
+  return `${u.pathname}${u.search} at ${v ? `${v.width}x${v.height}` : "?"}`;
+};
 
 /** A gap between two of settle()'s looks longer than this (ms) is time the page did not run. */
 export const FROZEN_MS = 1_000;
