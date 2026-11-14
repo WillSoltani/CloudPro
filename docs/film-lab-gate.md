@@ -10,7 +10,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
-| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts`, `film-toolbar.spec.ts`, `film-layers.spec.ts` |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts`, `film-toolbar.spec.ts`, `film-layers.spec.ts`, `film-chrome.spec.ts` |
 | The plates and the anchors per animation frame (stage 8): the overlay scheduler, its framer-motion binding, the plates' pure parts (track row, flight, writing only what changed, the layer hint), their unit tests; spec | `components/film/overlayScheduler.ts`, `overlayFrame.ts`, `plateFace.ts`; `overlayScheduler.test.ts`, `plateFace.test.ts`; `e2e/film-layers.spec.ts` (see "Plates and anchors per frame") |
 | Smoothing by input (`smoothingFor`, `?smooth=`, the follower around the spring) and its unit tests | `components/film/smoothing.ts`, `smoothing.test.ts`; spec `e2e/film-feel.spec.ts` |
 | Scroll-pass measurement (the lab gate script) and the page URL it builds from `--query` | `scripts/films/scrub-quality.mjs` (`npm run film:quality`), `scripts/films/page-url.mjs` |
@@ -417,6 +417,49 @@ tick): each paint gets its plate. Screenshots at rest on the track and in flight
 390x844 DPR 3 are byte-identical before and after, on chromium and webkit; a plate given the hint before a move and left at rest
 renders byte-identical to one without it.
 
+## The layers around the film (stage 8)
+
+The rest of stage 8, besides the plates: work that cost main-thread time on every scroll frame, and the two owner picks.
+
+- **One scroll subscription** (`scrollHub.ts`): the nav, the back-to-top button, the flow reveals and the plates share one window
+  `scroll` listener, attached while anything subscribes. The film's own listener (FilmBackdrop) is separate.
+- **Flow reveals** (`flowReveal.ts`, `flowHub.ts`, `Reveal.tsx` FlowReveal): one controller and one IntersectionObserver with a
+  band of one and a half viewports above and below. An item outside the band is already at its end state (0 below, 1 above) and
+  does nothing; inside it, one animation frame per scroll reads every near item, then writes only what changed. Entering or
+  leaving the band, a jump of more than the band, and a film viewport change refresh every item once. The ramp and the rise are
+  unchanged (`flowOpacity`, `flowStyle`).
+- **Back-to-top and text** (`cornerText.ts`, `textCache.ts`, `ScrollToTop.tsx`): on touch screens the text of every chapter is
+  measured once (a TreeWalker per chapter: the current one at once, the others one per idle slice), in boxes relative to the
+  sticky composition, and again when a composition's or its section's box changes size (not the observer's first report),
+  fonts load or the film's viewport changes. A scroll compares the corner's zone with those boxes, the section's document
+  top and `scrollY` (`stickyTop`), plus the composition's own lift read from its inline style (a MutationObserver on that one
+  attribute); no layout read, no text walk, no timer. The reveals move text by at most `REVEAL_SLACK` (10 px): the zone is that
+  much larger above and below instead of a re-measure when a reveal settles, so the button steps aside up to 10 px earlier at
+  the edge of a line and never later. `TEXT_CLEAR_MS` (300 ms) keeps the button from flickering as lines pass.
+- **Media queries** (`mediaStore.ts`): one MediaQueryList and one `change` listener each for prefers-reduced-motion, the `wide`
+  rule (which includes the orientation) and a coarse pointer, behind `useReducedMotionSafe`, `subscribeWide` / `wideMatches`
+  and `coarsePointerStore` in `filmCore.ts` (server snapshots unchanged: `false` for reduced motion, landscape for the film).
+- **Hero badge** (`badgeLook.ts`, owner pick): on a coarse pointer no backdrop blur and a night wash of 0.45 over the amber tint
+  (the badge text is 4.5:1 or better on the bright proxy, a unit test); the desktop badge is unchanged. The dot's ping runs
+  three one-second cycles and stops. `?badge=blur` brings back the blur everywhere and the endless ping; it is read after
+  mount, so the markup the server sent never differs from the first client render.
+- **Nav clicks** (`navJump.ts`, `AnchorJumps.tsx`, owner pick): a click on an in-page link whose target chapter is more than one
+  chapter from where the page is jumps (`scroll-behavior: auto` on html for 500 ms, then handed back); one chapter away it keeps
+  the smooth scroll. The two passages with no nav link count as chapters (the hero before About, the exit and the bridge between
+  Projects and Contact). `?nav=smooth` keeps smooth scrolling everywhere for the page load.
+- **Safe areas**: the portfolio pages (`app/page.tsx`, `app/projects/[slug]/page.tsx`, not the root layout, which also serves
+  the ChapterFlow hosts) export `viewport = { viewportFit: "cover" }`, so the `env(safe-area-inset-*)` paddings take effect:
+  the nav bar, the page column (`PageShell`), the project page, the back-to-top button, the captions and the footer. They are 0
+  except on a notched phone in landscape (and the home indicator), so nothing else moves.
+- **Headings**: the exit and the bridge sections carry a visually hidden `h2` (`exit-title`, `bridge-title`) that names them
+  through `aria-labelledby`, between Projects' h3s and Contact's h2.
+
+`e2e/film-chrome.spec.ts` (four tests, `@chrome`): no TreeWalker is created in a scroll through the whole page on a 390x844 touch
+viewport, with at most three live window scroll listeners and no second frame loop at rest; the badge's computed style, its ping
+(three iterations, finished; endless with `?badge=blur`), no hydration error with the switch, the blur kept on desktop; a nav
+click to a far chapter fires at most four scroll events, to the next chapter at least eight, and with `?nav=smooth` at least
+eight; the two hidden h2s, heading order, and `viewport-fit=cover` on `/` and a project page.
+
 ## Toolbar simulation
 
 Playwright cannot emulate a phone's dynamic browser toolbar: in a test browser lvh = svh = dvh = the window height. A phone with
@@ -544,6 +587,7 @@ up after 2 looks, both on target, with nothing wrong in the engine (stage 7, 202
 | `film-toolbar` | the simulated toolbar (`## Toolbar simulation` above): 390x664 with `--film-lvh: 754px; --film-svh: 664px`, moved to 754 and back, at rest at three positions and during a scripted scroll, in both modes. No canvas reallocation, the backing store and CSS box unchanged, the marker row (read from the canvas pixels), the key layers and the plates where they were, the key layers' boxes, the hero poster's box and the frame variables unchanged in both modes; with the page unchanged (`"phone"` mode) also the clock, frame, pixels and screenshot, 0 draws and 0 measures. Where the placement grows (411x826 in 882): each laid-out key's CSS-only cover fit equals its px (no zoom step when the backdrop takes over, after a scroll and after a `#contact` deep link), the key box equals the poster box, the breath's origin is the same frame point as without the grow and survives a reload; where lvh = svh (1440x900, 390x844) the key box is top 0 and full height |
 | `film-packs` | packs: a pass down and back at 390x844 touch and 1440x900, the film data requests recorded in the annotations (before the first scroll one pack read; down at most 40; back 0, by the page's count and on the network), no frame file, no byte read twice, within the budget, pixels equal `data-frame` at every stop. Fallbacks by routing the pack requests: a 404 (each film's pack asked once, the films load frame by frame), bytes that are not a pack (given up, frame by frame), and a server that ignores Range (every answer a whole-file 200, the first one cut short so the page must continue: the films still play from their packs, the bytes held already counted as read twice) |
 | `film-layers` | the plates and the anchors per animation frame (`## Plates and anchors per frame` above): a scripted scroll through the Certifications chapter at 1440x900 and 390x844 touch; at every frame the plate shows the painted frame's track row; at most 2 plate runs a frame and on at most a tenth of the frames more than 1; on the track one layout read per run; style writes within 4 per run; `will-change` on while the plate moves, never on a hidden plate, gone at rest; the columns written at most once each a frame on desktop and never on a phone. Prints the counts (and adds them to the annotations) |
+| `film-chrome` | the layers around the film (`## The layers around the film (stage 8)` above): no TreeWalker created during a scroll through the page on a 390x844 touch viewport, at most three window scroll listeners and no extra frame loop at rest; the badge's calm look on touch and desktop and `?badge=blur`; far nav clicks jump, near ones and `?nav=smooth` scroll smoothly; the exit's and the bridge's hidden h2, heading order, `viewport-fit=cover` |
 | `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on; with a `createImageBitmap` that rejects every frame (and no `Worker`) the page hands over to the legacy loader at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 
 ## Scroll-pass gate
