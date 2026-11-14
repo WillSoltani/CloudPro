@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { pickFilmOrientation } from "@/components/film/filmCore";
 import { WIDE_QUERY } from "@/components/film/filmBase";
 import { FILM_ASPECT } from "@/components/film/frameBox";
-import { useFilmBackdrop } from "@/components/film/FilmBackdrop";
+import { REEL_FOCUS, useFilmBackdrop } from "@/components/film/FilmBackdrop";
+import { placement } from "@/components/film/placement";
+import { filmViewport, subscribeFilmViewport } from "@/components/film/viewport";
 import { useChapter } from "@/components/film/chapterContext";
 
 /** An exported anchor's per-frame positions (frame fractions, row = film frame), per camera. */
@@ -102,18 +104,19 @@ export function RideAnchor({
       const t = i - i0;
       const x = track[i0][0] + (track[i1][0] - track[i0][0]) * t;
       const y = track[i0][1] + (track[i1][1] - track[i0][1]) * t;
-      const fw = Math.max(compose.clientWidth, window.innerHeight * FILM_ASPECT.landscape);
-      const fh = fw / FILM_ASPECT.landscape;
-      const dx = (x - rest[0]) * fw;
-      const dy = (y - rest[1]) * fh;
+      // The frame's size where the canvas paints it (placement.ts), on the composition box's width.
+      const view = filmViewport();
+      const r = placement(compose.clientWidth, view.lvh, view.svh, FILM_ASPECT.landscape, REEL_FOCUS);
+      const dx = (x - rest[0]) * r.width;
+      const dy = (y - rest[1]) * r.height;
       el.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0)`;
     };
     const off = frame.on("change", apply);
-    window.addEventListener("resize", apply);
+    const offViewport = subscribeFilmViewport(apply);
     apply();
     return () => {
       off();
-      window.removeEventListener("resize", apply);
+      offViewport();
       el.style.transform = "";
     };
   }, [tracks, anchor, rest, from, ch]);

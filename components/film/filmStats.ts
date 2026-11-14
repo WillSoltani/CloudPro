@@ -101,6 +101,20 @@ export type FilmStats = {
   backingW: number;
   backingH: number;
   /**
+   * The input that moved the page last ("wheel", "keys", "touch"; components/film/smoothing.ts) and the steady lag of
+   * the smoothing it gets, in ms (0: none, as under reduced motion). Gauges.
+   */
+  input: string;
+  smoothMs: number;
+  /**
+   * The raw (unsmoothed) clock at the last scroll event, its segment and the frame it would paint (gauges). The shown
+   * clock is the canvas's `data-clock`, its segment and frame targetSeg and targetFrame: the gap between the two is
+   * the smoothing's lag.
+   */
+  rawClock: number;
+  rawSeg: number;
+  rawFrame: number;
+  /**
    * Pack reads started (stage 7: one request each, a streaming GET or a Range read of a film's pack). `requests` keeps
    * meaning one-file-per-frame requests, so the film's data requests are `packRequests + requests`.
    */
@@ -191,6 +205,11 @@ export function newFilmStats(mode = "legacy"): FilmStats {
     width: 0,
     backingW: 0,
     backingH: 0,
+    input: "wheel",
+    smoothMs: 0,
+    rawClock: 0,
+    rawSeg: 0,
+    rawFrame: 0,
     packRequests: 0,
     packBytesMB: 0,
     packBytesRepeatedMB: 0,

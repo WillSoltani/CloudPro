@@ -42,7 +42,9 @@ const json = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
  * that record, hidden as on a deep link. The same record names the painted frame when the viewer left inside
  * a breathing tail (the hold key is the hold pose, a breath away): the boot layer shows that frame instead
  * (`data-src`, which FilmBackdrop keeps on the layer), so the canvas takes over from identical pixels; and
- * the held key's push (the tower's breath: scale and origin), so the key starts where the clock puts it.
+ * the held key's push (the tower's breath: scale and origin, `b`, the origin in px of the key layer's own box,
+ * placement.ts STAGE_BOX_CLASS), so the key starts where the clock puts it. A record from before that box
+ * (`k`, its origin measured from the canvas's top) is not applied: the key then starts unscaled.
  */
 const HOLD_BOOT = `(function(){try{
 var all=${json(HOLD_KEYS)},keys=matchMedia(${json(WIDE_QUERY)}).matches?all.landscape:all.portrait,holds=${json(HOLD_SECTIONS)},id=decodeURIComponent(location.hash.slice(1)),h=-1,s=null,r=null;
@@ -54,7 +56,7 @@ var sec=holds[h]&&holds[h][0]||"",same=s!==null&&r&&r.h===h&&r.w===innerWidth,sr
 var st=document.createElement("style");st.id="reel-hold-boot";st.setAttribute("data-hold",h);
 if(same&&typeof r.f==="string"&&new RegExp("^(https?:)?/[A-Za-z0-9_.:/%-]+$").test(r.f)){src=r.f;st.setAttribute("data-src",src);}
 var css='[data-key="'+h+'"]{background-image:url("'+src+'");opacity:1}',ks,kx,ky;
-if(same&&r.k&&r.k.length===3){ks=+r.k[0];kx=+r.k[1];ky=+r.k[2];if(ks>0.9&&ks<1.1&&isFinite(kx)&&isFinite(ky))css+='[data-key="'+h+'"]{transform:scale('+ks+');transform-origin:'+kx+'px '+ky+'px}';}
+if(same&&r.b&&r.b.length===3){ks=+r.b[0];kx=+r.b[1];ky=+r.b[2];if(ks>0.9&&ks<1.1&&isFinite(kx)&&isFinite(ky))css+='[data-key="'+h+'"]{transform:scale('+ks+');transform-origin:'+kx+'px '+ky+'px}';}
 if(sec){var c='[data-chapter="'+sec+'"] [data-reveal]',k,v,set=0;
 if(same&&r.o)for(k in r.o){v=+r.o[k];if(/^data-(pin|tail)="[0-9.,e+-]+"$/.test(k)&&v>=0&&v<=1){css+=c+'['+k+']{opacity:'+v+'!important}';set=1;}}
 if(!set)css+=c+'[data-pin],'+c+'[data-tail]{opacity:0!important}';}

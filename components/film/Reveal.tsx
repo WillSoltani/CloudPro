@@ -5,6 +5,7 @@ import { motion, useTransform } from "framer-motion";
 import { useReducedMotionSafe } from "@/components/film/filmCore";
 import type { FrameWindow } from "@/components/film/choreo";
 import { useChapter } from "@/components/film/chapterContext";
+import { subscribeFilmViewport } from "@/components/film/viewport";
 
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 
@@ -140,11 +141,12 @@ export function FlowReveal({
     };
     apply();
     window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
+    // A real viewport change (viewport.ts); a toolbar move comes with a scroll, which re-applies.
+    const offViewport = subscribeFilmViewport(schedule);
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
+      offViewport();
       el.style.opacity = "";
       el.style.transform = "";
     };

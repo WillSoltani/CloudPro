@@ -10,11 +10,13 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
-| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts` |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts`, `film-toolbar.spec.ts` |
+| Smoothing by input (`smoothingFor`, `?smooth=`, the follower around the spring) and its unit tests | `components/film/smoothing.ts`, `smoothing.test.ts`; spec `e2e/film-feel.spec.ts` |
 | Scroll-pass measurement (the lab gate script) and the page URL it builds from `--query` | `scripts/films/scrub-quality.mjs` (`npm run film:quality`), `scripts/films/page-url.mjs` |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
 | `?hud=1` overlay with the counters | `components/film/FilmHud.tsx` (mounted by `FilmBackdrop`, renders nothing without the flag) |
 | Counter spec | `e2e/film-stats.spec.ts` |
+| Toolbar simulation (the test-only CSS variables, moving the toolbar, the snapshot every check reads) and its spec | `e2e/film-toolbar-lib.ts`, `e2e/film-toolbar.spec.ts` (see "Toolbar simulation") |
 | Canvas backing size (`backingSize`, `growCap`, `?backing=full`) and its unit tests | `components/film/backing.ts`, `backing.test.ts`; spec `e2e/film-backing.spec.ts` |
 | Frame loader interface and the legacy loader, its unit tests | `components/film/loader/types.ts`, `legacy.ts`, `legacy.test.ts` (see "The frame loader") |
 | Rules every loader shares (usable frames, network class), their unit tests | `components/film/loader/usable.ts`, `network.ts`, `shared.test.ts` |
@@ -29,7 +31,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 ```
 npm run film:placeholder      # write the stand-ins under public/films (a second run does nothing)
 npm run test:film             # Playwright, chromium, placeholder frames
-npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, both loaders and the planner, the gate script's leg buckets and page URL
+npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, the placement and the frame variables (frameBox.test.ts), the smoothing on a fake clock, both loaders and the planner, the gate script's leg buckets and page URL
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote
@@ -308,7 +310,8 @@ frame on the canvas then, −1 when the canvas showed another segment), `staleMa
 
 Open the home page with `?hud=1` to see two lines of them (three with packs), refreshed four times a second. The first line reads
 `f<painted>/<target>`, followed by `eff <effective>` when the two targets differ, the tier width and `canvas <w>x<h>`
-(the backing store, see below).
+(the backing store, see below), the loader, and the input that moved the page last with the smoothing it gets (`touch 35 ms`,
+`wheel 171 ms`; see "Smoothing by input").
 
 ## Canvas backing size
 
@@ -318,13 +321,136 @@ page load, the maximum `width` over the segments that have joined (each picks it
 during a page load: a later, wider tier may enlarge the canvas once, a slow-network retier to a smaller tier never shrinks
 it. Before any segment has joined the widest width the reel offers for this orientation stands in, so the first paint is
 never undersized; in practice the canvas is allocated once, at load, after the segments register (`canvasResizes` counts real
-reallocations only, and the specs allow at most 2 after a load and a short scroll). `tier()`, `draw()`'s cover fit, the hold
-keys and the overlays do not read the backing size.
+reallocations only, and the specs allow at most 2 after a load and a short scroll). The CSS box is the large-viewport layer
+(below), so a phone's toolbar moving never reallocates it. `tier()`, `draw()`'s placement, the hold keys and the overlays do not
+read the backing size.
 
 A 1440x900 laptop at DPR 2 gets 1920x1200 instead of 2880x1800; a 390x844 phone gets 432x935 (a 432 wide portrait tier) instead
 of 780x1688. For an A/B on a real phone open the page with **`?backing=full`**: that page load uses the old rule
 (round(CSS size x DPR capped at 2), no width cap). The flag is read once, when the engine starts, and the HUD line shows which
 size is in use.
+
+## Viewport and layout reads
+
+A phone's toolbar moving changes the dynamic viewport (dvh, `window.innerHeight`) and fires `resize`. Nothing the film is laid
+out with changes with it any more:
+
+- **The layers.** The canvas, the hold-key layers and the perspective-plate layer are `fixed` at the top and as tall as the
+  large viewport (`h-[var(--film-lvh,100lvh)]`, 100vh where lvh is unsupported; `LAYER_HEIGHT_CLASS`), so the backing store is
+  sized once for that box. The svh probe is `var(--film-svh,100svh)`; a second probe carries the layer height. Nothing sets the
+  two variables in production: they exist so a spec can simulate the toolbar's states on `:root`.
+- **The picture.** `components/film/placement.ts` is the one placement: the cover fit of the small-viewport stage (layer width x
+  svh, focus `REEL_FOCUS`), which is where the picture sat at first view before (the toolbar is shown on load), grown by the
+  minimum that covers the layer where the stage's fit would leave a strip at the bottom (a tall, narrow, height-limited
+  viewport). Where lvh = svh (desktop) it is `coverRect` itself, operation for operation. `draw()` (`backingPlacement`), the key
+  layers' background size and position, `PerspectivePlate`, `RideAnchor`, the fit guard, the frame variables (`frameBox.ts`) and
+  the hero poster (`--film-stage-h` / `--film-stage-top`, the browser's own cover fit in a box that the placement makes exact)
+  all use it.
+- **The stage box: the poster and the hold keys before the backdrop runs.** The hero poster and the hold-key layers place the
+  picture with the browser's own cover fit at `REEL_OBJECT_POSITION`, in one box (`STAGE_BOX_CLASS`, `placement.ts`): top
+  `--film-stage-top` (≤ 0, above the viewport's top where the scale grows), height `--film-stage-h`, its bottom exactly on the
+  large viewport's (stage-top + stage-h = lvh). The cover fit in that box is `placement()` in every case, the grow included, so a
+  key the boot style in `app/page.tsx` shows before any script (a reload or a `#section` deep link into a hold) is already where
+  the backdrop then lays it out: no zoom step when `layoutKey` sets the px. Where lvh = svh (desktop) the box is the layer itself,
+  top 0 and full height, and without lvh support top 0 and 100vh, as before. `stageBox()` is the same box in px: `layoutKey`'s
+  background position and the breath's `transform-origin` are offset by its top. The push the page saves on `pagehide` for a
+  reload carries that origin in the key box's own px as `b`; a record from before (`k`, measured from the canvas's top) is not
+  applied. (Until this box the keys were the layer with a bottom padding of lvh − svh, the stage's plain cover fit: where the
+  placement grows, 0.75 to 4 % on Android 20:9 phones and 20 % at 1180x740 in 820, the iPad-in-landscape shape of the unit tests,
+  the key zoomed when the backdrop took over.)
+- **Resize work.** `components/film/viewport.ts` is one shared subscription that notifies only when the layout viewport's width,
+  the large viewport's height or the stage's height changes (window `resize` plus a ResizeObserver on the probes), never for a
+  toolbar move alone. The backdrop, the fit guard (which now judges fit against the stage, not `innerHeight`),
+  `PerspectivePlate`, `RideAnchor` and `FlowReveal` listen to it instead of `resize`.
+- **Scroll work.** The clock's geometry (each segment's document top and height, the page height, the root's client height,
+  svh; `components/film/clock.ts`) is cached and measured again on the viewport subscription, a ResizeObserver on the body, the
+  segments and their container, `load`, `document.fonts.ready` and a registry change; a scroll event reads `window.scrollY` only,
+  and the clock is the same arithmetic as before (`clock.test.ts` checks it against the old per-scroll measure). `measures` counts
+  real layout measurements: at 390x844, 200 scroll events cost 200 before and 0 now (4 at load in both). Registrations in one
+  commit reconcile once (a microtask).
+
+## Toolbar simulation
+
+Playwright cannot emulate a phone's dynamic browser toolbar: in a test browser lvh = svh = dvh = the window height. A phone with
+the toolbar shown has svh = dvh (say 664 px) and lvh = 754 px; hiding it makes dvh 754 px while svh and lvh stay put, and
+`window.innerHeight` and the root's `clientHeight` follow dvh. `e2e/film-toolbar-lib.ts` simulates exactly that on a 390x664
+window (touch, DPR 2):
+
+- **The variables are test-only.** `--film-lvh: 754px; --film-svh: 664px` are put on `:root` before any page script runs (a
+  constructed stylesheet in an init script, so nothing the framework does to `<html>` can drop it). They are what the film
+  layers and the stage probe read (`var(--film-lvh, 100lvh)`, `var(--film-svh, 100svh)`, `components/film/placement.ts`).
+  Nothing in the app sets them; without them the layers use the browser's own 100lvh and 100svh.
+- **Two ways to move the toolbar**, both run by `e2e/film-toolbar.spec.ts`, on chromium and on webkit:
+  - `"phone"`: the window keeps its size (so the page's own svh lengths, the sections and the document stay put, as on a phone);
+    `window.innerHeight` and the root's `clientHeight` take 664 or 754 and a `resize` event fires. The page is the same page,
+    so the clock, the frame, the canvas pixels, the plate and the key layers must be exactly what they were, and nothing is
+    measured again.
+  - `"resize"`: the window itself is resized (`page.setViewportSize`). In a test browser the page's own `svh` and `vh` lengths
+    (the chapters' spacers, the sticky stages) follow the window, which they do not on a phone, so the document is laid out again
+    (it is 8.8 % taller at 754 px) and the clock for a scroll position legitimately changes. What the film's layers do is still
+    faithful: the canvas must not be reallocated, move or drift from the key layers and the plates. This is also the only way to
+    run the simulation on a build that does not read the variables (the commit before stage 5, 9f4e3e4f), where the plain resize
+    is the whole simulation.
+- **What the spec checks**, per toggle, at rest at three positions (the hero, inside the second film with a plate showing, the
+  last hold with a key showing; each toggled 3 times there and back) and during a scripted scroll (400 frames of 6 px with six
+  toggles meanwhile): `canvasResizes` unchanged; the canvas backing store, the backing gauges and the canvas's CSS box (390x754)
+  unchanged; 0 ResizeObserver callbacks on the canvas; every plate layer's box equal to the canvas's; the placeholder marker row
+  read from the canvas pixels (the dark cells, found by scanning the backing store) centred on the stage's focus line, 45 % of
+  the small viewport = 298.8 px, and not moved; a laid-out key layer's picture box on the same focus line and unchanged; in both
+  modes every key layer's box (its computed, untransformed box), the hero poster's box in its stage and the frame variables
+  (`--fx0 --fy0 --fw --fh`, read through a probe element in the first chapter composition) unchanged, so a key layer, a poster or
+  frame variables that followed dvh would fail in `"resize"` mode (each checked once by such a change). In
+  `"phone"` mode also: the same scroll position, clock, painted frame, canvas pixels (an FNV-1a hash), marker row, key layers,
+  plate boxes, an exactly equal screenshot of the canvas alone (everything else hidden), 0 more draws, 0 more `measures`, and at
+  the end of the scripted scroll the same clock and frame as a page that never moved the toolbar. In `"resize"` mode the page is a
+  different height, so `measures` may rise by a small constant per move (it rises by 1: the body's ResizeObserver) and the
+  pixels are compared only at the hero.
+- **Where the placement grows** (411x826 with `--film-lvh: 882px`, an Android 20:9 phone drawn edge to edge; `GROW_TOOLBAR`): after
+  a scroll into the last hold and after a cold `#contact` deep link, every laid-out key's picture computed from its CSS alone (a
+  copy of the layer without the backdrop's inline size, position and breath: its box, `cover`, the object position) equals the
+  px the backdrop set, to 0.5 px; every key layer's box equals the hero poster's box and ends on the large viewport's bottom. The
+  breath's origin is the same frame point as on a page without the grow, and a reload there saves it as `b` (no `k`), the boot
+  style applies exactly that origin and the backdrop takes over with it. At 1440x900 and at 390x844 without a toolbar (lvh = svh)
+  every key layer's box is the canvas's, top 0 and full height. The compared clocks are read once the shown clock has landed on
+  the raw clock (a condition), and the scripted scroll also compares the two pages' raw clocks.
+- Run on the commit before this stage the spec fails where it should (checked against a 9f4e3e4f build): the canvas is
+  664 / 754 px tall, reallocated on every move, the picture jumps. The numbers for both are in "Stage 5: viewport and feel" in
+  `docs/cinematic-homepage.md`.
+
+**What `measures` means now.** `measures` counts layout measurements of the clock's geometry (`remeasure()` in `FilmBackdrop`: one
+`getBoundingClientRect` per segment plus the root's and the document's sizes). It was one per scroll event; it now runs on load,
+on a real viewport change (width, large viewport or stage height), when the body, a segment or their container changes size, on
+fonts and on a registry change, never on a scroll event and never for a toolbar move alone. The gate's `meas/s` column is
+this counter per second of scrolling: about 60 before stage 5 (one per animation frame), 0 after. It counts the engine's own
+measurement only: other components still read layout on scroll (see "Scroll work" in `docs/cinematic-homepage.md`).
+
+## Smoothing by input
+
+The shown clock is the raw clock through a spring (`components/film/smoothing.ts`). The wheel, the keys and the scroll bar (a
+mouse press) keep the art-directed spring, `WHEEL_SPRING` (stiffness 140, damping 24: about 171 ms of steady lag). Touch, a pen,
+and the momentum after the finger lifts get the same spring run faster, `TOUCH_LAG_MS` = 35 ms of steady lag: the browser
+already smooths a finger, so the long spring was only lag between the finger and the picture. Passive capture listeners
+(`touchstart`, `touchmove`, `pointerdown`, `wheel`, scroll keys on `keydown`) note the input; a change retunes the spring in
+place, and the next leg starts from the spring's own value and velocity, so the picture never jumps. Under reduced motion
+nothing is smoothed, as before. The follower around the spring is unchanged in behaviour (never past the raw clock, never a step
+against the direction of travel, re-seeded at the picture on a reversal) and `smoothing.test.ts` checks it for both springs and
+for none. The timing claims are unit tests on a fake clock, not browser checks: the engine's follower and spring simulated at
+60 Hz, 30 Hz, 50 ms and 100 ms frames and an uneven 8 to 120 ms mix; on each the same finger trails less under touch than under
+the wheel (less than 0.6 of it), and nothing passes the raw clock, steps back or fails to land. `e2e/film-feel.spec.ts` prints
+the figures below but asserts only what holds at any machine speed.
+
+**`?smooth=<ms>`** (whole ms, 0 to 300, read once per page load) replaces the touch lag, for trying values on a real phone with
+`?hud=1`; 0 is no smoothing. The counters carry `input`, `smoothMs`, and the raw clock with its segment and frame (`rawClock`,
+`rawSeg`, `rawFrame`; the shown one is `data-clock`, `targetSeg`, `targetFrame`).
+
+`e2e/film-feel.spec.ts` measures the gap between the two clocks while the page moves, in ms of scroll time (how long ago the raw
+clock was where the picture is) and in frames. Chromium, 1280x720, placeholder frames, 3 runs each (load 5 to 45, so read the
+ranges, not the decimals):
+
+| Scroll | Before (one spring for all) | After |
+| --- | --- | --- |
+| touch-style (900 px/s for 1 s, then a fling's decay) | mean 153 to 156 ms, max 195 to 211 ms; mean 11.4 to 11.8 frames, max 21 to 23 | mean 38 ms, max 53 to 54 ms; mean 3 frames, max 5 |
+| wheel (12 notches of 100 px, 50 ms apart) | mean 185 to 186 ms, max 212 to 219 ms; mean 26.4 to 26.8 frames, max 34; lands 667 ms after the last notch | mean 182 to 188 ms, max 212 to 221 ms; mean 25.6 to 26.8 frames, max 34; lands 665 to 667 ms after |
 
 ## The specs
 
@@ -366,6 +492,8 @@ up after 2 looks, both on target, with nothing wrong in the engine (stage 7, 202
 | `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, the backing store is sized to the box (not the 300x150 default), no horizontal scroll bar at the top or at the end |
 | `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
 | `film-memory` | budget loader, 390x844 touch and 1440x900: a walk down the whole page and back up, twice (a stop every viewport height, each settled). After every leg decoded MB peak and the decoded MB held are within `budgetMB`, the compressed bytes peak is within the cap for that budget (48 MiB on a phone budget, 160 MiB otherwise), nothing failed and nothing was fetched twice; the two legs up make 0 frame requests and decode again (redecodes > 0), and so does the second leg down (0 requests); every film is painted. With `?budget=96` the film plays to the end (down and up, every stop settled, pixels equal `data-frame`) inside the 96 MiB budget |
+| `film-feel` | a touch-style scroll (a touchstart, a scripted `scrollTo` step every animation frame, then a fling's decay per frame) and a wheel scroll (notches 3 animation frames apart), both driven frame by frame: the input and smoothing the counters report, more than 20 / 10 ticks while the page moves, the shown clock never past the raw clock and never stepping back, through the landing (it waits for the shown clock to land on the raw clock); the same scripted scroll under the wheel and under touch, the same rules for both; `?smooth=90` and the HUD's input line; no smoothing under reduced motion. Prints the gap figures (`FEEL` lines); no timing is asserted (which input trails less is a fake-clock unit test in `smoothing.test.ts`) |
+| `film-toolbar` | the simulated toolbar (`## Toolbar simulation` above): 390x664 with `--film-lvh: 754px; --film-svh: 664px`, moved to 754 and back, at rest at three positions and during a scripted scroll, in both modes. No canvas reallocation, the backing store and CSS box unchanged, the marker row (read from the canvas pixels), the key layers and the plates where they were, the key layers' boxes, the hero poster's box and the frame variables unchanged in both modes; with the page unchanged (`"phone"` mode) also the clock, frame, pixels and screenshot, 0 draws and 0 measures. Where the placement grows (411x826 in 882): each laid-out key's CSS-only cover fit equals its px (no zoom step when the backdrop takes over, after a scroll and after a `#contact` deep link), the key box equals the poster box, the breath's origin is the same frame point as without the grow and survives a reload; where lvh = svh (1440x900, 390x844) the key box is top 0 and full height |
 | `film-packs` | packs: a pass down and back at 390x844 touch and 1440x900, the film data requests recorded in the annotations (before the first scroll one pack read; down at most 40; back 0, by the page's count and on the network), no frame file, no byte read twice, within the budget, pixels equal `data-frame` at every stop. Fallbacks by routing the pack requests: a 404 (each film's pack asked once, the films load frame by frame), bytes that are not a pack (given up, frame by frame), and a server that ignores Range (every answer a whole-file 200, the first one cut short so the page must continue: the films still play from their packs, the bytes held already counted as read twice) |
 | `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on; with a `createImageBitmap` that rejects every frame (and no `Worker`) the page hands over to the legacy loader at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 

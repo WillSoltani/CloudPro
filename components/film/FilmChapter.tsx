@@ -9,7 +9,9 @@ import { useSegmentRegistration } from "@/components/film/useSegmentRegistration
 import { useRackPlatesOn } from "@/components/film/RackPlate";
 import { ChapterContext, type ChapterContextValue } from "@/components/film/chapterContext";
 import type { ChapterChoreo } from "@/components/film/choreo";
-import { FILM_ASPECT, framePoint, frameVars } from "@/components/film/frameBox";
+import { FILM_ASPECT, frameVars } from "@/components/film/frameBox";
+import { placement, placementPoint } from "@/components/film/placement";
+import { filmViewport, subscribeFilmViewport } from "@/components/film/viewport";
 import { BODY_MASK, BODY_MASK_BOTTOM, bodyTone, halo, toneOf } from "@/components/film/tones";
 
 /**
@@ -174,18 +176,20 @@ export function FilmChapter({
     [id, index, frame, progress, tau, tauRead, end, choreo, platesOn, reduced, stacked],
   );
 
-  // The fit guard (framed layout only exists where the `wide` rule holds).
+  // The fit guard (framed layout only exists where the `wide` rule holds). It judges against the stage (svh: the
+  // viewport with a phone's toolbar shown) and places the frame where the canvas paints it (placement.ts), so a
+  // toolbar moving never flips the layout; it runs on the film viewport subscription (viewport.ts), not `resize`.
   useEffect(() => {
     const el = composeRef.current;
     if (!el) return;
     const wide = window.matchMedia(WIDE_QUERY);
     const area = el.querySelector<HTMLElement>("[data-frame-area]") ?? el;
-    // Stacked: how far the composition's last band runs past the viewport's bottom edge (less LIFT_CLEAR).
+    // Stacked: how far the composition's last band runs past the stage's bottom edge (less LIFT_CLEAR).
     const measureLift = () => {
       const isStacked = !wide.matches || el.dataset.composeMode === "stacked";
       const bands = area.querySelectorAll(":scope > [data-band]");
       const last = bands[bands.length - 1];
-      const vh = window.innerHeight;
+      const vh = filmViewport().svh;
       const bottom = last ? last.getBoundingClientRect().bottom - area.getBoundingClientRect().top : 0;
       setStacked(isStacked);
       viewH.set(vh);
@@ -195,11 +199,11 @@ export function FilmChapter({
       el.dataset.composeMode = "auto";
       if (!wide.matches) return measureLift();
       const vw = el.clientWidth;
-      // The framed part must fit the viewport (a body below it is meant to overflow).
-      let fits = area.scrollHeight <= window.innerHeight + 1;
+      const { lvh, svh: vh } = filmViewport();
+      // The framed part must fit the stage (a body below it is meant to overflow).
+      let fits = area.scrollHeight <= vh + 1;
       if (fits) {
-        const vh = window.innerHeight;
-        const fh = Math.max(vw, vh * FILM_ASPECT.landscape) / FILM_ASPECT.landscape;
+        const fh = placement(vw, lvh, vh, FILM_ASPECT.landscape, REEL_FOCUS).height;
         const top = el.getBoundingClientRect().top;
         for (const item of el.querySelectorAll<HTMLElement>("[data-fit]")) {
           const r = item.getBoundingClientRect();
@@ -210,7 +214,7 @@ export function FilmChapter({
           // A row pushed off its band (its head overflowed) no longer sits on the frame: stack instead.
           const y = item.dataset.rowY;
           if (y !== undefined) {
-            const band = framePoint(vw, vh, FILM_ASPECT.landscape, REEL_FOCUS, [0.5, Number(y)])[1];
+            const band = placementPoint(vw, lvh, vh, FILM_ASPECT.landscape, REEL_FOCUS, [0.5, Number(y)])[1];
             if (Math.abs((r.top + r.bottom) / 2 - top - band) > ROW_DRIFT * fh + 0.5) {
               fits = false;
               break;
@@ -225,11 +229,11 @@ export function FilmChapter({
     const ro = new ResizeObserver(check);
     ro.observe(el);
     wide.addEventListener("change", check);
-    window.addEventListener("resize", check);
+    const offViewport = subscribeFilmViewport(check);
     return () => {
       ro.disconnect();
       wide.removeEventListener("change", check);
-      window.removeEventListener("resize", check);
+      offViewport();
     };
   }, [overflow, viewH]);
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore, type ReactNode, type SyntheticEvent } from "react";
+import { useEffect, useRef, useSyncExternalStore, type CSSProperties, type ReactNode, type SyntheticEvent } from "react";
 import type { FilmEntry, FilmManifest } from "@/components/film/filmCore";
 import { WIDE_QUERY } from "@/components/film/filmBase";
 import { FilmProgressContext } from "@/components/film/filmProgress";
-import { REEL_OBJECT_POSITION, useFilmBackdrop } from "@/components/film/FilmBackdrop";
+import { REEL_OBJECT_POSITION, REEL_STAGE_VARS, useFilmBackdrop } from "@/components/film/FilmBackdrop";
 import { useSegmentRegistration } from "@/components/film/useSegmentRegistration";
+import { STAGE_BOX_CLASS } from "@/components/film/placement";
 
 type Props = {
   /**
@@ -42,9 +43,13 @@ type Props = {
   children?: ReactNode;
 };
 
-// Sized like the backdrop canvas (top-aligned, dynamic viewport height) with the same cover crop and
-// focus, so the poster sits exactly on the first painted frame; the stage clips what runs past 100svh.
-const POSTER = "absolute inset-x-0 top-0 h-dvh w-full object-cover transition-opacity duration-300";
+// The poster lands exactly where the canvas paints a frame (components/film/placement.ts): its box is the stage's
+// height grown as the placement grows it (--film-stage-h) with its top that much above the stage's top
+// (--film-stage-top), and the browser's cover fit at REEL_OBJECT_POSITION in that box is the placement; where
+// lvh = svh (desktop) that is the stage itself (top 0, 100svh). Without lvh support, the old box (top 0, 100vh).
+// The stage clips what runs past 100svh. The hold-key layers have the same box (STAGE_BOX_CLASS).
+const POSTER = `absolute inset-x-0 w-full object-cover transition-opacity duration-300 ${STAGE_BOX_CLASS}`;
+const POSTER_STYLE = { ...REEL_STAGE_VARS, objectPosition: REEL_OBJECT_POSITION } as CSSProperties;
 
 /**
  * One film of the reel: a tall section that scrolls the backdrop through `film`, with a sticky
@@ -129,7 +134,7 @@ export function FilmSegment({
                   fetchPriority="high"
                   onError={hidePoster}
                   className={posterClass}
-                  style={{ objectPosition: REEL_OBJECT_POSITION }}
+                  style={POSTER_STYLE}
                 />
               </picture>
             ) : (
@@ -142,7 +147,7 @@ export function FilmSegment({
                 fetchPriority="high"
                 onError={hidePoster}
                 className={posterClass}
-                style={{ objectPosition: REEL_OBJECT_POSITION }}
+                style={POSTER_STYLE}
               />
             )
           ) : null}

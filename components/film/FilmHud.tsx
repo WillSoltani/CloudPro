@@ -23,12 +23,13 @@ const pct = (part: number, whole: number) => (whole > 0 ? Math.round((100 * part
 
 /**
  * Line 1: film, painted / target frame (then `eff` and the effective target where the engine never loads the target
- * frame by design, e.g. an odd tail frame on a phone), tier width, canvas backing size in device px.
+ * frame by design, e.g. an odd tail frame on a phone), tier width, canvas backing size in device px, the loader, then
+ * the input that moved the page last and the smoothing it gets (steady lag in ms; `?smooth=<ms>` sets touch's).
  */
 export function hudPositionLine(s: FilmStats): string {
   const film = s.paintedFilm || "(no paint)";
   const eff = s.effectiveFrame !== s.targetFrame ? ` eff ${s.effectiveFrame}` : "";
-  return `${film} · f${s.paintedFrame}/${s.targetFrame}${eff}${s.paintedSeg !== s.targetSeg ? ` (seg ${s.paintedSeg}/${s.targetSeg})` : ""} · ${s.width}w · canvas ${s.backingW}x${s.backingH} · ${s.mode}`;
+  return `${film} · f${s.paintedFrame}/${s.targetFrame}${eff}${s.paintedSeg !== s.targetSeg ? ` (seg ${s.paintedSeg}/${s.targetSeg})` : ""} · ${s.width}w · canvas ${s.backingW}x${s.backingH} · ${s.mode} · ${s.input} ${Math.round(s.smoothMs)} ms`;
 }
 
 /**
