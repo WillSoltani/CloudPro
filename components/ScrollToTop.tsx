@@ -141,7 +141,14 @@ export function ScrollToTop() {
       mo?.disconnect();
       mo = null;
       const c = chapters.get(id);
-      if (!c) return;
+      if (!c) {
+        // A section with no composition to measure: nothing can be under the corner.
+        window.clearTimeout(clearTimer);
+        clearTimer = 0;
+        setOverText(false);
+        setChecked(id);
+        return;
+      }
       cache.ensure(id);
       mo = new MutationObserver(schedule);
       mo.observe(c.compose, { attributes: true, attributeFilter: ["style"] });
