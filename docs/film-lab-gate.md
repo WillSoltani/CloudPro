@@ -10,7 +10,8 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
-| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts`, `film-toolbar.spec.ts` |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts`, `film-toolbar.spec.ts`, `film-layers.spec.ts`, `film-chrome.spec.ts` |
+| The plates and the anchors per animation frame (stage 8): the overlay scheduler, its framer-motion binding, the plates' pure parts (track row, flight, writing only what changed), their unit tests; spec | `components/film/overlayScheduler.ts`, `overlayFrame.ts`, `plateFace.ts`; `overlayScheduler.test.ts`, `plateFace.test.ts`; `e2e/film-layers.spec.ts` (see "Plates and anchors per frame") |
 | Smoothing by input (`smoothingFor`, `?smooth=`, the follower around the spring) and its unit tests | `components/film/smoothing.ts`, `smoothing.test.ts`; spec `e2e/film-feel.spec.ts` |
 | Scroll-pass measurement (the lab gate script) and the page URL it builds from `--query` | `scripts/films/scrub-quality.mjs` (`npm run film:quality`), `scripts/films/page-url.mjs` |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
@@ -369,6 +370,204 @@ out with changes with it any more:
   real layout measurements: at 390x844, 200 scroll events cost 200 before and 0 now (4 at load in both). Registrations in one
   commit reconcile once (a microtask).
 
+## Plates and anchors per frame
+
+Stage 8. A perspective plate (`PerspectivePlate`) was applied up to four times per animation frame, once per trigger: the
+painted frame and the painted segment (both set in `draw()`), the chapter's clock (set in the same tick, just before) and, for a
+plate that flies into its h2, every scroll event. Each application read the layout (the layer's box, the composition's top, the
+section's top, the anchor's offset, the h2's box) and wrote transform, opacity, visibility and the data attributes whether they
+had changed or not; the four `RideAnchor` columns next to it read the composition's width and wrote a transform every frame,
+on a phone an empty one. Now:
+
+- **One run per frame, in the paint's frame.** The triggers only invalidate the plate (`components/film/overlayScheduler.ts`,
+  bound to framer-motion's frame loop in `overlayFrame.ts`). Inside the loop's tick (the smoothed clock's update step, where
+  `onReel` sets the chapter's frame and `draw()` paints) the plate runs in the same tick's pre-render step, before framer-motion
+  writes its styles; after a paint outside the loop (a frame that arrived in the backdrop's own animation frame callback, a jump
+  in a scroll event, a resize) it runs in a microtask when that task ends, which is before the browser renders. A scroll alone
+  is deferred to the coming frame's pre-render step, where the clock's tick that follows it in the same frame folds in. The
+  `RideAnchor` columns go through the same scheduler. The fake-loop unit tests (`overlayScheduler.test.ts`) model the frame
+  (events, then the loop's update, pre-render and render steps, each callback followed by its microtasks); the spec checks the
+  order in the browser: at every animation frame of a scripted scroll the plate shows the track row of the frame the canvas
+  painted.
+- **Reads before writes.** Every job's reads run before any job's writes. The plate layer is fixed at the viewport's origin, so
+  its box is not read; the anchor's offset (a function of svh) is cached until the film viewport changes, as is the
+  composition's width for the columns, and the `wide` rule comes from its change events. On the track a plate reads one thing,
+  the section's top (the raw frame); in flight the h2's box too, and the composition's top only once the raw frame is at camera
+  rest (the pin cannot have released before: `mayBeReleased`).
+- **Only what changed** (`createFaceWriter`): transform, opacity, visibility, `data-plate-frame` and `data-plate-flight` are
+  compared with what was written last, never read back. A column on a stacked composition is never written.
+- **No layer hint.** The plate never gets `will-change` (as before stage 8). A first version set `will-change: transform` from a
+  plate's first move until 250 ms after its last; a review pointed out that Chromium keeps a will-change layer's raster scale
+  from when it was promoted, while the label is still small, so the plate could fly into its h2 with soft text and sharpen
+  only at rest, and the screenshots below are taken at rest. It was taken out rather than measured in motion.
+
+`e2e/film-layers.spec.ts` scrolls the Certifications chapter (the plate's track, its flight into the h2, the four columns) one
+`scrollTo` per animation frame at 1440x900 and at 390x844 (touch, DPR 3), and counts per frame (a rAF sampler; the reads and
+writes through an init script that wraps the layout getters and hands out a counting proxy of `el.style` for the plate's and
+the columns' elements, the data attributes through a MutationObserver). Before and after, the same spec on the base commit
+with a temporary run counter (2026-11-13, load 20 to 55, chromium; webkit within a few frames of it):
+
+| 259 frames | runs/frame (plate) | layout reads | plate style writes | data attribute writes | column writes |
+| --- | --- | --- | --- | --- | --- |
+| desktop, before | 2 to 4 on 185 frames (total 556) | 2006 (max 20 a frame) | 961 | 428 | 972 (4 a frame) |
+| desktop, after | 1 (2 on 5 frames; total 248) | 346 (max 4) | 97 | 74 | 47 |
+| phone, before | 2 to 4 on 182 frames (total 553) | 1897 (max 15) | 967 | 443 | 968 (all empty) |
+| phone, after | 1 (2 on 4 frames; total 247) | 350 (max 4) | 103 | 79 | 0 |
+
+A frame with two runs is a frame the canvas painted twice (a frame arriving in the backdrop's own callback, then the clock's
+tick): each paint gets its plate. Screenshots at rest on the track and in flight (s = 0.965) at 1440x900 DPR 2 and 3 and at
+390x844 DPR 3 are byte-identical before and after, on chromium and webkit (those runs had the layer hint, gone at rest; it has since been removed, see above).
+
+## The layers around the film (stage 8)
+
+The rest of stage 8, besides the plates: work that cost main-thread time on every scroll frame, and the two owner picks.
+
+- **One scroll subscription** (`scrollHub.ts`): the nav, the back-to-top button, the flow reveals and the plates share one window
+  `scroll` listener, attached while anything subscribes. The film's own listener (FilmBackdrop) is separate.
+- **Flow reveals** (`flowReveal.ts`, `flowHub.ts`, `Reveal.tsx` FlowReveal): one controller and one IntersectionObserver with a
+  band of one and a half viewports above and below. An item outside the band is already at its end state (0 below, 1 above) and
+  does nothing; inside it, one animation frame per scroll reads every near item, then writes only what changed. Entering or
+  leaving the band, a jump of more than the band, and a film viewport change refresh every item once. The ramp and the rise are
+  unchanged (`flowOpacity`, `flowStyle`). The controller keeps its (shared) scroll subscription while any item is registered,
+  near or not; with nothing near, a scroll event only compares `scrollY` with the last one, and a jump of more than the band
+  refreshes every item in that event's own frame. An instant jump that lands among the items from further away than the band
+  (from the hero into the About list, a restored history position, a click on the scrollbar's track) can only come from more
+  than the band away, so it is always such a jump. Without that (the first version of this stage subscribed only while an
+  item was near) the jump was first seen by the IntersectionObserver, whose callback comes after the frame at the target is
+  made, and that one frame showed the items at opacity 0 (measured below, before and after the cure).
+- **Back-to-top and text** (`cornerText.ts`, `textCache.ts`, `ScrollToTop.tsx`): on touch screens the text of every chapter is
+  measured once (a TreeWalker per chapter: the current one at once, the others one per idle slice), in boxes relative to the
+  sticky composition, and again when a composition's or its section's box changes size (not the observer's first report),
+  fonts load or the film's viewport changes. A scroll compares the corner's zone with those boxes, the section's document
+  top and `scrollY` (`stickyTop`), plus the composition's own lift read from its inline style (a MutationObserver on that one
+  attribute); no layout read, no text walk, no timer. The reveals move text by at most `REVEAL_SLACK` (10 px): the zone is that
+  much larger above and below instead of a re-measure when a reveal settles, so the button steps aside up to 10 px earlier at
+  the edge of a line and never later. `TEXT_CLEAR_MS` (300 ms) keeps the button from flickering as lines pass.
+- **Media queries** (`mediaStore.ts`): one MediaQueryList and one `change` listener each for prefers-reduced-motion, the `wide`
+  rule (which includes the orientation) and a coarse pointer, behind `useReducedMotionSafe`, `subscribeWide` / `wideMatches`
+  and `coarsePointerStore` in `filmCore.ts` (server snapshots unchanged: `false` for reduced motion, landscape for the film).
+- **Hero badge** (`badgeLook.ts`, owner pick): on a coarse pointer no backdrop blur and a night wash of 0.45 over the amber tint
+  (the badge text is 4.5:1 or better on the bright proxy, a unit test); the desktop badge is unchanged. The dot's ping runs
+  three one-second cycles and stops. `?badge=blur` brings back the blur everywhere and the endless ping; it is read after
+  mount, so the markup the server sent never differs from the first client render.
+- **Nav clicks** (`navJump.ts`, `AnchorJumps.tsx`, owner pick): a click on an in-page link whose target chapter is more than one
+  chapter from where the page is jumps (`scroll-behavior: auto` on html for 500 ms, then handed back); one chapter away it keeps
+  the smooth scroll. The two passages with no nav link count as chapters (the hero before About, the exit and the bridge between
+  Projects and Contact). `?nav=smooth` keeps smooth scrolling everywhere for the page load.
+  Chromium fires a `popstate` for the fragment navigation of a click, which `InstantHistoryRestore.tsx` (Back and Forward restore
+  instantly) took for a history traversal and answered with `scroll-behavior: auto`: before the fix every nav click jumped in
+  Chromium, the adjacent one included (found by `film-chrome`, one scroll event for the click to About). The click now notes itself
+  (`fragmentClick` in `navJump.ts`) and the restore skips the first `popstate` within one second after it; a real Back press is
+  still instant.
+- **Safe areas**: the portfolio pages (`app/page.tsx`, `app/projects/[slug]/page.tsx`, not the root layout, which also serves
+  the ChapterFlow hosts) export `viewport = { viewportFit: "cover" }`, so the `env(safe-area-inset-*)` paddings take effect:
+  the nav bar, the project page, the back-to-top button, the captions, the stacked bands (`[data-band]`), the About and
+  Projects bodies and the footer. The left and right insets are 0 except on a notched phone in landscape. The top and bottom
+  insets are not: wherever the browser reports them (an iPhone's home indicator in portrait, 34 px; iPhone landscape, 21 px;
+  Android Chrome drawing under the system navigation bar; a top inset under the status bar) the bottom text sits higher than
+  before by the inset less its old padding (captions about 6 px, the footer about 14 px, the back-to-top button about 10 px
+  on a 34 px inset) and the nav bar starts below the top inset. Not checked on a device. The three figures are the computed
+  paddings (28 to 34, 20 to 34, 24 to 34 px) against a browser that reports no inset for a page without `viewport-fit=cover`,
+  which is what Safari is said to do and was not seen here. Chromium with the safe-area override reports the inset to the old
+  build too, and the old caption and footer paddings already used `env()`: there the captions and the footer are the same
+  before and after and only the back-to-top button moves (24 to 34 px). The insets go into the text's
+  padding only: the page column (`PageShell`) stays as wide as the canvas, which now runs
+  under the notch, because the compositions' frame variables (`frameBox.ts`, built on `100cqw`) and the hero poster's crop must
+  match the canvas (a padded column put the frame-anchored text about 20 to 30 px off the picture and gave the poster a different
+  crop from the canvas on a notched phone in landscape).
+- **Headings**: the exit and the bridge sections carry a visually hidden `h2` (`exit-title`, `bridge-title`) that names them
+  through `aria-labelledby`, between Projects' h3s and Contact's h2.
+
+`e2e/film-chrome.spec.ts` (four tests, `@chrome`): no TreeWalker is created in a scroll through the whole page on a 390x844 touch
+viewport, with at most three live window scroll listeners and no second frame loop at rest; the badge's computed style, its ping
+(three iterations, finished; endless with `?badge=blur`), no hydration error with the switch, the blur kept on desktop; a nav
+click to a far chapter fires at most four scroll events with the first already at the target; to the next chapter, and to a far
+one with `?nav=smooth`, more than one with the first near where the scroll started (the spec first asked for eight events, a
+count that depends on the browser's pacing: headless Chromium fired 57 and 90 in one run, WebKit 4); the two hidden h2s, heading order, `viewport-fit=cover` on `/` and a project page, and on a notched phone in landscape
+(852x393 with 59 px insets through Chromium's safe-area override) the compositions, the hero's stage and its poster as wide as
+the canvas and no visible text inside the insets. The badge test's desktop context names `hasTouch: false`, `isMobile: false`
+and `deviceScaleFactor: 1`: a context made inside a describe with `test.use(TOUCH)` takes every option it does not set.
+
+### Measured in the browser (2026-11-13)
+
+Before is `origin/main` (e9fb6178), after is the branch at d2392284, both production builds served on loopback, headless
+Chromium 151 (Playwright 1.62), one browser run at a time on a Mac shared with other test campaigns (load average 1 minute:
+6 to 40 for the counts, 17 to 29 for the nav and plate runs, 100 to 128 for the screenshot runs; the counts and the pictures
+do not depend on it, a timing would). The scripts are scratch files, not part of the repository.
+
+**Counts per animation frame** (placeholder frames; a steady scripted pass from the top of the page to its end, one
+`scrollTo` of 24 px per animation frame, 784 frames at 390x844 touch (DPR 2) and 760 at 1440x900; the prototypes patched in an
+init script; two runs of each, the totals within 3 % of each other and the maxima identical). The plate writes are style
+writes on every plate's elements, React's included.
+
+| per pass | TreeWalkers | `getBoundingClientRect` (element) | range rect reads | `getComputedStyle` | plate style writes | rAF callbacks run |
+| --- | --- | --- | --- | --- | --- | --- |
+| phone, before | 348 (max 2 a frame) | 25 900 (33 a frame, max 194) | 160 to 167 | 6 256 (8 a frame) | 1 070 to 1 110 (max 15) | 7 377 (9.4 a frame) |
+| phone, after | 0 | 2 700 (3.5 a frame, max 14) | 0 | 1 | 67 to 80 (max 8) | 1 990 (2.5 a frame, max 4) |
+| desktop, before | 0 | 9 250 (12 a frame, max 30) | 0 | 6 064 (8 a frame) | 1 070 to 1 120 (max 15) | 6 822 (9 a frame) |
+| desktop, after | 0 | 2 770 (3.6 a frame, max 14) | 0 | 1 | 81 to 86 (max 8) | 1 211 (1.6 a frame, max 2) |
+
+At rest on the hero (after the first frame settles and 4 s of quiet, read over 2 s): live window `scroll` listeners 12 before,
+2 after (the registrations at load are 12 and 2: nothing registers again), and 0 `requestAnimationFrame` callbacks a second in
+both builds (headless, nothing animating). TreeWalkers on the phone: none at rest before (the text was walked during scrolls,
+348 times in the pass), 5 after, one per chapter with a composition, in idle slices after load, then none in the pass. Long
+tasks over 50 ms in the pass: 0 in six of the eight runs, 1 to 2 in the others, on both builds. The 8 plate writes in a frame
+after are a neighbouring plate mounting (React's six style properties and the writer's first two).
+
+**Screenshots on real frames** (a build without `NEXT_PUBLIC_FILM_BASE`, one page load per viewport and build, the hero, the
+five chapter holds (anchors as the nav lands on them) and the bottom of the page; each taken twice 0.7 s apart for the noise
+floor; mean absolute difference per channel on a 0 to 255 scale and the share of pixels with any channel off by more than 2):
+
+| viewport | positions | before vs after |
+| --- | --- | --- |
+| 1440x900, DPR 1 | 7 | 6 identical (0 and 0 %). Hero: a 15x14 px region on the badge's dot, mean 0.001 / 0.0005 / 0.0001, 0.012 % of the pixels. The old ping runs for ever, so its phase differs from the stopped one; the same two shots of the old build differ by 0.007 % there |
+| 390x844 touch, DPR 2 | 7 | 6 identical. Hero: 1.7 % of the pixels, mean 0.21 / 0.16 / 0.05, all inside the badge's box (40..455 x 1270..1327 device px) and 0.0 outside it: the badge without blur, the darker fill and the stopped ping |
+
+Two shots of the same build are identical everywhere else (the particle canvas under the film does not show). So the only pixel
+differences on the page are the two owner picks.
+
+**The Certifications plate at rest, mid-move and mid-flight** (placeholder frames, the film at rest, the plate's box
+plus 10 px; DPR 2 and 3 at 1440x900 and DPR 3 at 390x844; flight at s = 0.504, 0.504 and 0.525, found by bisection in the new
+build and used in the old): the six crops, and the six full screenshots, are byte-identical before and after (mean 0, no pixel
+off, the same gradient and Laplacian sharpness figures), and the plate's computed `will-change` is `auto` in both builds. Neither
+build sets a layer hint, so there is nothing that could differ in motion; a frame captured during a scroll was not taken (it
+cannot be repeated exactly).
+
+**Nav click from the hero to Contact** (1440x900, placeholder frames, every animation frame sampled after it is painted, three
+runs each; a flow item counts when it has text and its box touches the viewport; a frame counts when its opacity, with its
+ancestors', is below 0.02):
+
+| | scroll events | first painted frame at the target | flow items in the viewport there | frames in the next 500 ms (31 to 33) with one at opacity 0 |
+| --- | --- | --- | --- | --- |
+| after, default | a jump | 2 to 4 frames after the click (100 to 150 ms; the click is a protocol mouse event) | 0 | 0 |
+| after, `?nav=smooth` | smooth | after 90 frames (1.54 s) | 0 | 0 |
+| before | a jump too: Chromium fires a `popstate` for the click and `InstantHistoryRestore` took it for Back, see the nav bullet above (main has the same defect) | 2 to 4 frames after the click | 0 | 0 |
+
+The question has no one to ask there: Contact's anchor lands with no flow item in the viewport, and so does every chapter anchor
+the nav lands on (counted at all seven landing positions at both sizes). (The copyright line is a film-clock reveal, not a flow
+item: at 0.016 at the Contact anchor and 1 at the bottom of the page, in both builds.) An instant `scrollTo` from the hero into the
+middle of the About list (six items) and of the Projects list (two), which a restored history position would do, tells another
+story: with the first version of the controller, every item was at opacity 0 in the first painted frame at the target and at 1
+in the second (3 runs of 3, both lists, so one frame of about 17 ms); before stage 8, none is ever at 0 (the old per-item scroll
+listeners wrote in the frame's own scroll event). The cause was that from the hero nothing is within the band, so no scroll
+subscription existed and the IntersectionObserver reported a frame late. Cured as the paragraph on the band above says (unit test
+"applies an instant jump from beyond the band in the scroll's own frame" in `flowReveal.test.ts` fails without it): with the cure,
+no item is at 0 in any frame of the 500 ms after the jump (3 runs of each list, load 31 to 57).
+
+**Back from a project page** (a project card's link in the Projects list, the project page, Back; Chromium restores the position
+instantly, `InstantHistoryRestore`; the first home frame at the restored position and the 500 ms after it, as above): at 1440x900
+no frame has a flow item at 0, before stage 8 (0 of 6) or after the cure (0 of 13). At 390x844 touch both builds sometimes show
+one frame with the one or two items in the viewport at 0: before stage 8 in 2 of 20 runs, after the cure in 3 of 13 (loads 25 to
+85). It is the same frame in both: the home page has mounted its items, and applied them, before the restore (they were below the
+viewport then), and the browser's restore has moved the page but its scroll event has not been dispatched yet (none had been, in all five), so
+no scroll listener of either build has run; the next frame shows them at 1. It is not a stage-8 difference and is left as it is.
+
+**Safe-area figures** (Chromium override, computed styles; the pictures are in the owner sheet): with a 34 px bottom inset the
+hero and chapter caption paddings are 34 px (28 without) in both builds, the footer 34 px (20) in both, the back-to-top button
+34 px above the bottom after and 24 px before. At 852x393 with insets 59 / 59 / 21 the page, the film and the compositions are as
+wide as the canvas in both builds; after, the text, the nav bar and the badge start 59 px in (the picture does not move), before
+they start at the screen's edge under the notch; the 6 % to 0.03 % of the pixels that differ are those texts.
+
 ## Toolbar simulation
 
 Playwright cannot emulate a phone's dynamic browser toolbar: in a test browser lvh = svh = dvh = the window height. A phone with
@@ -495,6 +694,8 @@ up after 2 looks, both on target, with nothing wrong in the engine (stage 7, 202
 | `film-feel` | a touch-style scroll (a touchstart, a scripted `scrollTo` step every animation frame, then a fling's decay per frame) and a wheel scroll (notches 3 animation frames apart), both driven frame by frame: the input and smoothing the counters report, more than 20 / 10 ticks while the page moves, the shown clock never past the raw clock and never stepping back, through the landing (it waits for the shown clock to land on the raw clock); the same scripted scroll under the wheel and under touch, the same rules for both; `?smooth=90` and the HUD's input line; no smoothing under reduced motion. Prints the gap figures (`FEEL` lines); no timing is asserted (which input trails less is a fake-clock unit test in `smoothing.test.ts`) |
 | `film-toolbar` | the simulated toolbar (`## Toolbar simulation` above): 390x664 with `--film-lvh: 754px; --film-svh: 664px`, moved to 754 and back, at rest at three positions and during a scripted scroll, in both modes. No canvas reallocation, the backing store and CSS box unchanged, the marker row (read from the canvas pixels), the key layers and the plates where they were, the key layers' boxes, the hero poster's box and the frame variables unchanged in both modes; with the page unchanged (`"phone"` mode) also the clock, frame, pixels and screenshot, 0 draws and 0 measures. Where the placement grows (411x826 in 882): each laid-out key's CSS-only cover fit equals its px (no zoom step when the backdrop takes over, after a scroll and after a `#contact` deep link), the key box equals the poster box, the breath's origin is the same frame point as without the grow and survives a reload; where lvh = svh (1440x900, 390x844) the key box is top 0 and full height |
 | `film-packs` | packs: a pass down and back at 390x844 touch and 1440x900, the film data requests recorded in the annotations (before the first scroll one pack read; down at most 40; back 0, by the page's count and on the network), no frame file, no byte read twice, within the budget, pixels equal `data-frame` at every stop. Fallbacks by routing the pack requests: a 404 (each film's pack asked once, the films load frame by frame), bytes that are not a pack (given up, frame by frame), and a server that ignores Range (every answer a whole-file 200, the first one cut short so the page must continue: the films still play from their packs, the bytes held already counted as read twice) |
+| `film-layers` | the plates and the anchors per animation frame (`## Plates and anchors per frame` above): a scripted scroll through the Certifications chapter at 1440x900 and 390x844 touch; at every frame the plate shows the painted frame's track row; at most 2 plate runs a frame and on at most a tenth of the frames more than 1; on the track one layout read per run; style writes within 3 per run; the plate's computed `will-change` is `auto` at every frame; the columns written at most once each a frame on desktop and never on a phone. Prints the counts (and adds them to the annotations) |
+| `film-chrome` | the layers around the film (`## The layers around the film (stage 8)` above): no TreeWalker created during a scroll through the page on a 390x844 touch viewport, at most three window scroll listeners and no extra frame loop at rest; the badge's calm look on touch and desktop and `?badge=blur`; far nav clicks jump, near ones and `?nav=smooth` scroll smoothly; the exit's and the bridge's hidden h2, heading order, `viewport-fit=cover`, and on a notched phone in landscape the compositions, stage and poster as wide as the canvas with no text in the insets |
 | `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on; with a `createImageBitmap` that rejects every frame (and no `Worker`) the page hands over to the legacy loader at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 
 ## Scroll-pass gate

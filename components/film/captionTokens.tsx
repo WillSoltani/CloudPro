@@ -5,7 +5,7 @@
  * Desktop (`wide:`): the quiet left quarter of the frame, vertically centred, x 5–30 %.
  */
 export const CAPTION_COLUMN = [
-  "absolute inset-x-0 bottom-0 flex max-h-[36svh] flex-col justify-end px-5 pb-[max(1.75rem,env(safe-area-inset-bottom))]",
+  "absolute inset-x-0 bottom-0 flex max-h-[36svh] flex-col justify-end px-[max(1.25rem,env(safe-area-inset-left),env(safe-area-inset-right))] pb-[max(1.75rem,env(safe-area-inset-bottom))]",
   "wide:inset-x-auto wide:top-1/2 wide:bottom-auto wide:left-[5vw] wide:w-[25vw] wide:max-w-[34rem] wide:min-w-[20rem] wide:max-h-none wide:-translate-y-1/2 wide:justify-start wide:px-0 wide:pb-0",
 ].join(" ");
 

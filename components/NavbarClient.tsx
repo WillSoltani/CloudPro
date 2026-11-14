@@ -11,6 +11,8 @@ import { useAuthStatus } from "@/components/auth/useAuthStatus";
 import { HERO_INTRO_END } from "@/components/film/heroBeats";
 import { HERO_FILM_SELECTOR, useFilmInView } from "@/components/film/useFilmInView";
 import { useReelChrome } from "@/components/film/useReelChrome";
+import { subscribeScroll } from "@/components/film/scrollHub";
+import { subscribeFilmViewport } from "@/components/film/viewport";
 import { social, type SocialId } from "@/content/social";
 
 const links = [
@@ -65,23 +67,37 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     setOpen(false);
   };
 
+  // Stage 8: the hero's scroll range is read when the film's viewport changes (it is a function of the viewport's size
+  // only), not on every scroll event, and the scroll listener is the shared one (scrollHub.ts).
   useEffect(() => {
+    // The hero's height (a layout read: at mount and after a film viewport change); the range takes the live innerHeight off it.
+    let heroHeight = 0;
+    const measure = () => {
+      heroHeight = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR)?.offsetHeight ?? 0;
+    };
     const onScroll = () => {
-      const f = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
+      if (!heroHeight) measure(); // not there yet (a late hero): look again, which costs nothing once it is
+      const range = heroHeight ? heroHeight - window.innerHeight : 0;
       // The hero's opening caption is gone at the end of its intro window (heroBeats HERO_INTRO_END), so the
       // name returns there (a fixed half screen would leave it missing for a few hundred px on the long
       // hero). On phones it waits for the whole hero: the data hall's ceiling panels would put it white on
       // white.
-      const range = f ? f.offsetHeight - window.innerHeight : 0;
       const until = window.innerWidth < 768 ? 1 : HERO_INTRO_END;
       setNearTop(window.scrollY < (range > 0 ? until * range : 0.55 * window.innerHeight));
     };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    const remeasure = () => {
+      measure();
+      onScroll();
+    };
+    remeasure();
+    const offScroll = subscribeScroll(onScroll);
+    // `resize` alone is a phone's toolbar moving: innerHeight changes, the hero's height does not.
     window.addEventListener("resize", onScroll, { passive: true });
+    const offViewport = subscribeFilmViewport(remeasure);
     return () => {
-      window.removeEventListener("scroll", onScroll);
+      offScroll();
       window.removeEventListener("resize", onScroll);
+      offViewport();
     };
   }, []);
 
@@ -123,8 +139,8 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   return (
     // The header stays clear at every scroll position (no fill, blur or hairline), so the reel reads as one
     // piece; the nav pill keeps its own 5 % fill.
-    <header className="fixed top-0 left-0 right-0 z-50 bg-transparent">
-      <div className="flex items-center justify-between px-4 py-4 sm:px-6">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-transparent pt-[env(safe-area-inset-top)]">
+      <div className="flex items-center justify-between py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
         {/* The current route: nothing to prefetch (it only produced aborted `/?_rsc=` requests). */}
         <Link
           href="/#about"
@@ -230,7 +246,12 @@ export function NavbarClient({ initialLoggedIn }: Props) {
             exit="exit"
             className="md:hidden"
           >
-            <div ref={panelRef} id="mobile-nav" className="px-4 pb-4 sm:px-6" onBlur={onPanelBlur}>
+            <div
+              ref={panelRef}
+              id="mobile-nav"
+              className="pb-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]"
+              onBlur={onPanelBlur}
+            >
               <nav
                 aria-label="Primary"
                 className="rounded-2xl border border-white/10 bg-[#070b16]/80 p-2 backdrop-blur"

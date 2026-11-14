@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { fraunces } from "@/app/_lib/fraunces";
 
 import { projects } from "@/content/projects";
@@ -38,6 +38,9 @@ const PICTURES: Record<string, Picture> = {
 function getProjectBySlug(slug: string): Project | undefined {
   return projects.find((p) => p.slug === slug);
 }
+
+// Portfolio pages only (see app/page.tsx): the page's own paddings below keep the text clear of the notch and the home indicator.
+export const viewport: Viewport = { viewportFit: "cover" };
 
 type ParamsPromise = Promise<{ slug: string }>;
 
@@ -120,7 +123,9 @@ export default async function ProjectPage({ params }: { params: ParamsPromise })
   const step = project.nextStep;
 
   return (
-    <main className={`${fraunces.variable} relative px-5 pb-28 pt-8 sm:px-8 sm:pt-10`}>
+    <main
+      className={`${fraunces.variable} relative pb-[calc(7rem+env(safe-area-inset-bottom))] pl-[max(1.25rem,env(safe-area-inset-left))] pr-[max(1.25rem,env(safe-area-inset-right))] pt-[max(2rem,env(safe-area-inset-top))] sm:pl-[max(2rem,env(safe-area-inset-left))] sm:pr-[max(2rem,env(safe-area-inset-right))] sm:pt-[max(2.5rem,env(safe-area-inset-top))]`}
+    >
       <div className="mx-auto max-w-[68rem]">
         <Link href="/#projects" className={`${TEXT_LINK} text-[15px]`}>
           Back to soltani.org

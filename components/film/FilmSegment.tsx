@@ -58,6 +58,9 @@ const POSTER_STYLE = { ...REEL_STAGE_VARS, objectPosition: REEL_OBJECT_POSITION 
  * targets the hero and rack-00 has not landed; with a portrait film the poster is a <picture> that
  * picks by the same `wide` rule at parse time.
  *
+ * The section is named by `aria-labelledby` (an existing heading's id), or by `aria-label`, which also renders a visually
+ * hidden h2 (`${id}-title`) so the passage appears in a heading list.
+ *
  * Test hooks: section `data-film` `data-count` (the manifest this page load plays; the landscape one
  * on the server and during hydration) `data-film-segment` `data-index`, and `data-loaded` (frames
  * decoded, written by the backdrop).
@@ -85,6 +88,9 @@ export function FilmSegment({
     activeFrom,
   });
   const hero = index === 0;
+  // A wordless passage (the exit, the bridge) names itself with a heading, not only an aria-label: a visually hidden h2
+  // that labels the section, so a heading list shows it (after the previous chapter's h3s, before the next chapter's h2).
+  const headingId = ariaLabel && !ariaLabelledby ? `${id}-title` : undefined;
   // Published by the backdrop: up on the server and while the clock targets segment 0 before it has landed
   // (a cold load at the top; a return to the top before rack-00 has painted), down everywhere else, so the
   // poster never bands the chapter joined over the hero's stage.
@@ -111,8 +117,8 @@ export function FilmSegment({
       <section
         ref={sectionRef}
         id={id}
-        aria-label={ariaLabel}
-        aria-labelledby={ariaLabelledby}
+        aria-label={headingId ? undefined : ariaLabel}
+        aria-labelledby={headingId ?? ariaLabelledby}
         data-film={manifest.name}
         data-count={manifest.count}
         data-film-segment=""
@@ -120,6 +126,11 @@ export function FilmSegment({
         className="relative"
         style={{ height: `${length * 100}svh` }}
       >
+        {headingId ? (
+          <h2 id={headingId} className="sr-only">
+            {ariaLabel}
+          </h2>
+        ) : null}
         <div className="sticky top-0 h-[100svh] w-full overflow-hidden">
           {hero && entry ? (
             // Poster: the first paint, and the fallback until the backdrop has landed on its target frame.

@@ -1,5 +1,6 @@
 "use client";
 
+import { useSyncExternalStore } from "react";
 import { ArrowRight } from "lucide-react";
 import { FilmCaption } from "@/components/film/FilmCaption";
 import {
@@ -10,13 +11,16 @@ import {
 } from "@/components/film/captionTokens";
 import { HERO_BEATS, HERO_COPY, type HeroBeat } from "@/components/film/heroBeats";
 import { FILM_LINK } from "@/components/film/sectionTokens";
+import { badgeBlurRequested, badgeLook } from "@/components/film/badgeLook";
+
+const noSubscribe = () => () => {};
 
 // Every caption shares the caption column on desktop (captionTokens.CAPTION_COLUMN); a caption with a
 // CTA (the finale) keeps clear of the centre of the frame too. On phones the finale is the centred bottom
 // block, sized to its content (a height cap only ever squashed the CTA: the block grows upward from the
 // bottom, clear of the intro, which has left by then), its email line ≥ 16 px above the edge while it drifts in.
 const FINALE = [
-  "absolute inset-x-0 bottom-0 flex flex-col items-center justify-end px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-center",
+  "absolute inset-x-0 bottom-0 flex flex-col items-center justify-end px-[max(1.25rem,env(safe-area-inset-left),env(safe-area-inset-right))] pb-[max(2.5rem,env(safe-area-inset-bottom))] text-center",
   "wide:inset-x-auto wide:top-1/2 wide:bottom-auto wide:left-[5vw] wide:w-[25vw] wide:max-w-[34rem] wide:min-w-[20rem] wide:-translate-y-1/2 wide:items-start wide:justify-start wide:px-0 wide:pb-0 wide:text-left",
 ].join(" ");
 
@@ -25,13 +29,17 @@ const FINALE_LINE =
 
 /** The hero block: the page's h1 lives here and never leaves the accessibility tree. */
 function Intro({ from, to }: { from: number; to: number }) {
+  // `?badge=blur` is read after mount (the server snapshot is the default look), so hydration never mismatches.
+  const blur = useSyncExternalStore(noSubscribe, () => badgeBlurRequested(window.location.search), () => false);
+  const look = badgeLook(blur);
   return (
     <FilmCaption from={from} to={to} persistent className={CAPTION_COLUMN}>
-      {/* Short phones (phone-short): a 20 % night wash over the pill's amber tint, where the ceiling behind
-          it is brightest (the badge text measured 4.48:1 on the slate-400 proxy at 320×568). */}
-      <span className="inline-flex w-fit max-w-full items-center gap-2.5 rounded-full border border-lamp/40 bg-lamp/10 px-3.5 py-1.5 text-[11px] leading-snug text-slate-200 backdrop-blur-sm sm:text-xs phone-short:bg-[linear-gradient(rgb(7_11_22/0.2),rgb(7_11_22/0.2))]">
+      {/* The badge's look (badgeLook.ts): no backdrop blur over the moving film on touch screens (a night wash instead,
+          4.5:1 on the bright proxy), the dot's ping stops after three cycles; ?badge=blur restores the old look. The old
+          short-phone note: the text measured 4.48:1 on the slate-400 proxy at 320×568 with a 20 % wash. */}
+      <span data-badge={look.look} className={look.pill}>
         <span className="relative flex h-2 w-2 shrink-0">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-lamp/60 motion-safe:animate-ping" />
+          <span className={`absolute inline-flex h-full w-full rounded-full bg-lamp/60 ${look.ping}`} />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-lamp" />
         </span>
         <span className="text-balance">{HERO_COPY.badge}</span>

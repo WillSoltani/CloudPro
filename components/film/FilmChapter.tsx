@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
 import { motion, useMotionValue, useTransform } from "framer-motion";
-import { useReducedMotionSafe, type FilmEntry } from "@/components/film/filmCore";
-import { WIDE_QUERY } from "@/components/film/filmBase";
+import { subscribeWide, useReducedMotionSafe, wideMatches, type FilmEntry } from "@/components/film/filmCore";
 import { REEL_FOCUS, type SegmentRegistration } from "@/components/film/FilmBackdrop";
 import { useSegmentRegistration } from "@/components/film/useSegmentRegistration";
 import { useRackPlatesOn } from "@/components/film/RackPlate";
@@ -147,6 +146,16 @@ export function FilmChapter({
     return `linear-gradient(to bottom, #000 ${(end - FEATHER_PX).toFixed(1)}px, transparent ${end.toFixed(1)}px)`;
   });
 
+  // The anchor's offset less ANCHOR_OFFSET (the move m in px), read once and again after a film viewport change.
+  const anchorMove = useRef<number | null>(null);
+  useEffect(
+    () =>
+      subscribeFilmViewport(() => {
+        anchorMove.current = null;
+      }),
+    [],
+  );
+
   const ctx = useMemo<ChapterContextValue>(
     () => ({
       id,
@@ -163,12 +172,14 @@ export function FilmChapter({
       stacked,
       sectionRef,
       composeRef,
-      // The raw (unsmoothed) move frame, from the DOM: what the plate snaps to on a jump.
+      // The raw (unsmoothed) move frame, from the DOM: what the plate snaps to on a jump. One layout read (the section's
+      // top); the move m (the anchor's offset, a function of svh only) is cached until the film viewport changes.
       rawFrame: () => {
         const el = sectionRef.current;
         const anchor = anchorRef.current;
         if (!el || !anchor) return 0;
-        const m = anchor.offsetTop - ANCHOR_OFFSET;
+        if (anchorMove.current === null) anchorMove.current = anchor.offsetTop - ANCHOR_OFFSET;
+        const m = anchorMove.current;
         const y = -el.getBoundingClientRect().top;
         return m > 0 ? Math.min(1, Math.max(0, y / m)) * end : end;
       },
@@ -182,11 +193,10 @@ export function FilmChapter({
   useEffect(() => {
     const el = composeRef.current;
     if (!el) return;
-    const wide = window.matchMedia(WIDE_QUERY);
     const area = el.querySelector<HTMLElement>("[data-frame-area]") ?? el;
     // Stacked: how far the composition's last band runs past the stage's bottom edge (less LIFT_CLEAR).
     const measureLift = () => {
-      const isStacked = !wide.matches || el.dataset.composeMode === "stacked";
+      const isStacked = !wideMatches() || el.dataset.composeMode === "stacked";
       const bands = area.querySelectorAll(":scope > [data-band]");
       const last = bands[bands.length - 1];
       const vh = filmViewport().svh;
@@ -197,7 +207,7 @@ export function FilmChapter({
     };
     const check = () => {
       el.dataset.composeMode = "auto";
-      if (!wide.matches) return measureLift();
+      if (!wideMatches()) return measureLift();
       const vw = el.clientWidth;
       const { lvh, svh: vh } = filmViewport();
       // The framed part must fit the stage (a body below it is meant to overflow).
@@ -228,11 +238,11 @@ export function FilmChapter({
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
-    wide.addEventListener("change", check);
+    const offWide = subscribeWide(check);
     const offViewport = subscribeFilmViewport(check);
     return () => {
       ro.disconnect();
-      wide.removeEventListener("change", check);
+      offWide();
       offViewport();
     };
   }, [overflow, viewH]);

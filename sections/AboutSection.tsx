@@ -22,7 +22,7 @@ const PROOF = ["2 products in production", "Stripe billing live", "Infra as code
 /** About's body: how to hire Will (content/engagements.ts), in the four-column grid, then how a project runs. */
 function EngagementsBody() {
   return (
-    <div className="mx-auto max-w-6xl px-5 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-6xl px-[max(1.25rem,env(safe-area-inset-left),env(safe-area-inset-right))] sm:px-[max(1.5rem,env(safe-area-inset-left),env(safe-area-inset-right))] lg:px-[max(2rem,env(safe-area-inset-left),env(safe-area-inset-right))]">
       <FlowReveal>
         <h3 className="font-serif text-2xl font-normal leading-snug text-slate-50 wide:text-[clamp(1.5rem,1.9vw,2rem)]">
           Ways to work together

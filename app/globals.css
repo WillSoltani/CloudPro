@@ -237,7 +237,7 @@ body {
   }
   [data-band] {
     margin-top: var(--band-mt-s, 0px);
-    padding-inline: max(20px, calc((100cqw - 36rem) / 2));
+    padding-inline: max(20px, env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), calc((100cqw - 36rem) / 2));
   }
   [data-columns] {
     display: flex;

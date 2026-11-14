@@ -85,21 +85,23 @@ export function RackPlate({
 }) {
   const backdrop = useFilmBackdrop();
   const chapter = useChapterOptional();
-  const flight = useMemo<PlateHandoff | undefined>(
-    () =>
-      handoff && chapter
-        ? {
-            frame: chapter.frame,
-            land: chapter.choreo.land,
-            h2: chapter.head.h2,
-            target: () =>
-              chapter.sectionRef.current?.querySelector<HTMLElement>("[data-plate-target]") ?? null,
-            pinned: () => chapter.composeRef.current,
-            raw: chapter.rawFrame,
-          }
-        : undefined,
-    [handoff, chapter],
-  );
+  const flight = useMemo<PlateHandoff | undefined>(() => {
+    if (!handoff || !chapter) return undefined;
+    // The landing box, looked up once and again only if it left the document (no query per frame in flight).
+    let target: HTMLElement | null = null;
+    return {
+      frame: chapter.frame,
+      land: chapter.choreo.land,
+      h2: chapter.head.h2,
+      target: () =>
+        target?.isConnected
+          ? target
+          : (target = chapter.sectionRef.current?.querySelector<HTMLElement>("[data-plate-target]") ?? null),
+      pinned: () => chapter.composeRef.current,
+      raw: chapter.rawFrame,
+      end: chapter.end,
+    };
+  }, [handoff, chapter]);
   const film = backdrop.reel[index]?.landscape.name;
   const [track, setTrack] = useState<PlateTrack | null>(null);
 

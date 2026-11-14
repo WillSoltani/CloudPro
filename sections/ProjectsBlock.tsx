@@ -123,7 +123,7 @@ function ProjectItem({ p, at, stackedPin }: { p: Project; at: FrameWindow; stack
  */
 function ProjectsBody() {
   return (
-    <div className="mx-auto max-w-6xl px-5 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-6xl px-[max(1.25rem,env(safe-area-inset-left),env(safe-area-inset-right))] sm:px-[max(1.5rem,env(safe-area-inset-left),env(safe-area-inset-right))] lg:px-[max(2rem,env(safe-area-inset-left),env(safe-area-inset-right))]">
       {MORE.length ? (
         <>
           <h3 className={MONO_LABEL}>More projects</h3>

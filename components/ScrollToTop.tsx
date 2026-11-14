@@ -4,45 +4,28 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ArrowUp } from "lucide-react";
 import { useReelChrome } from "@/components/film/useReelChrome";
+import { coarsePointerStore } from "@/components/film/filmCore";
+import { subscribeScroll } from "@/components/film/scrollHub";
+import { subscribeFilmViewport } from "@/components/film/viewport";
+import { createFirstReportSkip, createTextCache } from "@/components/film/textCache";
+import {
+  cornerZone,
+  measureChapterText,
+  safeInsets,
+  stickyTop,
+  textInZone,
+  translateYOf,
+  type ChapterText,
+  type Insets,
+} from "@/components/film/cornerText";
 
-// The button's box: fixed 24 px (bottom-6 / right-6) from the corner, 44 px square (p-3 + 20 px icon).
-const INSET = 24;
-const SIZE = 44;
-// Clear space kept between the button and the footer text.
-const CLEAR = 8;
 // After the corner has been clear of text this long, the button comes back (no flicker as lines pass it).
 const TEXT_CLEAR_MS = 300;
-// How often the corner is re-checked while a chapter is on screen (its read pin's lift and reveals run on
-// the clock's spring, after the scroll has stopped).
-const TEXT_POLL_MS = 100;
 // The veiled jump back to the top: night in, the jump, the hero's first frame, night out.
 const VEIL_IN_S = 0.16;
 const VEIL_OUT_S = 0.32;
 // The longest the veil waits for the film to report the hero's first frame (rack-00(-p) f0) before it lifts.
 const VEIL_WAIT_MS = 800;
-
-/**
- * True when a line of text inside `root` comes within CLEAR px of the button's corner box: shown, or still
- * to be revealed there (so the button never fades in where copy is about to arrive).
- */
-function textUnderButton(root: Element): boolean {
-  const vw = document.documentElement.clientWidth;
-  const vh = window.innerHeight;
-  const left = vw - INSET - SIZE - CLEAR;
-  const top = vh - INSET - SIZE - CLEAR;
-  const right = vw - INSET + CLEAR;
-  const bottom = vh - INSET + CLEAR;
-  const hits = (r: DOMRect) => r.width > 0 && r.right > left && r.left < right && r.bottom > top && r.top < bottom;
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    const el = n.parentElement;
-    if (!el || !n.textContent?.trim() || !hits(el.getBoundingClientRect())) continue;
-    const range = document.createRange();
-    range.selectNodeContents(n);
-    for (const r of range.getClientRects()) if (hits(r)) return true;
-  }
-  return false;
-}
 
 export function ScrollToTop() {
   const [past, setPast] = useState(false);
@@ -64,8 +47,7 @@ export function ScrollToTop() {
   useEffect(() => {
     const onScroll = () => setPast(window.scrollY > 500);
     onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    return subscribeScroll(onScroll);
   }, []);
 
   // The page ends inside Contact's read pin with the footer line pinned in the bottom band: where the button
@@ -77,10 +59,7 @@ export function ScrollToTop() {
       const text = document.querySelector("[data-page-footer]")?.getBoundingClientRect();
       const vw = document.documentElement.clientWidth;
       const vh = window.innerHeight;
-      const left = vw - INSET - SIZE - CLEAR;
-      const top = vh - INSET - SIZE - CLEAR;
-      const right = vw - INSET + CLEAR;
-      const bottom = vh - INSET + CLEAR;
+      const [left, top, right, bottom] = cornerZone(vw, vh, safeInsets());
       setOverFooter(!!text && text.right > left && text.left < right && text.bottom > top && text.top < bottom);
     };
     check();
@@ -90,22 +69,51 @@ export function ScrollToTop() {
 
   // On touch screens the compositions run to within 20 px of the edges, so the corner can land on a line of
   // a chapter's text (its composition or its body): there the button steps aside, and comes back once the
-  // corner has been clear for TEXT_CLEAR_MS. Checked on scroll, and every TEXT_POLL_MS while the chapter is
-  // on screen (the read pin's items fade in on the clock's spring, after the scroll has stopped).
+  // corner has been clear for TEXT_CLEAR_MS.
+  //
+  // Stage 8: every chapter's text is measured once (cornerText.ts measureChapterText: one layout pass, the lines' boxes
+  // relative to the chapter's sticky composition): the current chapter's at once, the others one per idle slice
+  // (textCache.ts), and all again when a composition's box changes size, fonts load or the film's viewport changes. A
+  // scroll compares the corner with those numbers and the scroll offset only (no layout read, no text walk, no timer).
+  // What moves the text afterwards is the composition's own lift, which framer-motion writes on its inline style as the
+  // clock settles (a MutationObserver on that one attribute re-checks, reading the style string, not the layout), and the
+  // reveals' rise of at most REVEAL_SLACK px, covered by a margin (not a re-measure when a reveal settles).
+  const watcher = useRef<((section: string) => void) | null>(null);
   useEffect(() => {
-    if (chrome === "film" || !section) return;
-    const root = document.querySelector(`[data-chapter="${section}"]`);
-    const touch = window.matchMedia("(pointer: coarse)").matches;
-    if (!root || !touch) {
-      setChecked(section);
-      return;
+    if (!coarsePointerStore.get()) return;
+    const chapters = new Map<string, { compose: HTMLElement; section: HTMLElement }>();
+    for (const root of document.querySelectorAll<HTMLElement>("[data-chapter]")) {
+      const compose = root.querySelector<HTMLElement>("[data-compose]");
+      const sectionEl = compose?.closest("section");
+      if (root.dataset.chapter && compose && sectionEl) chapters.set(root.dataset.chapter, { compose, section: sectionEl });
     }
+    let insets: Insets = { right: 0, bottom: 0 };
+    let current = "";
     let raf = 0;
     let clearTimer = 0;
+    let alive = true;
+    const cache = createTextCache<ChapterText>({
+      ids: [...chapters.keys()],
+      measure: (id) => {
+        const c = chapters.get(id)!;
+        return measureChapterText(c.compose, c.section);
+      },
+      schedule: (fn) =>
+        typeof window.requestIdleCallback === "function"
+          ? window.requestIdleCallback(fn, { timeout: 1500 })
+          : window.setTimeout(fn, 300),
+      cancel: (h) =>
+        typeof window.cancelIdleCallback === "function" ? window.cancelIdleCallback(h) : window.clearTimeout(h),
+    });
     const check = () => {
       raf = 0;
-      setChecked(section);
-      if (textUnderButton(root)) {
+      const c = chapters.get(current);
+      const measured = cache.peek(current);
+      if (!c || !measured) return;
+      setChecked(current);
+      const top = stickyTop(measured, window.scrollY) + translateYOf(c.compose.style.transform);
+      const zone = cornerZone(document.documentElement.clientWidth, window.innerHeight, insets);
+      if (textInZone(measured.boxes, top, zone)) {
         window.clearTimeout(clearTimer);
         clearTimer = 0;
         setOverText(true);
@@ -119,17 +127,69 @@ export function ScrollToTop() {
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(check);
     };
-    check();
-    const poll = window.setInterval(schedule, TEXT_POLL_MS);
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
+    // Everything measured is stale: the current chapter is measured now, the rest when idle.
+    const remeasure = () => {
+      if (!alive) return;
+      insets = safeInsets();
+      cache.invalidate(current);
+      check();
+    };
+    // The chapter on screen changes: the button's text check follows it.
+    let mo: MutationObserver | null = null;
+    watcher.current = (id) => {
+      current = id;
+      mo?.disconnect();
+      mo = null;
+      const c = chapters.get(id);
+      if (!c) {
+        // A section with no composition to measure: nothing can be under the corner.
+        window.clearTimeout(clearTimer);
+        clearTimer = 0;
+        setOverText(false);
+        setChecked(id);
+        return;
+      }
+      cache.ensure(id);
+      mo = new MutationObserver(schedule);
+      mo.observe(c.compose, { attributes: true, attributeFilter: ["style"] });
+      check();
+    };
+    insets = safeInsets();
+    cache.start();
+    const offScroll = subscribeScroll(schedule);
+    // `resize` alone is a phone's toolbar moving: the corner moves with the dynamic viewport, the text does not.
+    window.addEventListener("resize", schedule, { passive: true });
+    const offViewport = subscribeFilmViewport(remeasure);
+    // The observer reports each element once on observing; only a later report is a resize.
+    const resized = createFirstReportSkip();
+    const ro = new ResizeObserver((entries) => {
+      if (resized(entries.map((e) => e.target))) remeasure();
+    });
+    for (const c of chapters.values()) {
+      ro.observe(c.compose);
+      ro.observe(c.section);
+    }
+    void document.fonts?.ready.then(remeasure);
+    document.fonts?.addEventListener("loadingdone", remeasure);
     return () => {
+      alive = false;
+      watcher.current = null;
       cancelAnimationFrame(raf);
       window.clearTimeout(clearTimer);
-      window.clearInterval(poll);
-      window.removeEventListener("scroll", schedule);
+      cache.stop();
+      offScroll();
       window.removeEventListener("resize", schedule);
+      offViewport();
+      ro.disconnect();
+      mo?.disconnect();
+      document.fonts?.removeEventListener("loadingdone", remeasure);
     };
+  }, []);
+  useEffect(() => {
+    // Under a moving film (and over the hero's and the epilogue's passages) there is no chapter to check.
+    if (chrome === "film" || !section) return;
+    if (watcher.current) watcher.current(section);
+    else setChecked(section);
   }, [chrome, section]);
 
   // Stay out of the film: hidden while a camera move plays (the hero throughout, every chapter move and the
@@ -212,7 +272,7 @@ export function ScrollToTop() {
             whileHover={{ y: -2, scale: 1.03 }}
             whileTap={{ scale: 0.96 }}
             transition={{ type: "spring", stiffness: 450, damping: 28 }}
-            className="fixed bottom-6 right-6 z-50 inline-flex items-center justify-center rounded-full bg-white/10 p-3 text-slate-100 backdrop-blur hover:bg-white/15 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night"
+            className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-[max(1.5rem,env(safe-area-inset-right))] z-50 inline-flex items-center justify-center rounded-full bg-white/10 p-3 text-slate-100 backdrop-blur hover:bg-white/15 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night"
           >
             <ArrowUp className="h-5 w-5" />
           </motion.button>

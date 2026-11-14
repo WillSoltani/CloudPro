@@ -9,6 +9,18 @@ import { matrix3dFor, projectCorners, squareToQuad } from "@/components/film/hom
 import { REEL_FOCUS, useFilmBackdrop } from "@/components/film/FilmBackdrop";
 import type { FrameWindow } from "@/components/film/choreo";
 import { revealAt } from "@/components/film/Reveal";
+import { subscribeScroll } from "@/components/film/scrollHub";
+import { overlayFrame } from "@/components/film/overlayFrame";
+import type { OverlayJob } from "@/components/film/overlayScheduler";
+import {
+  createFaceWriter,
+  flightQuad,
+  HIDDEN,
+  liftFrameOf,
+  mayBeReleased,
+  trackRow,
+  type PlateFace,
+} from "@/components/film/plateFace";
 
 /**
  * A plate's track for one camera, one row per film frame (exported by the renderer, e.g.
@@ -42,6 +54,11 @@ export type PlateHandoff = {
   pinned: () => HTMLElement | null;
   /** The raw (unsmoothed) frame: when the smoothed clock trails it by more than SNAP_FRAMES (a jump) the flight completes at once. */
   raw?: () => number;
+  /**
+   * The move's last frame M: the composition cannot have left its pin before the raw frame reaches it, so until then
+   * `pinned` is not read. Without it (or without `raw`) the pin is read on every run.
+   */
+  end?: number;
 };
 
 /** A jump: the smoothed clock trailing the raw frame by more than this snaps the flight onto its target. */
@@ -90,6 +107,13 @@ const onServer = () => false;
  * viewport changes (viewport.ts; a toolbar move alone is none of these). `frame` is the frame actually on the
  * canvas, not the scroll target, so the plate never runs ahead of the picture while coarse passes land.
  *
+ * Per animation frame (stage 8): the triggers (the painted segment, the painted frame, the chapter's clock, the scroll
+ * in flight) only invalidate the plate; it is computed once, in the frame the canvas paints the picture it belongs to
+ * (overlayFrame.ts: the frame loop's pre-render step after the clock's tick, or a microtask after a paint outside it),
+ * with its layout reads before any overlay's writes. Before the flight it reads only the section's top (the raw frame);
+ * in flight the h2's box too, and the composition's top once the raw frame is at camera rest. It writes only what
+ * changed (plateFace.ts createFaceWriter) and never sets `will-change` (as before stage 8).
+ *
  * Render it outside any sticky stage or transformed ancestor (FilmChapter `plate`), since both would
  * break `fixed` or lift it above the panels. Decorative: `aria-hidden` (the section's real heading stays
  * in HTML). Nothing renders on the server, under prefers-reduced-motion or under Save-Data.
@@ -123,7 +147,6 @@ export function PerspectivePlate({
     if (off || !layer || !plate || !entry || !film) return;
     const t = film === entry.portrait ? portraitTrack : track;
     const { drawnSegment, drawnFrame } = backdrop;
-    let shown = -2;
     // The layer's box and the stage, read on a resize (never per frame): where the canvas paints the frame.
     const layerBox = { w: 0, h: 0, svh: 0 };
     const measureLayer = () => {
@@ -137,95 +160,70 @@ export function PerspectivePlate({
     };
     // The hand-off's lift, as a track row and as a film frame.
     const liftRow = t && handoff ? liftOf(t) : -1;
-    const liftFrame =
-      !t || liftRow < 0 || t.count >= film.count || t.count < 2
-        ? liftRow
-        : Math.round((liftRow * (film.count - 1)) / (t.count - 1));
+    const liftFrame = t ? liftFrameOf(liftRow, t.count, film.count) : liftRow;
 
-    const hide = () => {
-      if (shown === -1) return;
-      shown = -1;
-      plate.style.visibility = "hidden";
-      plate.style.opacity = "0";
-      layer.dataset.plateFrame = "-1";
-    };
+    // The writer that sets only what changed.
+    const write = createFaceWriter(layer, plate);
 
     // The flight: the track quad at lift → the target box, smootherstep on the smoothed clock; `snap`
     // completes it at once (released, or a jump the smoothed clock has not caught up with yet).
-    const fly = (f: number, snap: boolean) => {
+    const fly = (f: number, snap: boolean): PlateFace => {
       const target = handoff?.target();
-      if (!t || !handoff || !target) return hide();
+      if (!t || !handoff || !target) return HIDDEN;
       const alpha = 1 - revealAt(f, handoff.h2);
-      if (!(alpha > 0.001)) return hide();
+      if (!(alpha > 0.001)) return HIDDEN;
+      // The plate layer is fixed at the viewport's origin: the target's client box is in the layer's own px.
       const box = target.getBoundingClientRect();
-      const origin = layer.getBoundingClientRect();
       const span = Math.max(1, handoff.land - liftFrame);
       const s = snap ? 1 : smootherstep(Math.min(1, Math.max(0, (f - liftFrame) / span)));
-      const rect = placed();
-      const from = projectCorners(t.corners[liftRow], rect);
-      const x0 = box.left - origin.left;
-      const y0 = box.top - origin.top;
-      const x1 = box.right - origin.left;
-      const y1 = box.bottom - origin.top;
-      const to: [number, number][] = [
-        [x0, y0],
-        [x1, y0],
-        [x1, y1],
-        [x0, y1],
-      ];
-      const quad = from.map(
-        ([x, y], i): [number, number] => [x + (to[i][0] - x) * s, y + (to[i][1] - y) * s],
-      );
+      const quad = flightQuad(projectCorners(t.corners[liftRow], placed()), box, s);
       const css = matrix3dFor(squareToQuad(quad), w0, h0);
-      if (css === "none") return hide();
-      plate.style.transform = css;
-      plate.style.opacity = String(Math.min(1, alpha));
-      plate.style.visibility = "visible";
-      shown = -3;
-      layer.dataset.plateFrame = String(liftRow);
-      layer.dataset.plateFlight = s.toFixed(3);
+      if (css === "none") return HIDDEN;
+      return { shown: true, transform: css, opacity: String(Math.min(1, alpha)), row: liftRow, flight: s.toFixed(3) };
     };
 
-    const apply = () => {
+    // What the plate shows for the painted frame (and, in flight, the clock and the page): every layout read happens
+    // here, in the flush's read phase, before any overlay writes (overlayScheduler.ts).
+    const face = (): PlateFace => {
       const frame = drawnFrame.get();
-      if (!t || drawnSegment.get() !== index || frame < 0) return hide();
+      if (!t || drawnSegment.get() !== index || frame < 0) return HIDDEN;
       if (handoff && liftRow >= 0) {
         const f = handoff.frame.get();
-        // The release guard first: once the composition scrolls off its pin the plate belongs to the
-        // heading whatever the smoothed clock says (a flick past the pin).
-        const pinned = handoff.pinned();
-        const released = !!pinned && pinned.getBoundingClientRect().top < -1;
+        // The release guard first: once the composition scrolls off its pin the plate belongs to the heading whatever
+        // the smoothed clock says (a flick past the pin). The pin can only have released at or past camera rest, so
+        // before that only the raw frame is read.
         const raw = handoff.raw?.();
+        const pinned = mayBeReleased(raw, handoff.end) ? handoff.pinned() : null;
+        const released = !!pinned && pinned.getBoundingClientRect().top < -1;
         const leap = raw !== undefined && raw >= liftFrame && raw - f > SNAP_FRAMES;
         if (released || leap) return fly(f, true);
         if (f >= liftFrame) return fly(f, false);
       }
-      delete layer.dataset.plateFlight;
-      // A track at least as long as the film is row-per-frame (the export pads the breathing tail's rows
-      // after the move, so a film built without its tail still reads rows 0…M); a shorter one maps
-      // proportionally.
-      const k =
-        t.count >= film.count || film.count < 2
-          ? Math.min(frame, t.count - 1)
-          : Math.round((frame * (t.count - 1)) / (film.count - 1));
+      const k = trackRow(frame, t.count, film.count);
       const corners = t.corners[k];
       const alpha = t.alpha[k] ?? 0;
-      if (!corners || corners.length !== 8 || !(alpha > 0)) return hide();
-      const rect = placed();
-      const css = matrix3dFor(squareToQuad(projectCorners(corners, rect)), w0, h0);
-      if (css === "none") return hide();
-      plate.style.transform = css;
-      plate.style.opacity = String(Math.min(1, alpha));
-      plate.style.visibility = "visible";
-      shown = k;
-      layer.dataset.plateFrame = String(k);
+      if (!corners || corners.length !== 8 || !(alpha > 0)) return { shown: false, flight: null };
+      const css = matrix3dFor(squareToQuad(projectCorners(corners, placed())), w0, h0);
+      if (css === "none") return { shown: false, flight: null };
+      return { shown: true, transform: css, opacity: String(Math.min(1, alpha)), row: k, flight: null };
     };
 
+    // One run per animation frame whichever of the four triggers fired, in the frame the canvas paints (overlayFrame).
+    let next: PlateFace = HIDDEN;
+    const job: OverlayJob = {
+      name: `plate:${index}`,
+      read: () => {
+        next = face();
+      },
+      write: () => write(next),
+    };
+    const apply = () => overlayFrame.invalidate(job);
     const offSegment = drawnSegment.on("change", apply);
     const offFrame = drawnFrame.on("change", apply);
     // The flight follows the chapter's clock and its live target (the release moves it with the scroll).
     const offClock = handoff?.frame.on("change", apply);
-    if (handoff) window.addEventListener("scroll", apply, { passive: true });
+    const onScroll = () => overlayFrame.defer(job);
+    const offScroll = handoff ? subscribeScroll(onScroll) : undefined;
     const relayout = () => {
       measureLayer();
       apply();
@@ -238,9 +236,10 @@ export function PerspectivePlate({
       offSegment();
       offFrame();
       offClock?.();
-      window.removeEventListener("scroll", apply);
+      offScroll?.();
       ro.disconnect();
       offViewport();
+      overlayFrame.cancel(job);
     };
   }, [backdrop, index, track, portraitTrack, off, w0, h0, handoff]);
 
