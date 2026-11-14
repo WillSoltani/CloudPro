@@ -8,6 +8,9 @@ import { REEL_FOCUS, useFilmBackdrop } from "@/components/film/FilmBackdrop";
 import { placement } from "@/components/film/placement";
 import { filmViewport, subscribeFilmViewport } from "@/components/film/viewport";
 import { useChapter } from "@/components/film/chapterContext";
+import { overlayFrame } from "@/components/film/overlayFrame";
+import type { OverlayJob } from "@/components/film/overlayScheduler";
+import { rideTransform } from "@/components/film/plateFace";
 
 /** An exported anchor's per-frame positions (frame fractions, row = film frame), per camera. */
 type AnchorTracks = {
@@ -64,6 +67,10 @@ function useAnchorTracks(film: string, index: number): AnchorTracks | null {
  * clock (the item's own reveal clock), so a column laid out at the anchor's rest position arrives riding its
  * cartridge instead of sliding against it; identity at and after rest. Framed layouts on the landscape
  * camera only (stacked compositions do not sit on anchors); nothing under reduced motion.
+ *
+ * Stage 8: applied through the overlay scheduler (overlayFrame.ts) with the plates, once per animation frame and after
+ * their layout reads; the composition's width is read only after a viewport change, and the transform is written only
+ * when it changes (on a stacked composition, never).
  */
 export function RideAnchor({
   film,
@@ -87,36 +94,55 @@ export function RideAnchor({
     const el = ref.current;
     const track = tracks?.landscape[anchor];
     if (!el || !track || ch.reduced) return;
-    const wide = window.matchMedia(WIDE_QUERY);
     const { frame, end, composeRef } = ch;
-    const apply = () => {
-      const compose = composeRef.current;
-      const f = frame.get();
-      const framed =
-        wide.matches && compose?.dataset.composeMode === "auto" && pickFilmOrientation() === "landscape";
-      if (!framed || !compose || f < from || f >= end) {
-        el.style.transform = "";
-        return;
-      }
-      const i = Math.min(track.length - 1, Math.max(0, f));
-      const i0 = Math.floor(i);
-      const i1 = Math.min(track.length - 1, i0 + 1);
-      const t = i - i0;
-      const x = track[i0][0] + (track[i1][0] - track[i0][0]) * t;
-      const y = track[i0][1] + (track[i1][1] - track[i0][1]) * t;
-      // The frame's size where the canvas paints it (placement.ts), on the composition box's width.
-      const view = filmViewport();
-      const r = placement(compose.clientWidth, view.lvh, view.svh, FILM_ASPECT.landscape, REEL_FOCUS);
-      const dx = (x - rest[0]) * r.width;
-      const dy = (y - rest[1]) * r.height;
-      el.style.transform = `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0)`;
+    // The `wide` rule, kept from its change events (no media query per frame).
+    const wide = window.matchMedia(WIDE_QUERY);
+    let wideOn = wide.matches;
+    // The composition box's width, read in a read phase once and again after a film viewport change (never per frame).
+    let width = -1;
+    // What the wrapper's transform is: written only when it changes (on a stacked composition, never).
+    let written = el.style.transform;
+    const job: OverlayJob = {
+      name: `ride:${anchor}`,
+      read: () => {
+        const compose = composeRef.current;
+        if (width < 0 && compose) width = compose.clientWidth;
+      },
+      write: () => {
+        const compose = composeRef.current;
+        const f = frame.get();
+        const framed =
+          wideOn && compose?.dataset.composeMode === "auto" && pickFilmOrientation() === "landscape";
+        let next = "";
+        if (framed && compose && f >= from && f < end) {
+          // The frame's size where the canvas paints it (placement.ts), on the composition box's width.
+          const view = filmViewport();
+          const r = placement(width, view.lvh, view.svh, FILM_ASPECT.landscape, REEL_FOCUS);
+          next = rideTransform(track, f, rest, r);
+        }
+        if (next === written) return;
+        el.style.transform = written = next;
+      },
+    };
+    // Applied with the plates, once per animation frame in the frame the clock ticks (overlayFrame.ts).
+    const apply = () => overlayFrame.invalidate(job);
+    const onWide = () => {
+      wideOn = wide.matches;
+      apply();
+    };
+    const relayout = () => {
+      width = -1;
+      apply();
     };
     const off = frame.on("change", apply);
-    const offViewport = subscribeFilmViewport(apply);
+    wide.addEventListener("change", onWide);
+    const offViewport = subscribeFilmViewport(relayout);
     apply();
     return () => {
       off();
+      wide.removeEventListener("change", onWide);
       offViewport();
+      overlayFrame.cancel(job);
       el.style.transform = "";
     };
   }, [tracks, anchor, rest, from, ch]);

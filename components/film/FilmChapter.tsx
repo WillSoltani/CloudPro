@@ -147,6 +147,16 @@ export function FilmChapter({
     return `linear-gradient(to bottom, #000 ${(end - FEATHER_PX).toFixed(1)}px, transparent ${end.toFixed(1)}px)`;
   });
 
+  // The anchor's offset less ANCHOR_OFFSET (the move m in px), read once and again after a film viewport change.
+  const anchorMove = useRef<number | null>(null);
+  useEffect(
+    () =>
+      subscribeFilmViewport(() => {
+        anchorMove.current = null;
+      }),
+    [],
+  );
+
   const ctx = useMemo<ChapterContextValue>(
     () => ({
       id,
@@ -163,12 +173,14 @@ export function FilmChapter({
       stacked,
       sectionRef,
       composeRef,
-      // The raw (unsmoothed) move frame, from the DOM: what the plate snaps to on a jump.
+      // The raw (unsmoothed) move frame, from the DOM: what the plate snaps to on a jump. One layout read (the section's
+      // top); the move m (the anchor's offset, a function of svh only) is cached until the film viewport changes.
       rawFrame: () => {
         const el = sectionRef.current;
         const anchor = anchorRef.current;
         if (!el || !anchor) return 0;
-        const m = anchor.offsetTop - ANCHOR_OFFSET;
+        if (anchorMove.current === null) anchorMove.current = anchor.offsetTop - ANCHOR_OFFSET;
+        const m = anchorMove.current;
         const y = -el.getBoundingClientRect().top;
         return m > 0 ? Math.min(1, Math.max(0, y / m)) * end : end;
       },

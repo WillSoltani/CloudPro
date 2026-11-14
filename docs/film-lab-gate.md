@@ -10,7 +10,8 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 | Placeholder frames (tiny, each carries its film id and frame index in its pixels) | `scripts/films/placeholder.mjs`, drawing in `scripts/films/placeholder-layout.mjs` |
 | Playwright config (production build on `127.0.0.1:3006`, own build dir `.next-film`) | `playwright.config.ts` |
 | Spec helpers (`readPaintedFrame` reads the film and frame back from the canvas, hooks and pixels in one `page.evaluate`) | `e2e/film-frames.ts` |
-| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts`, `film-toolbar.spec.ts` |
+| Specs on placeholder frames | `e2e/film-smoke.spec.ts`, `film-stats.spec.ts`, `film-backing.spec.ts`, `film-reel.spec.ts`, `film-viewports.spec.ts`, `film-reduced-motion.spec.ts`, `film-memory.spec.ts`, `film-fallback.spec.ts`, `film-feel.spec.ts`, `film-toolbar.spec.ts`, `film-layers.spec.ts` |
+| The plates and the anchors per animation frame (stage 8): the overlay scheduler, its framer-motion binding, the plates' pure parts (track row, flight, writing only what changed, the layer hint), their unit tests; spec | `components/film/overlayScheduler.ts`, `overlayFrame.ts`, `plateFace.ts`; `overlayScheduler.test.ts`, `plateFace.test.ts`; `e2e/film-layers.spec.ts` (see "Plates and anchors per frame") |
 | Smoothing by input (`smoothingFor`, `?smooth=`, the follower around the spring) and its unit tests | `components/film/smoothing.ts`, `smoothing.test.ts`; spec `e2e/film-feel.spec.ts` |
 | Scroll-pass measurement (the lab gate script) and the page URL it builds from `--query` | `scripts/films/scrub-quality.mjs` (`npm run film:quality`), `scripts/films/page-url.mjs` |
 | Engine counters (`window.__filmStats`, `window.__filmStatsReset()`) and their pure helpers | `components/film/filmStats.ts`, unit tests `components/film/filmStats.test.ts` |
@@ -369,6 +370,53 @@ out with changes with it any more:
   real layout measurements: at 390x844, 200 scroll events cost 200 before and 0 now (4 at load in both). Registrations in one
   commit reconcile once (a microtask).
 
+## Plates and anchors per frame
+
+Stage 8. A perspective plate (`PerspectivePlate`) was applied up to four times per animation frame, once per trigger: the
+painted frame and the painted segment (both set in `draw()`), the chapter's clock (set in the same tick, just before) and, for a
+plate that flies into its h2, every scroll event. Each application read the layout (the layer's box, the composition's top, the
+section's top, the anchor's offset, the h2's box) and wrote transform, opacity, visibility and the data attributes whether they
+had changed or not; the four `RideAnchor` columns next to it read the composition's width and wrote a transform every frame,
+on a phone an empty one. Now:
+
+- **One run per frame, in the paint's frame.** The triggers only invalidate the plate (`components/film/overlayScheduler.ts`,
+  bound to framer-motion's frame loop in `overlayFrame.ts`). Inside the loop's tick (the smoothed clock's update step, where
+  `onReel` sets the chapter's frame and `draw()` paints) the plate runs in the same tick's pre-render step, before framer-motion
+  writes its styles; after a paint outside the loop (a frame that arrived in the backdrop's own animation frame callback, a jump
+  in a scroll event, a resize) it runs in a microtask when that task ends, which is before the browser renders. A scroll alone
+  is deferred to the coming frame's pre-render step, where the clock's tick that follows it in the same frame folds in. The
+  `RideAnchor` columns go through the same scheduler. The fake-loop unit tests (`overlayScheduler.test.ts`) model the frame
+  (events, then the loop's update, pre-render and render steps, each callback followed by its microtasks); the spec checks the
+  order in the browser: at every animation frame of a scripted scroll the plate shows the track row of the frame the canvas
+  painted.
+- **Reads before writes.** Every job's reads run before any job's writes. The plate layer is fixed at the viewport's origin, so
+  its box is not read; the anchor's offset (a function of svh) is cached until the film viewport changes, as is the
+  composition's width for the columns, and the `wide` rule comes from its change events. On the track a plate reads one thing,
+  the section's top (the raw frame); in flight the h2's box too, and the composition's top only once the raw frame is at camera
+  rest (the pin cannot have released before: `mayBeReleased`).
+- **Only what changed** (`createFaceWriter`): transform, opacity, visibility, `data-plate-frame` and `data-plate-flight` are
+  compared with what was written last, never read back. A column on a stacked composition is never written.
+- **The layer hint** (`createRestHint`): `will-change: transform` from a plate's first move, removed 250 ms after its last one
+  and at once when it hides; one timer per rest.
+
+`e2e/film-layers.spec.ts` scrolls the Certifications chapter (the plate's track, its flight into the h2, the four columns) one
+`scrollTo` per animation frame at 1440x900 and at 390x844 (touch, DPR 3), and counts per frame (a rAF sampler; the reads and
+writes through an init script that wraps the layout getters and hands out a counting proxy of `el.style` for the plate's and
+the columns' elements, the data attributes through a MutationObserver). Before and after, the same spec on the base commit
+with a temporary run counter (2026-11-13, load 20 to 55, chromium; webkit within a few frames of it):
+
+| 259 frames | runs/frame (plate) | layout reads | plate style writes | data attribute writes | column writes |
+| --- | --- | --- | --- | --- | --- |
+| desktop, before | 2 to 4 on 185 frames (total 556) | 2006 (max 20 a frame) | 961 | 428 | 972 (4 a frame) |
+| desktop, after | 1 (2 on 5 frames; total 248) | 346 (max 4) | 97 | 74 | 47 |
+| phone, before | 2 to 4 on 182 frames (total 553) | 1897 (max 15) | 967 | 443 | 968 (all empty) |
+| phone, after | 1 (2 on 4 frames; total 247) | 350 (max 4) | 103 | 79 | 0 |
+
+A frame with two runs is a frame the canvas painted twice (a frame arriving in the backdrop's own callback, then the clock's
+tick): each paint gets its plate. Screenshots at rest on the track and in flight (s = 0.965) at 1440x900 DPR 2 and 3 and at
+390x844 DPR 3 are byte-identical before and after, on chromium and webkit; a plate given the hint before a move and left at rest
+renders byte-identical to one without it.
+
 ## Toolbar simulation
 
 Playwright cannot emulate a phone's dynamic browser toolbar: in a test browser lvh = svh = dvh = the window height. A phone with
@@ -495,6 +543,7 @@ up after 2 looks, both on target, with nothing wrong in the engine (stage 7, 202
 | `film-feel` | a touch-style scroll (a touchstart, a scripted `scrollTo` step every animation frame, then a fling's decay per frame) and a wheel scroll (notches 3 animation frames apart), both driven frame by frame: the input and smoothing the counters report, more than 20 / 10 ticks while the page moves, the shown clock never past the raw clock and never stepping back, through the landing (it waits for the shown clock to land on the raw clock); the same scripted scroll under the wheel and under touch, the same rules for both; `?smooth=90` and the HUD's input line; no smoothing under reduced motion. Prints the gap figures (`FEEL` lines); no timing is asserted (which input trails less is a fake-clock unit test in `smoothing.test.ts`) |
 | `film-toolbar` | the simulated toolbar (`## Toolbar simulation` above): 390x664 with `--film-lvh: 754px; --film-svh: 664px`, moved to 754 and back, at rest at three positions and during a scripted scroll, in both modes. No canvas reallocation, the backing store and CSS box unchanged, the marker row (read from the canvas pixels), the key layers and the plates where they were, the key layers' boxes, the hero poster's box and the frame variables unchanged in both modes; with the page unchanged (`"phone"` mode) also the clock, frame, pixels and screenshot, 0 draws and 0 measures. Where the placement grows (411x826 in 882): each laid-out key's CSS-only cover fit equals its px (no zoom step when the backdrop takes over, after a scroll and after a `#contact` deep link), the key box equals the poster box, the breath's origin is the same frame point as without the grow and survives a reload; where lvh = svh (1440x900, 390x844) the key box is top 0 and full height |
 | `film-packs` | packs: a pass down and back at 390x844 touch and 1440x900, the film data requests recorded in the annotations (before the first scroll one pack read; down at most 40; back 0, by the page's count and on the network), no frame file, no byte read twice, within the budget, pixels equal `data-frame` at every stop. Fallbacks by routing the pack requests: a 404 (each film's pack asked once, the films load frame by frame), bytes that are not a pack (given up, frame by frame), and a server that ignores Range (every answer a whole-file 200, the first one cut short so the page must continue: the films still play from their packs, the bytes held already counted as read twice) |
+| `film-layers` | the plates and the anchors per animation frame (`## Plates and anchors per frame` above): a scripted scroll through the Certifications chapter at 1440x900 and 390x844 touch; at every frame the plate shows the painted frame's track row; at most 2 plate runs a frame and on at most a tenth of the frames more than 1; on the track one layout read per run; style writes within 4 per run; `will-change` on while the plate moves, never on a hidden plate, gone at rest; the columns written at most once each a frame on desktop and never on a phone. Prints the counts (and adds them to the annotations) |
 | `film-fallback` | with `Worker` removed by an init script the film plays frame for frame in mode `"budget-main"` (main-thread decodes, no worker decodes); with `Worker` and `createImageBitmap` removed it plays with the legacy loader (mode `"legacy"`); with a worker that throws at start the loader switches to `"budget-main"` at run time and the film plays on; with a `createImageBitmap` that rejects every frame (and no `Worker`) the page hands over to the legacy loader at run time and the film plays on. Each walks the whole page down; no console errors (the broken worker's own error excepted) |
 
 ## Scroll-pass gate
