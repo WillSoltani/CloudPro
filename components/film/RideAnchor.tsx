@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { pickFilmOrientation } from "@/components/film/filmCore";
-import { WIDE_QUERY } from "@/components/film/filmBase";
+import { pickFilmOrientation, subscribeWide, wideMatches } from "@/components/film/filmCore";
 import { FILM_ASPECT } from "@/components/film/frameBox";
 import { REEL_FOCUS, useFilmBackdrop } from "@/components/film/FilmBackdrop";
 import { placement } from "@/components/film/placement";
@@ -96,8 +95,7 @@ export function RideAnchor({
     if (!el || !track || ch.reduced) return;
     const { frame, end, composeRef } = ch;
     // The `wide` rule, kept from its change events (no media query per frame).
-    const wide = window.matchMedia(WIDE_QUERY);
-    let wideOn = wide.matches;
+    let wideOn = wideMatches();
     // The composition box's width, read in a read phase once and again after a film viewport change (never per frame).
     let width = -1;
     // What the wrapper's transform is: written only when it changes (on a stacked composition, never).
@@ -127,7 +125,7 @@ export function RideAnchor({
     // Applied with the plates, once per animation frame in the frame the clock ticks (overlayFrame.ts).
     const apply = () => overlayFrame.invalidate(job);
     const onWide = () => {
-      wideOn = wide.matches;
+      wideOn = wideMatches();
       apply();
     };
     const relayout = () => {
@@ -135,12 +133,12 @@ export function RideAnchor({
       apply();
     };
     const off = frame.on("change", apply);
-    wide.addEventListener("change", onWide);
+    const offWide = subscribeWide(onWide);
     const offViewport = subscribeFilmViewport(relayout);
     apply();
     return () => {
       off();
-      wide.removeEventListener("change", onWide);
+      offWide();
       offViewport();
       overlayFrame.cancel(job);
       el.style.transform = "";

@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type FocusEvent, type ReactNode } from "react";
 import { motion, useMotionValue, useTransform } from "framer-motion";
-import { useReducedMotionSafe, type FilmEntry } from "@/components/film/filmCore";
-import { WIDE_QUERY } from "@/components/film/filmBase";
+import { subscribeWide, useReducedMotionSafe, wideMatches, type FilmEntry } from "@/components/film/filmCore";
 import { REEL_FOCUS, type SegmentRegistration } from "@/components/film/FilmBackdrop";
 import { useSegmentRegistration } from "@/components/film/useSegmentRegistration";
 import { useRackPlatesOn } from "@/components/film/RackPlate";
@@ -194,11 +193,10 @@ export function FilmChapter({
   useEffect(() => {
     const el = composeRef.current;
     if (!el) return;
-    const wide = window.matchMedia(WIDE_QUERY);
     const area = el.querySelector<HTMLElement>("[data-frame-area]") ?? el;
     // Stacked: how far the composition's last band runs past the stage's bottom edge (less LIFT_CLEAR).
     const measureLift = () => {
-      const isStacked = !wide.matches || el.dataset.composeMode === "stacked";
+      const isStacked = !wideMatches() || el.dataset.composeMode === "stacked";
       const bands = area.querySelectorAll(":scope > [data-band]");
       const last = bands[bands.length - 1];
       const vh = filmViewport().svh;
@@ -209,7 +207,7 @@ export function FilmChapter({
     };
     const check = () => {
       el.dataset.composeMode = "auto";
-      if (!wide.matches) return measureLift();
+      if (!wideMatches()) return measureLift();
       const vw = el.clientWidth;
       const { lvh, svh: vh } = filmViewport();
       // The framed part must fit the stage (a body below it is meant to overflow).
@@ -240,11 +238,11 @@ export function FilmChapter({
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
-    wide.addEventListener("change", check);
+    const offWide = subscribeWide(check);
     const offViewport = subscribeFilmViewport(check);
     return () => {
       ro.disconnect();
-      wide.removeEventListener("change", check);
+      offWide();
       offViewport();
     };
   }, [overflow, viewH]);

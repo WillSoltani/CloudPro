@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { WIDE_QUERY } from "@/components/film/filmBase";
+import { createMediaStore } from "@/components/film/mediaStore";
 
 /** Written by scripts/films/build-film.sh to public/films/<name>/manifest.json. */
 export type FilmManifest = {
@@ -72,12 +73,19 @@ export type HoldKeys = {
 export { frameUrl, packFor, packUrl } from "@/components/film/filmBase";
 
 const REDUCED_QUERY = "(prefers-reduced-motion: reduce)";
-function subscribeReducedMotion(onChange: () => void) {
-  const query = window.matchMedia(REDUCED_QUERY);
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
-}
-const prefersReducedMotion = () => window.matchMedia(REDUCED_QUERY).matches;
+
+/**
+ * The page's shared media-query stores (mediaStore.ts): one MediaQueryList and one `change` listener each, however many
+ * components read them (stage 8; before it every component had its own listener).
+ */
+export const reducedMotionStore = createMediaStore(REDUCED_QUERY);
+/** The `wide` rule (WIDE_QUERY): the landscape layout. Effects read it with wideMatches() and listen with subscribeWide(). */
+export const wideStore = createMediaStore(WIDE_QUERY);
+/** A coarse primary pointer (a touch screen). */
+export const coarsePointerStore = createMediaStore("(pointer: coarse)");
+
+export const subscribeWide = wideStore.subscribe;
+export const wideMatches = wideStore.get;
 
 /**
  * Same query as useReducedMotion(), but with a server snapshot so hydration matches the SSR markup;
@@ -85,7 +93,7 @@ const prefersReducedMotion = () => window.matchMedia(REDUCED_QUERY).matches;
  * server-rendered styles (caption drift, section parallax, the dither wipes) or the film's playback.
  */
 export function useReducedMotionSafe(): boolean {
-  return useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion, () => false);
+  return useSyncExternalStore(reducedMotionStore.subscribe, reducedMotionStore.get, () => false);
 }
 
 let picked: FilmOrientation | null = null;
@@ -96,7 +104,7 @@ let picked: FilmOrientation | null = null;
  * tracks it started with. app/page.tsx's boot script evaluates the same query before any JS. Client only.
  */
 export function pickFilmOrientation(): FilmOrientation {
-  if (picked === null) picked = window.matchMedia(WIDE_QUERY).matches ? "landscape" : "portrait";
+  if (picked === null) picked = wideMatches() ? "landscape" : "portrait";
   return picked;
 }
 
