@@ -451,8 +451,12 @@ The rest of stage 8, besides the plates: work that cost main-thread time on ever
 - **Safe areas**: the portfolio pages (`app/page.tsx`, `app/projects/[slug]/page.tsx`, not the root layout, which also serves
   the ChapterFlow hosts) export `viewport = { viewportFit: "cover" }`, so the `env(safe-area-inset-*)` paddings take effect:
   the nav bar, the project page, the back-to-top button, the captions, the stacked bands (`[data-band]`), the About and
-  Projects bodies and the footer. They are 0 except on a notched phone in landscape (and the home indicator), so nothing else
-  moves. The insets go into the text's padding only: the page column (`PageShell`) stays as wide as the canvas, which now runs
+  Projects bodies and the footer. The left and right insets are 0 except on a notched phone in landscape. The top and bottom
+  insets are not: wherever the browser reports them (an iPhone's home indicator in portrait, 34 px; iPhone landscape, 21 px;
+  Android Chrome drawing under the system navigation bar; a top inset under the status bar) the bottom text sits higher than
+  before by the inset less its old padding (captions about 6 px, the footer about 14 px, the back-to-top button about 10 px
+  on a 34 px inset) and the nav bar starts below the top inset. Not checked on a device. The insets go into the text's
+  padding only: the page column (`PageShell`) stays as wide as the canvas, which now runs
   under the notch, because the compositions' frame variables (`frameBox.ts`, built on `100cqw`) and the hero poster's crop must
   match the canvas (a padded column put the frame-anchored text about 20 to 30 px off the picture and gave the poster a different
   crop from the canvas on a notched phone in landscape).
