@@ -32,7 +32,7 @@ It does not change what a visitor sees. The manual QA it complements is `.claude
 ```
 npm run film:placeholder      # write the stand-ins under public/films (a second run does nothing)
 npm run test:film             # Playwright, chromium, placeholder frames
-npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, the placement and the frame variables (frameBox.test.mjs), the smoothing on a fake clock, both loaders and the planner, the gate script's leg buckets and page URL
+npm run test:film-unit        # node:test, the counters' and the backing size's pure helpers, the placement and the frame variables (frameBox.test.ts), the smoothing on a fake clock, both loaders and the planner, the gate script's leg buckets and page URL
 npm run test:film:safari      # PW_WEBKIT=1, webkit project
 FILM_FRAMES=cdn npm run test:film   # build without NEXT_PUBLIC_FILM_BASE: real frames from the film CDN
 node scripts/films/placeholder.mjs --clean   # remove what the generator wrote

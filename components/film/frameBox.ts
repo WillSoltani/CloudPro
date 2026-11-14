@@ -1,8 +1,7 @@
 // Frame maths for chapter compositions (part five §2c), as CSS: where the film frame lands in a chapter's sticky
 // composition box, so HTML can be placed at frame fractions and stay on the picture at every viewport. It must agree
-// with placement.ts placement(), where the canvas paints the frame (tested: components/film/frameBox.test.mjs). Pure
-// and erasable TypeScript, so Node's type stripping runs the test on this file as it stands:
-//   node --experimental-strip-types --test components/film/frameBox.test.mjs
+// with placement.ts placement(), where the canvas paints the frame (tested: components/film/frameBox.test.ts, run by
+// `npm run test:film-unit`). Pure.
 //
 // The variables, declared on `[data-compose]` (a `container-type: inline-size` box as wide as the canvas, pinned at
 // the viewport's top like the film layers), with S the stage (`var(--film-svh, 100svh)`) and L the film layers'

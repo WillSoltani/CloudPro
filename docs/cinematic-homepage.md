@@ -455,7 +455,7 @@ backdrop's px and the breath's origin are offset by the box's top (`stageBox()`)
 fit check failed on the old build with 411x890.5 against 428.2x927.8), and at 1440x900 and 390x844 (top 0, full height). The
 toolbar spec now also compares the key boxes, the poster box and the frame variables in the mode where the window, and so dvh,
 moves (a dvh key layer, a dvh poster and 100dvh frame variables were each tried and each failed it). `npm run test:film-unit`
-now runs `frameBox.test.mjs` too, and the feel spec's timing comparison is a fake-clock unit test (`smoothing.test.ts`: 60 Hz,
+now runs the frame variables' test too (`frameBox.test.ts`, formerly a `.mjs` file no script ran), and the feel spec's timing comparison is a fake-clock unit test (`smoothing.test.ts`: 60 Hz,
 30 Hz, 50 and 100 ms frames, an uneven mix); the browser spec asserts only what holds at any machine speed.
 
 What a visitor sees differently: the first view on tall Android phones (20:9 and taller, where `placement()` grows the scale) is
