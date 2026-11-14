@@ -428,7 +428,11 @@ The rest of stage 8, besides the plates: work that cost main-thread time on ever
   band of one and a half viewports above and below. An item outside the band is already at its end state (0 below, 1 above) and
   does nothing; inside it, one animation frame per scroll reads every near item, then writes only what changed. Entering or
   leaving the band, a jump of more than the band, and a film viewport change refresh every item once. The ramp and the rise are
-  unchanged (`flowOpacity`, `flowStyle`).
+  unchanged (`flowOpacity`, `flowStyle`). The "jump of more than the band" part works only while a scroll subscription exists,
+  and that exists only while some item is within the band: an instant jump that lands among the items from further away than
+  the band (from the hero into the About list, say) is first seen by the IntersectionObserver, whose callback comes after the
+  frame at the target is made, so that one frame shows the items at opacity 0 and the next shows them (measured below).
+  Nothing a nav click lands on has a flow item in the viewport, so the nav is not affected.
 - **Back-to-top and text** (`cornerText.ts`, `textCache.ts`, `ScrollToTop.tsx`): on touch screens the text of every chapter is
   measured once (a TreeWalker per chapter: the current one at once, the others one per idle slice), in boxes relative to the
   sticky composition, and again when a composition's or its section's box changes size (not the observer's first report),
@@ -460,7 +464,11 @@ The rest of stage 8, besides the plates: work that cost main-thread time on ever
   insets are not: wherever the browser reports them (an iPhone's home indicator in portrait, 34 px; iPhone landscape, 21 px;
   Android Chrome drawing under the system navigation bar; a top inset under the status bar) the bottom text sits higher than
   before by the inset less its old padding (captions about 6 px, the footer about 14 px, the back-to-top button about 10 px
-  on a 34 px inset) and the nav bar starts below the top inset. Not checked on a device. The insets go into the text's
+  on a 34 px inset) and the nav bar starts below the top inset. Not checked on a device. The three figures are the computed
+  paddings (28 to 34, 20 to 34, 24 to 34 px) against a browser that reports no inset for a page without `viewport-fit=cover`,
+  which is what Safari is said to do and was not seen here. Chromium with the safe-area override reports the inset to the old
+  build too, and the old caption and footer paddings already used `env()`: there the captions and the footer are the same
+  before and after and only the back-to-top button moves (24 to 34 px). The insets go into the text's
   padding only: the page column (`PageShell`) stays as wide as the canvas, which now runs
   under the notch, because the compositions' frame variables (`frameBox.ts`, built on `100cqw`) and the hero poster's crop must
   match the canvas (a padded column put the frame-anchored text about 20 to 30 px off the picture and gave the poster a different
@@ -471,11 +479,83 @@ The rest of stage 8, besides the plates: work that cost main-thread time on ever
 `e2e/film-chrome.spec.ts` (four tests, `@chrome`): no TreeWalker is created in a scroll through the whole page on a 390x844 touch
 viewport, with at most three live window scroll listeners and no second frame loop at rest; the badge's computed style, its ping
 (three iterations, finished; endless with `?badge=blur`), no hydration error with the switch, the blur kept on desktop; a nav
-click to a far chapter fires at most four scroll events, to the next chapter at least eight, and with `?nav=smooth` at least
-eight; the two hidden h2s, heading order, `viewport-fit=cover` on `/` and a project page, and on a notched phone in landscape
+click to a far chapter fires at most four scroll events with the first already at the target; to the next chapter, and to a far
+one with `?nav=smooth`, more than one with the first near where the scroll started (the spec first asked for eight events, a
+count that depends on the browser's pacing: headless Chromium fired 57 and 90 in one run, WebKit 4); the two hidden h2s, heading order, `viewport-fit=cover` on `/` and a project page, and on a notched phone in landscape
 (852x393 with 59 px insets through Chromium's safe-area override) the compositions, the hero's stage and its poster as wide as
 the canvas and no visible text inside the insets. The badge test's desktop context names `hasTouch: false`, `isMobile: false`
 and `deviceScaleFactor: 1`: a context made inside a describe with `test.use(TOUCH)` takes every option it does not set.
+
+### Measured in the browser (2026-11-13)
+
+Before is `origin/main` (e9fb6178), after is the branch at d2392284, both production builds served on loopback, headless
+Chromium 151 (Playwright 1.62), one browser run at a time on a Mac shared with other test campaigns (load average 1 minute:
+6 to 40 for the counts, 17 to 29 for the nav and plate runs, 100 to 128 for the screenshot runs; the counts and the pictures
+do not depend on it, a timing would). The scripts are scratch files, not part of the repository.
+
+**Counts per animation frame** (placeholder frames; a steady scripted pass from the top of the page to its end, one
+`scrollTo` of 24 px per animation frame, 784 frames at 390x844 touch (DPR 2) and 760 at 1440x900; the prototypes patched in an
+init script; two runs of each, the totals within 3 % of each other and the maxima identical). The plate writes are style
+writes on every plate's elements, React's included.
+
+| per pass | TreeWalkers | `getBoundingClientRect` (element) | range rect reads | `getComputedStyle` | plate style writes | rAF callbacks run |
+| --- | --- | --- | --- | --- | --- | --- |
+| phone, before | 348 (max 2 a frame) | 25 900 (33 a frame, max 194) | 160 to 167 | 6 256 (8 a frame) | 1 070 to 1 110 (max 15) | 7 377 (9.4 a frame) |
+| phone, after | 0 | 2 700 (3.5 a frame, max 14) | 0 | 1 | 67 to 80 (max 8) | 1 990 (2.5 a frame, max 4) |
+| desktop, before | 0 | 9 250 (12 a frame, max 30) | 0 | 6 064 (8 a frame) | 1 070 to 1 120 (max 15) | 6 822 (9 a frame) |
+| desktop, after | 0 | 2 770 (3.6 a frame, max 14) | 0 | 1 | 81 to 86 (max 8) | 1 211 (1.6 a frame, max 2) |
+
+At rest on the hero (after the first frame settles and 4 s of quiet, read over 2 s): live window `scroll` listeners 12 before,
+2 after (the registrations at load are 12 and 2: nothing registers again), and 0 `requestAnimationFrame` callbacks a second in
+both builds (headless, nothing animating). TreeWalkers on the phone: none at rest before (the text was walked during scrolls,
+348 times in the pass), 5 after, one per chapter with a composition, in idle slices after load, then none in the pass. Long
+tasks over 50 ms in the pass: 0 in six of the eight runs, 1 to 2 in the others, on both builds. The 8 plate writes in a frame
+after are a neighbouring plate mounting (React's six style properties and the writer's first two).
+
+**Screenshots on real frames** (a build without `NEXT_PUBLIC_FILM_BASE`, one page load per viewport and build, the hero, the
+five chapter holds (anchors as the nav lands on them) and the bottom of the page; each taken twice 0.7 s apart for the noise
+floor; mean absolute difference per channel on a 0 to 255 scale and the share of pixels with any channel off by more than 2):
+
+| viewport | positions | before vs after |
+| --- | --- | --- |
+| 1440x900, DPR 1 | 7 | 6 identical (0 and 0 %). Hero: a 15x14 px region on the badge's dot, mean 0.001 / 0.0005 / 0.0001, 0.012 % of the pixels. The old ping runs for ever, so its phase differs from the stopped one; the same two shots of the old build differ by 0.007 % there |
+| 390x844 touch, DPR 2 | 7 | 6 identical. Hero: 1.7 % of the pixels, mean 0.21 / 0.16 / 0.05, all inside the badge's box (40..455 x 1270..1327 device px) and 0.0 outside it: the badge without blur, the darker fill and the stopped ping |
+
+Two shots of the same build are identical everywhere else (the particle canvas under the film does not show). So the only pixel
+differences on the page are the two owner picks.
+
+**The Certifications plate at rest, mid-move and mid-flight** (placeholder frames, the film at rest, the plate's box
+plus 10 px; DPR 2 and 3 at 1440x900 and DPR 3 at 390x844; flight at s = 0.504, 0.504 and 0.525, found by bisection in the new
+build and used in the old): the six crops, and the six full screenshots, are byte-identical before and after (mean 0, no pixel
+off, the same gradient and Laplacian sharpness figures), and the plate's computed `will-change` is `auto` in both builds. Neither
+build sets a layer hint, so there is nothing that could differ in motion; a frame captured during a scroll was not taken (it
+cannot be repeated exactly).
+
+**Nav click from the hero to Contact** (1440x900, placeholder frames, every animation frame sampled after it is painted, three
+runs each; a flow item counts when it has text and its box touches the viewport; a frame counts when its opacity, with its
+ancestors', is below 0.02):
+
+| | scroll events | first painted frame at the target | flow items in the viewport there | frames in the next 500 ms (31 to 33) with one at opacity 0 |
+| --- | --- | --- | --- | --- |
+| after, default | a jump | 2 to 4 frames after the click (100 to 150 ms; the click is a protocol mouse event) | 0 | 0 |
+| after, `?nav=smooth` | smooth | after 90 frames (1.54 s) | 0 | 0 |
+| before | a jump too: Chromium fires a `popstate` for the click and `InstantHistoryRestore` took it for Back, see the nav bullet above (main has the same defect) | 2 to 4 frames after the click | 0 | 0 |
+
+The question has no one to ask there: Contact's anchor lands with no flow item in the viewport, and so does every chapter anchor
+the nav lands on (counted at all seven landing positions at both sizes). (The copyright line is a film-clock reveal, not a flow
+item: at 0.016 at the Contact anchor and 1 at the bottom of the page, in both builds.) An instant `scrollTo` from the hero into the
+middle of the About list (six items) and of the Projects list (two), which a restored history position would do, tells another
+story: after, every item is at opacity 0 in the first painted frame at the target and at 1 in the second (3 runs of 3, both
+lists, so one frame of about 17 ms); before, none is ever at 0 (the old per-item scroll listeners wrote in the frame's own scroll
+event). The cause is the paragraph on the band above: from the hero nothing is within the band, no scroll subscription exists, and
+the IntersectionObserver reports a frame late. Not changed in this stage's evidence step; the one-line cure is for the controller
+to keep a scroll subscription that only compares `scrollY` against the band while no item is near.
+
+**Safe-area figures** (Chromium override, computed styles; the pictures are in the owner sheet): with a 34 px bottom inset the
+hero and chapter caption paddings are 34 px (28 without) in both builds, the footer 34 px (20) in both, the back-to-top button
+34 px above the bottom after and 24 px before. At 852x393 with insets 59 / 59 / 21 the page, the film and the compositions are as
+wide as the canvas in both builds; after, the text, the nav bar and the badge start 59 px in (the picture does not move), before
+they start at the screen's edge under the notch; the 6 % to 0.03 % of the pixels that differ are those texts.
 
 ## Toolbar simulation
 
