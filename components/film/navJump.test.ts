@@ -1,7 +1,7 @@
 // Tests for components/film/navJump.ts (pure). Run: npm run test:film-unit
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { NAV_ORDER, currentChapter, isNavTarget, navScroll, navSmoothRequested } from "./navJump";
+import { NAV_ORDER, createFragmentClickMark, currentChapter, isNavTarget, navScroll, navSmoothRequested } from "./navJump";
 
 const at = (id: (typeof NAV_ORDER)[number]) => NAV_ORDER.indexOf(id);
 
@@ -43,5 +43,28 @@ describe("the targets and the switch", () => {
     assert.equal(navSmoothRequested("?x=1&nav=smooth"), true);
     assert.equal(navSmoothRequested(""), false);
     assert.equal(navSmoothRequested("?nav=instant"), false);
+  });
+});
+
+describe("the fragment click mark", () => {
+  it("answers true once for the popstate that follows a click, then false", () => {
+    const m = createFragmentClickMark(1000);
+    m.note(5000);
+    assert.equal(m.consume(5003), true);
+    assert.equal(m.consume(5004), false); // a Back press after the click's own popstate is a traversal
+  });
+  it("is false with no click, and when the popstate comes after the window (a click whose navigation did not fire one)", () => {
+    const m = createFragmentClickMark(1000);
+    assert.equal(m.consume(10), false);
+    m.note(100);
+    assert.equal(m.consume(1101), false);
+    assert.equal(m.consume(1102), false); // and the stale mark is gone
+  });
+  it("a second click re-arms it", () => {
+    const m = createFragmentClickMark(1000);
+    m.note(0);
+    m.consume(1);
+    m.note(2000);
+    assert.equal(m.consume(2002), true);
   });
 });

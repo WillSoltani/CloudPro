@@ -9,7 +9,10 @@ import { assertPlaceholdersPresent, openHome, settle, settleNote } from "./film-
 // cartridges' columns riding their anchors on desktop), one scroll step per animation frame, and counts per frame:
 //   runs     how often the plate's and the anchors' work ran (components/film/overlayFrame.ts, `window.__filmOverlay`)
 //   reads    layout reads (getBoundingClientRect, offset*, client*) on the elements that work reads
-//   writes   style writes on the plate's elements and on the anchors' wrappers, and its data attributes
+//   writes   style writes on the plate under test's elements and on the anchors' wrappers, and its data attributes
+// The writes of the OTHER plates are counted apart (`otherPlateWrites`) and not bounded: a neighbouring chapter's plate
+// mounts while this one is scrolled (React sets its six style properties, the writer's first run sets two more: eight in
+// one animation frame, measured at 57b0141f), which is none of this plate's work.
 // It also checks, at every frame, that the plate shows the track row of the frame the canvas has painted (a plate one
 // frame behind the picture is a visible defect), and that the plate never carries a layer hint (will-change: a hint set
 // while the plate is small can keep that raster scale while it grows into the h2). Counts and the frame order only:
@@ -32,6 +35,7 @@ type Sample = {
   rideRuns: number;
   reads: number;
   plateWrites: number;
+  otherPlateWrites: number;
   rideWrites: number;
   attrWrites: number;
   segment: string;
@@ -44,8 +48,8 @@ type Sample = {
 
 /** Before any page script: counters around the layout reads and the style writes on the plates' and anchors' elements. */
 async function instrument(page: Page): Promise<void> {
-  await page.addInitScript((chapter: string) => {
-    const counts = { reads: 0, plateWrites: 0, rideWrites: 0, attrWrites: 0 };
+  await page.addInitScript(({ chapter, index }: { chapter: string; index: number }) => {
+    const counts = { reads: 0, plateWrites: 0, otherPlateWrites: 0, rideWrites: 0, attrWrites: 0 };
     (window as unknown as { __layerCounts: typeof counts }).__layerCounts = counts;
     // The elements the plate and the anchors read, in this chapter only (the nav reads the hero section's height on
     // every scroll, NavbarClient: not theirs).
@@ -76,9 +80,18 @@ async function instrument(page: Page): Promise<void> {
     }
     // Style writes: `el.style` on a plate's or an anchor's element hands out a counting proxy of the declaration (the
     // CSS properties are own properties of each declaration in Chromium, so there is no prototype setter to wrap).
+    // A plate's element inside the layer under test counts as the plate's; any other plate's (or a plate element React is
+    // still building, not yet in the page) counts as another plate's.
     const kindOf = (el: Element) =>
-      el.matches("[data-plate],[data-perspective-plate]") ? "plateWrites" : el.matches("[data-ride]") ? "rideWrites" : null;
+      el.matches("[data-plate],[data-perspective-plate]")
+        ? el.closest(`[data-perspective-plate="${index}"]`)
+          ? "plateWrites"
+          : "otherPlateWrites"
+        : el.matches("[data-ride]")
+          ? "rideWrites"
+          : null;
     const proxies = new WeakMap<object, object>();
+    const owners = new WeakMap<object, Element>(); // a declaration's element
     let p: object | null = HTMLElement.prototype;
     while (p && !Object.getOwnPropertyDescriptor(p, "style")) p = Object.getPrototypeOf(p);
     const sd = p ? Object.getOwnPropertyDescriptor(p, "style") : undefined;
@@ -88,12 +101,14 @@ async function instrument(page: Page): Promise<void> {
         ...sd,
         get(this: Element) {
           const s = get.call(this) as CSSStyleDeclaration;
-          const kind = kindOf(this);
-          if (!kind) return s;
+          if (!kindOf(this)) return s;
           let px = proxies.get(s);
           if (!px) {
+            owners.set(s, this);
+            // The kind is decided at each write: React builds a plate's elements before they are in the page.
             px = new Proxy(s, {
               set(t, k, v) {
+                const kind = kindOf(owners.get(t)!)!;
                 counts[kind]++;
                 (t as unknown as Record<string | symbol, unknown>)[k] = v;
                 return true;
@@ -102,7 +117,7 @@ async function instrument(page: Page): Promise<void> {
                 const v = (t as unknown as Record<string | symbol, unknown>)[k];
                 if (typeof v !== "function") return v;
                 return (...args: unknown[]) => {
-                  if (k === "setProperty" || k === "removeProperty") counts[kind]++;
+                  if (k === "setProperty" || k === "removeProperty") counts[kindOf(owners.get(t)!)!]++;
                   return (v as (...a: unknown[]) => unknown).apply(t, args);
                 };
               },
@@ -117,7 +132,7 @@ async function instrument(page: Page): Promise<void> {
     new MutationObserver((records) => {
       for (const r of records) if ((r.target as Element).matches?.("[data-perspective-plate]")) counts.attrWrites++;
     }).observe(document, { subtree: true, attributes: true, attributeFilter: ["data-plate-frame", "data-plate-flight"] });
-  }, CHAPTER);
+  }, { chapter: CHAPTER, index: INDEX });
 }
 
 /** The chapter's section top (document px) and its camera move m (px): the anchor sits at m + 89. */
@@ -141,7 +156,7 @@ function scripted(page: Page, from: number, to: number, steps: number, tail: num
   return page.evaluate(
     ({ from, to, steps, tail, index }) =>
       new Promise<Sample[]>((resolve) => {
-        type Counts = { reads: number; plateWrites: number; rideWrites: number; attrWrites: number };
+        type Counts = { reads: number; plateWrites: number; otherPlateWrites: number; rideWrites: number; attrWrites: number };
         const w = window as unknown as { __layerCounts: Counts; __filmOverlay?: { runs: Record<string, number> } };
         const layer = document.querySelector<HTMLElement>(`[data-perspective-plate="${index}"]`)!;
         const plate = layer.querySelector<HTMLElement>("[data-plate]")!;
@@ -162,6 +177,7 @@ function scripted(page: Page, from: number, to: number, steps: number, tail: num
             rideRuns: now.rideRuns - prev.rideRuns,
             reads: now.reads - prev.reads,
             plateWrites: now.plateWrites - prev.plateWrites,
+            otherPlateWrites: now.otherPlateWrites - prev.otherPlateWrites,
             rideWrites: now.rideWrites - prev.rideWrites,
             attrWrites: now.attrWrites - prev.attrWrites,
             segment: canvas.dataset.segment ?? "",
@@ -197,7 +213,7 @@ const hist = (xs: number[]) => {
 
 /** One line per counter: total, max per frame, and the per-frame histogram (frames → count), for the report. */
 function summary(label: string, s: Sample[]): string {
-  const keys = ["runs", "rideRuns", "reads", "plateWrites", "rideWrites", "attrWrites"] as const;
+  const keys = ["runs", "rideRuns", "reads", "plateWrites", "otherPlateWrites", "rideWrites", "attrWrites"] as const;
   return [
     `${label}: ${s.length} frames, plate visible on ${s.filter((x) => x.visible).length}, in flight on ${s.filter((x) => x.flight).length}`,
     ...keys.map((k) => `  ${k}: total ${sum(s.map((x) => x[k]))}, max/frame ${max(s.map((x) => x[k]))}, per frame ${JSON.stringify(hist(s.map((x) => x[k])))}`),
@@ -254,9 +270,13 @@ async function run(page: Page, label: string, camera: "landscape" | "portrait", 
   // On the track only the section's top, once per run (the anchor's offset is read once, then cached).
   const trackReads = samples.filter((x) => x.visible && !x.flight && x.reads > x.runs);
   expect(trackReads.length, `${label}: track frames with more than one read per run`).toBeLessThanOrEqual(1);
-  // Writes: only what changed, so at most transform, opacity and visibility per run, and no data attribute written
-  // without a change (the row moves at most once per run).
-  expect(max(samples.map((x) => x.plateWrites)), `${label}: plate style writes per frame`).toBeLessThanOrEqual(3 * max(samples.map((x) => x.runs)));
+  // Writes: only what changed, so at most transform, opacity and visibility per run (frame by frame: the writes of the
+  // plate under test in a frame against the runs it had in that same frame), and no data attribute written without a
+  // change (the row moves at most once per run).
+  expect(
+    samples.filter((x) => x.plateWrites > 3 * x.runs).map((x) => `${x.plateWrites} writes in ${x.runs} runs`),
+    `${label}: frames with more style writes than 3 per plate run`,
+  ).toEqual([]);
   // No layer hint at any frame, moving, in flight or hidden (the plate's computed will-change stays auto, as before stage 8).
   expect([...new Set(samples.map((x) => x.hint))], `${label}: the plate's computed will-change`).toEqual(["auto"]);
   if (framed) {

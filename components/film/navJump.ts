@@ -39,3 +39,29 @@ export function navScroll(from: number, to: number, smoothEverywhere: boolean): 
 export function navSmoothRequested(search: string): boolean {
   return new URLSearchParams(search).get("nav") === "smooth";
 }
+
+/**
+ * A click on an in-page link is followed, in Chromium, by a `popstate` of its own (the fragment navigation), which
+ * components/InstantHistoryRestore.tsx takes for a history traversal and answers with `scroll-behavior: auto`: every nav
+ * click then jumped, the one-chapter-away smooth scroll included (measured at 57b0141f in headless Chromium: one scroll
+ * event for the click to About). The click notes itself here, and the first `popstate` within `windowMs` after it is that
+ * click's own: the restore leaves it alone. One-shot, so a Back press after the click's own `popstate` is still a traversal.
+ */
+export function createFragmentClickMark(windowMs = 1000) {
+  let at = Number.NEGATIVE_INFINITY;
+  return {
+    /** An in-page link was clicked at `now` (ms, performance.now()). */
+    note(now: number): void {
+      at = now;
+    },
+    /** True once for the `popstate` that follows a noted click within the window; false for any other. */
+    consume(now: number): boolean {
+      const own = now >= at && now - at <= windowMs;
+      at = Number.NEGATIVE_INFINITY;
+      return own;
+    },
+  };
+}
+
+/** The page's one mark, shared by AnchorJumps (notes) and InstantHistoryRestore (consumes). */
+export const fragmentClick = createFragmentClickMark();

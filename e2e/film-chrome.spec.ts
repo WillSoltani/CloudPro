@@ -8,6 +8,9 @@ import { assertPlaceholdersPresent, openHome, settle, settleNote, watchPage } fr
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
+/** How long no chapter may be measured before the walk count is taken as at rest (ms): longer than the cache's 1500 ms idle timeout. */
+const QUIET = 1800;
+
 const TOUCH = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 } as const;
 
 test.describe("the page's layers on a phone", () => {
@@ -52,7 +55,9 @@ test.describe("the page's layers on a phone", () => {
     expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
 
     // Every chapter's text is measured when the browser is idle (one TreeWalker each): wait until all are, and nothing
-    // more is measured for a second (a font arriving late measures them again).
+    // more is measured for QUIET ms (a font arriving late measures them again). The cache asks for an idle slice with a
+    // 1500 ms timeout (ScrollToTop.tsx), so a measurement that was scheduled can come as late as 1.5 s after it was asked
+    // for: the quiet window is longer than that.
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     await page.waitForFunction(
       () => (window as unknown as { __chrome: { walkers: number } }).__chrome.walkers >= document.querySelectorAll("[data-compose]").length,
@@ -60,17 +65,18 @@ test.describe("the page's layers on a phone", () => {
       { timeout: 30_000 },
     );
     await page.evaluate(
-      () =>
+      (QUIET) =>
         new Promise<void>((resolve) => {
           const w = window as unknown as { __chrome: { walkers: number } };
           let last = w.__chrome.walkers;
           const look = () => {
             if (w.__chrome.walkers === last) return resolve();
             last = w.__chrome.walkers;
-            setTimeout(look, 1000);
+            setTimeout(look, QUIET);
           };
-          setTimeout(look, 1000);
+          setTimeout(look, QUIET);
         }),
+      QUIET,
     );
 
     // At rest: a shared scroll subscription, not one listener per component (before stage 8: the film's, the nav's, the
@@ -90,6 +96,9 @@ test.describe("the page's layers on a phone", () => {
           requestAnimationFrame(tick);
         }),
     );
+    // Measured on this build (390x844 touch, one second at rest, Chromium 151 and WebKit alike): 2 live window scroll
+    // listeners, 0 frame requests beyond the counter's own in 61 frames. Before stage 8 a dozen listeners; the bounds below leave one listener and two requests of room.
+    console.log(`rest: ${rest.listeners} live window scroll listeners, ${rest.requests} frame requests beyond the counter's own in ${rest.frames} frames`);
     expect(rest.listeners, "live window scroll listeners at rest").toBeLessThanOrEqual(3);
     // The counter's own loop is subtracted; at most one other loop may run (the page background's), never one per reveal.
     expect(rest.requests, `frame requests at rest beyond the counter's own (${rest.frames} frames)`).toBeLessThanOrEqual(rest.frames + 2);
@@ -187,48 +196,83 @@ test.describe("the hero badge", () => {
 test.describe("nav clicks", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  /** Clicks the nav's `#id` link on a freshly loaded `url` and returns how many scroll events the page fired for it. */
-  async function scrollEventsAfterClick(page: Page, url: string, id: string): Promise<{ events: number; y: number; behavior: string }> {
+  type Nav = { events: number; first: number; y: number; behavior: string };
+
+  /**
+   * Clicks the nav's `#id` link on a freshly loaded `url` and returns what the page saw of the scroll it made: how many
+   * scroll events, where the window was at the first one, where it ended, and html's inline scroll-behavior once the hold
+   * had lapsed. A jump is one event that is already at the target; a smooth scroll starts near where it was and takes
+   * several. Waits for the scroll to stop (no event for 600 ms, and the hold on html's scroll-behavior handed back), not
+   * for a fixed time.
+   */
+  async function click(page: Page, url: string, id: string): Promise<Nav> {
     await page.goto(url, { waitUntil: "load" });
     await page.locator("canvas[data-segment]").waitFor({ state: "attached" });
+    // The page's scripts have run (FilmBackdrop sets this when it mounts; until then html's scroll-behavior is auto, see
+    // app/globals.css, and the click handler is not there yet).
+    await page.waitForFunction(() => document.documentElement.hasAttribute("data-reel-ready"));
     await page.evaluate(() => {
-      const w = window as unknown as { __navScrolls: number };
-      w.__navScrolls = 0;
-      window.addEventListener("scroll", () => w.__navScrolls++, { passive: true });
+      const w = window as unknown as { __nav: { events: number; first: number; last: number } };
+      w.__nav = { events: 0, first: -1, last: 0 };
+      window.addEventListener(
+        "scroll",
+        () => {
+          if (!w.__nav.events++) w.__nav.first = window.scrollY;
+          w.__nav.last = performance.now();
+        },
+        { passive: true },
+      );
     });
     await page.locator(`header a[href="#${id}"]:visible`).first().click();
-    // Long enough for a smooth scroll to end (and for the hold on html's scroll-behavior to lapse).
-    await page.waitForTimeout(2500);
-    return page.evaluate(() => ({
-      events: (window as unknown as { __navScrolls: number }).__navScrolls,
-      y: window.scrollY,
-      behavior: document.documentElement.style.scrollBehavior,
-    }));
+    await page.waitForFunction(
+      () => {
+        const n = (window as unknown as { __nav: { events: number; last: number } }).__nav;
+        return n.events > 0 && performance.now() - n.last > 600 && document.documentElement.style.scrollBehavior === "";
+      },
+      undefined,
+      { timeout: 30_000 },
+    );
+    return page.evaluate(() => {
+      const n = (window as unknown as { __nav: { events: number; first: number } }).__nav;
+      return { events: n.events, first: n.first, y: window.scrollY, behavior: document.documentElement.style.scrollBehavior };
+    });
   }
 
   test("a target more than one chapter away is a jump, an adjacent one is smooth, ?nav=smooth is smooth everywhere @chrome", async ({ page }) => {
-    // From the hero to Projects (four chapters on): a jump. A smooth scroll that far fires a scroll event on most frames.
-    const far = await scrollEventsAfterClick(page, "/", "projects");
+    // Measured on this build (Chromium 151 / WebKit): a jump is 1 / 1 scroll events with the first already at the target;
+    // the click to About (3312 px) 57 / 4 events, the first at 2 / 110 px; ?nav=smooth to Projects (11324 px) 90 / 4 events,
+    // the first at 3-4 / 240-608 px (two runs each). WebKit paces a smooth scroll in few events, so the bounds are "more than one event, and the
+    // first near the start": what separates a smooth scroll from a jump on any machine, not a count that depends on speed.
+    // From the hero to Projects (four chapters on): a jump, one scroll event that is already at the target.
+    const far = await click(page, "/", "projects");
+    console.log(`nav far: ${far.events} scroll events, first at ${far.first} of ${far.y}`);
     expect(far.y, "the jump landed").toBeGreaterThan(1000);
     expect(far.events, "scroll events of a jump").toBeLessThanOrEqual(4);
+    expect(far.first, "a jump's first scroll event is at the target").toBeGreaterThan(far.y * 0.9);
     expect(far.behavior, "html's scroll-behavior is handed back").toBe("");
 
-    // From the hero to About (the next chapter): smooth.
-    const near = await scrollEventsAfterClick(page, "/", "about");
+    // From the hero to About (the next chapter): smooth, so it starts near the top and takes several events. (The
+    // popstate Chromium fires for the click must not be taken for a history traversal: InstantHistoryRestore.tsx.)
+    const near = await click(page, "/", "about");
+    console.log(`nav near: ${near.events} scroll events, first at ${near.first} of ${near.y}`);
     expect(near.y).toBeGreaterThan(500);
-    expect(near.events, "scroll events of a smooth scroll").toBeGreaterThanOrEqual(8);
+    expect(near.events, "scroll events of a smooth scroll").toBeGreaterThanOrEqual(2);
+    expect(near.first, "a smooth scroll's first scroll event is near where it started").toBeLessThan(near.y * 0.5);
+    expect(near.behavior).toBe("");
 
     // The switch: the same far click, smooth.
-    const smooth = await scrollEventsAfterClick(page, "/?nav=smooth", "projects");
-    expect(smooth.events, "scroll events with ?nav=smooth").toBeGreaterThanOrEqual(8);
+    const smooth = await click(page, "/?nav=smooth", "projects");
+    console.log(`nav smooth: ${smooth.events} scroll events, first at ${smooth.first} of ${smooth.y}`);
     expect(smooth.y).toBeGreaterThan(1000);
+    expect(smooth.events, "scroll events with ?nav=smooth").toBeGreaterThanOrEqual(2);
+    expect(smooth.first, "?nav=smooth: the first scroll event is near where it started").toBeLessThan(smooth.y * 0.5);
   });
 });
 
 test.describe("structure", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("the exit and the bridge have a hidden h2, heading order holds, the portfolio pages cover the screen @chrome", async ({ page, browser, baseURL }) => {
+  test("the exit and the bridge have a hidden h2, heading order holds, the portfolio pages cover the screen @chrome", async ({ page, browser, browserName, baseURL }) => {
     await openHome(page);
     expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
     const doc = await page.evaluate(() => {
@@ -286,6 +330,12 @@ test.describe("structure", () => {
     await page.goto("/projects/soltani-org", { waitUntil: "load" });
     const meta = await page.locator("meta[name=viewport]").getAttribute("content");
     expect(meta, "a project page's viewport").toContain("viewport-fit=cover");
+
+    // The notched phone needs Chromium's safe-area override (a CDP command); WebKit has no way to set insets from a test.
+    if (browserName !== "chromium") {
+      test.info().annotations.push({ type: "skipped part", description: "notched landscape: safe-area insets can only be emulated in Chromium" });
+      return;
+    }
 
     // A notched phone in landscape (852x393 with the insets an iPhone Pro reports there: 59 px left and right, 21 px at the
     // bottom; Chromium's safe-area override). With viewport-fit=cover the canvas runs under the notch at full width, so the

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { currentChapter, isNavTarget, navScroll, navSmoothRequested } from "@/components/film/navJump";
+import { currentChapter, fragmentClick, isNavTarget, navScroll, navSmoothRequested } from "@/components/film/navJump";
 
 // How long `scroll-behavior: auto` is held on <html> after a jumping click: the browser's fragment scroll runs at the end of
 // the click, and Next's own hash scroll for the brand link a little later.
@@ -27,6 +27,8 @@ export function AnchorJumps() {
       if (url.origin !== window.location.origin || url.pathname !== window.location.pathname || !url.hash) return;
       const id = decodeURIComponent(url.hash.slice(1));
       if (!isNavTarget(id)) return;
+      // The fragment navigation's own popstate is not a history traversal (InstantHistoryRestore).
+      fragmentClick.note(performance.now());
       const projects = document.getElementById("projects");
       const from = currentChapter(root.dataset.reelSection ?? "", !!projects && projects.getBoundingClientRect().top < 0);
       const to = currentChapter(id, false);

@@ -448,6 +448,11 @@ The rest of stage 8, besides the plates: work that cost main-thread time on ever
   chapter from where the page is jumps (`scroll-behavior: auto` on html for 500 ms, then handed back); one chapter away it keeps
   the smooth scroll. The two passages with no nav link count as chapters (the hero before About, the exit and the bridge between
   Projects and Contact). `?nav=smooth` keeps smooth scrolling everywhere for the page load.
+  Chromium fires a `popstate` for the fragment navigation of a click, which `InstantHistoryRestore.tsx` (Back and Forward restore
+  instantly) took for a history traversal and answered with `scroll-behavior: auto`: before the fix every nav click jumped in
+  Chromium, the adjacent one included (found by `film-chrome`, one scroll event for the click to About). The click now notes itself
+  (`fragmentClick` in `navJump.ts`) and the restore skips the first `popstate` within one second after it; a real Back press is
+  still instant.
 - **Safe areas**: the portfolio pages (`app/page.tsx`, `app/projects/[slug]/page.tsx`, not the root layout, which also serves
   the ChapterFlow hosts) export `viewport = { viewportFit: "cover" }`, so the `env(safe-area-inset-*)` paddings take effect:
   the nav bar, the project page, the back-to-top button, the captions, the stacked bands (`[data-band]`), the About and
