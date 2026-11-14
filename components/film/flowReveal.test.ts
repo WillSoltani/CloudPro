@@ -107,27 +107,43 @@ describe("flowOpacity / flowStyle: the ramp the page had before stage 8", () => 
 });
 
 describe("createFlowController", () => {
-  it("applies an item at once and keeps no scroll subscription while nothing is near", () => {
+  it("applies an item at once, and while nothing is near a scroll that is not a jump reads nothing and runs no frame", () => {
     const p = fakePage([5000]);
     createFlowController(p.host).add(p.items[0]!);
     assert.equal(p.items[0]!.style().opacity, "0");
-    assert.equal(p.scrollListeners(), 0);
-    p.scrollTo(100);
+    p.log.length = 0;
+    for (const y of [100, 200, 300]) p.scrollTo(y);
     assert.equal(p.pendingFrames(), 0);
+    assert.deepEqual(p.log, []);
   });
 
-  it("subscribes to the scroll while an item is near, and lets go when the last one leaves", () => {
+  it("keeps one shared scroll subscription for all its items, near or not", () => {
     const p = fakePage([3000, 3400]);
     const c = createFlowController(p.host);
     for (const it of p.items) c.add(it);
     p.reportBands();
-    assert.equal(p.scrollListeners(), 0); // 3000 px away: beyond 800 + 1200
+    assert.equal(p.scrollListeners(), 1); // 3000 px away (beyond 800 + 1200), yet subscribed: see the next test
     p.scrollTo(1100);
     p.reportBands();
-    assert.equal(p.scrollListeners(), 1); // one shared subscription for both
+    assert.equal(p.scrollListeners(), 1); // one for both
     p.scrollTo(8000);
     p.reportBands();
-    assert.equal(p.scrollListeners(), 0);
+    assert.equal(p.scrollListeners(), 1);
+  });
+
+  it("applies an instant jump from beyond the band in the scroll's own frame, before the observer reports", () => {
+    // A restored history position or a click on the scrollbar's track: from the top straight into a list. The observer's
+    // report comes after the frame at the target is painted, so the items must not wait for it (else one frame at 0).
+    const p = fakePage([5000, 5200]);
+    const c = createFlowController(p.host);
+    for (const it of p.items) c.add(it);
+    p.reportBands(); // nothing near
+    assert.equal(p.items[0]!.style().opacity, "0");
+    p.scrollTo(4500); // no reportBands: the observer has not spoken yet
+    assert.equal(p.pendingFrames(), 1, "the jump's scroll event asked for a frame");
+    p.runFrames();
+    assert.deepEqual(p.items[0]!.style(), { opacity: "1", transform: "" }); // top at 500
+    assert.ok(Number(p.items[1]!.style().opacity) > 0.5, "the second item (top at 700) is on its ramp");
   });
 
   it("runs one frame per burst of scroll events, reads every near item before it writes any", () => {

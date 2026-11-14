@@ -428,11 +428,13 @@ The rest of stage 8, besides the plates: work that cost main-thread time on ever
   band of one and a half viewports above and below. An item outside the band is already at its end state (0 below, 1 above) and
   does nothing; inside it, one animation frame per scroll reads every near item, then writes only what changed. Entering or
   leaving the band, a jump of more than the band, and a film viewport change refresh every item once. The ramp and the rise are
-  unchanged (`flowOpacity`, `flowStyle`). The "jump of more than the band" part works only while a scroll subscription exists,
-  and that exists only while some item is within the band: an instant jump that lands among the items from further away than
-  the band (from the hero into the About list, say) is first seen by the IntersectionObserver, whose callback comes after the
-  frame at the target is made, so that one frame shows the items at opacity 0 and the next shows them (measured below).
-  Nothing a nav click lands on has a flow item in the viewport, so the nav is not affected.
+  unchanged (`flowOpacity`, `flowStyle`). The controller keeps its (shared) scroll subscription while any item is registered,
+  near or not; with nothing near, a scroll event only compares `scrollY` with the last one, and a jump of more than the band
+  refreshes every item in that event's own frame. An instant jump that lands among the items from further away than the band
+  (from the hero into the About list, a restored history position, a click on the scrollbar's track) can only come from more
+  than the band away, so it is always such a jump. Without that (the first version of this stage subscribed only while an
+  item was near) the jump was first seen by the IntersectionObserver, whose callback comes after the frame at the target is
+  made, and that one frame showed the items at opacity 0 (measured below, before and after the cure).
 - **Back-to-top and text** (`cornerText.ts`, `textCache.ts`, `ScrollToTop.tsx`): on touch screens the text of every chapter is
   measured once (a TreeWalker per chapter: the current one at once, the others one per idle slice), in boxes relative to the
   sticky composition, and again when a composition's or its section's box changes size (not the observer's first report),
@@ -545,11 +547,20 @@ The question has no one to ask there: Contact's anchor lands with no flow item i
 the nav lands on (counted at all seven landing positions at both sizes). (The copyright line is a film-clock reveal, not a flow
 item: at 0.016 at the Contact anchor and 1 at the bottom of the page, in both builds.) An instant `scrollTo` from the hero into the
 middle of the About list (six items) and of the Projects list (two), which a restored history position would do, tells another
-story: after, every item is at opacity 0 in the first painted frame at the target and at 1 in the second (3 runs of 3, both
-lists, so one frame of about 17 ms); before, none is ever at 0 (the old per-item scroll listeners wrote in the frame's own scroll
-event). The cause is the paragraph on the band above: from the hero nothing is within the band, no scroll subscription exists, and
-the IntersectionObserver reports a frame late. Not changed in this stage's evidence step; the one-line cure is for the controller
-to keep a scroll subscription that only compares `scrollY` against the band while no item is near.
+story: with the first version of the controller, every item was at opacity 0 in the first painted frame at the target and at 1
+in the second (3 runs of 3, both lists, so one frame of about 17 ms); before stage 8, none is ever at 0 (the old per-item scroll
+listeners wrote in the frame's own scroll event). The cause was that from the hero nothing is within the band, so no scroll
+subscription existed and the IntersectionObserver reported a frame late. Cured as the paragraph on the band above says (unit test
+"applies an instant jump from beyond the band in the scroll's own frame" in `flowReveal.test.ts` fails without it): with the cure,
+no item is at 0 in any frame of the 500 ms after the jump (3 runs of each list, load 31 to 57).
+
+**Back from a project page** (a project card's link in the Projects list, the project page, Back; Chromium restores the position
+instantly, `InstantHistoryRestore`; the first home frame at the restored position and the 500 ms after it, as above): at 1440x900
+no frame has a flow item at 0, before stage 8 (0 of 6) or after the cure (0 of 13). At 390x844 touch both builds sometimes show
+one frame with the one or two items in the viewport at 0: before stage 8 in 2 of 20 runs, after the cure in 3 of 13 (loads 25 to
+85). It is the same frame in both: the home page has mounted its items, and applied them, before the restore (they were below the
+viewport then), and the browser's restore has moved the page but its scroll event has not been dispatched yet (none had been, in all five), so
+no scroll listener of either build has run; the next frame shows them at 1. It is not a stage-8 difference and is left as it is.
 
 **Safe-area figures** (Chromium override, computed styles; the pictures are in the owner sheet): with a 34 px bottom inset the
 hero and chapter caption paddings are 34 px (28 without) in both builds, the footer 34 px (20) in both, the back-to-top button

@@ -3,13 +3,17 @@
 // frame loop for the whole life of the page, reading its layout and writing its style one after another. Now one controller
 // serves all of them:
 //   - one IntersectionObserver (rootMargin FLOW_BAND, one and a half viewports above and below) says which are near;
-//   - the scroll subscription exists only while at least one is near, and a scroll runs ONE animation frame that reads every
-//     near item and then writes every near item (no read after a write);
+//   - while at least one is near, a scroll runs ONE animation frame that reads every near item and then writes every near
+//     item (no read after a write);
 //   - an item writes only what changed.
 // An item beyond the band is already at its end state (0 below, 1 above): nothing to do until it comes within the band, and
 // then, on entering, the controller refreshes EVERY item once (an item that a jump took from one side of the band to the
 // other never reported anything, so it would otherwise keep a stale state). A scroll that moves more than the band in one
-// event does the same. Pure: the browser is injected (FlowHost), so node tests run it on a fake (flowReveal.test.ts).
+// event does the same, in that event's own frame, and so the controller keeps its scroll subscription (the shared one,
+// scrollHub.ts) while any item is registered, near or not: with nothing near it only compares `scrollY` with the last one.
+// Without it an instant jump from beyond the band (a restored history position, a click on the scrollbar's track) was first
+// seen by the IntersectionObserver, whose report comes after the frame at the target is painted: one frame of items at 0.
+// Pure: the browser is injected (FlowHost), so node tests run it on a fake (flowReveal.test.ts).
 
 /** IntersectionObserver rootMargin of the band: one and a half viewports above and below the viewport. */
 export const FLOW_BAND = "150% 0px 150% 0px";
@@ -96,14 +100,16 @@ export function createFlowController(host: FlowHost): FlowController {
   };
   const onScroll = () => {
     const y = host.scrollY();
-    schedule(Math.abs(y - lastY) > FLOW_JUMP * host.height());
+    const jump = Math.abs(y - lastY) > FLOW_JUMP * host.height();
     lastY = y;
+    // Nothing near and no jump: every item is at its end state, nothing to do.
+    if (jump || near > 0) schedule(jump);
   };
   const sync = () => {
-    if (near > 0 && !offScroll) {
+    if (entries.size && !offScroll) {
       lastY = host.scrollY();
       offScroll = host.onScroll(onScroll);
-    } else if (near === 0 && offScroll) {
+    } else if (!entries.size && offScroll) {
       offScroll();
       offScroll = null;
     }
@@ -113,6 +119,7 @@ export function createFlowController(host: FlowHost): FlowController {
     add(item) {
       const e: Entry = { item, near: false, style: "", stop: () => {} };
       entries.add(e);
+      sync();
       if (!offViewport) offViewport = host.onViewport(() => schedule(true));
       e.stop = host.observe(item, (inBand) => {
         if (inBand === e.near) return;

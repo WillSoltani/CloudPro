@@ -120,8 +120,8 @@ export function FlowReveal({
 }) {
   const ref = useRef<HTMLElement>(null);
   const reduced = useReducedMotionSafe();
-  // One controller serves every flow item (flowHub.ts): it applies the item now, and follows the scroll only while the
-  // item is within about one and a half viewports of the screen.
+  // One controller serves every flow item (flowHub.ts): it applies the item now, and follows the scroll while the item is
+  // within about one and a half viewports of the screen, or when a jump lands near it.
   useEffect(() => {
     const el = ref.current;
     if (!el || reduced) return;
