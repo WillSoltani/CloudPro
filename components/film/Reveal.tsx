@@ -5,7 +5,7 @@ import { motion, useTransform } from "framer-motion";
 import { useReducedMotionSafe } from "@/components/film/filmCore";
 import type { FrameWindow } from "@/components/film/choreo";
 import { useChapter } from "@/components/film/chapterContext";
-import { subscribeFilmViewport } from "@/components/film/viewport";
+import { addFlowReveal } from "@/components/film/flowHub";
 
 const easeOutCubic = (t: number) => 1 - (1 - t) ** 3;
 
@@ -120,36 +120,12 @@ export function FlowReveal({
 }) {
   const ref = useRef<HTMLElement>(null);
   const reduced = useReducedMotionSafe();
+  // One controller serves every flow item (flowHub.ts): it applies the item now, and follows the scroll only while the
+  // item is within about one and a half viewports of the screen.
   useEffect(() => {
     const el = ref.current;
     if (!el || reduced) return;
-    let raf = 0;
-    const apply = () => {
-      raf = 0;
-      const vh = window.innerHeight;
-      // The untransformed top: subtract the rise actually rendered (read from the computed style, since
-      // `[data-reveal]:focus-within` may override it), so the ramp follows the scroll, not the last value.
-      const tr = getComputedStyle(el).transform;
-      const ty = tr === "none" ? 0 : new DOMMatrixReadOnly(tr).m42;
-      const t = Math.min(1, Math.max(0, (vh - (el.getBoundingClientRect().top - ty)) / (0.18 * vh)));
-      const o = easeOutCubic(t);
-      el.style.opacity = String(+o.toFixed(3));
-      el.style.transform = o >= 1 ? "" : `translateY(${((1 - o) * 10).toFixed(2)}px)`;
-    };
-    const schedule = () => {
-      if (!raf) raf = requestAnimationFrame(apply);
-    };
-    apply();
-    window.addEventListener("scroll", schedule, { passive: true });
-    // A real viewport change (viewport.ts); a toolbar move comes with a scroll, which re-applies.
-    const offViewport = subscribeFilmViewport(schedule);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", schedule);
-      offViewport();
-      el.style.opacity = "";
-      el.style.transform = "";
-    };
+    return addFlowReveal(el);
   }, [reduced]);
   const Tag = as;
   return (

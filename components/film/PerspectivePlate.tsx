@@ -9,6 +9,7 @@ import { matrix3dFor, projectCorners, squareToQuad } from "@/components/film/hom
 import { REEL_FOCUS, useFilmBackdrop } from "@/components/film/FilmBackdrop";
 import type { FrameWindow } from "@/components/film/choreo";
 import { revealAt } from "@/components/film/Reveal";
+import { subscribeScroll } from "@/components/film/scrollHub";
 import { overlayFrame } from "@/components/film/overlayFrame";
 import type { OverlayJob } from "@/components/film/overlayScheduler";
 import {
@@ -231,7 +232,7 @@ export function PerspectivePlate({
     // The flight follows the chapter's clock and its live target (the release moves it with the scroll).
     const offClock = handoff?.frame.on("change", apply);
     const onScroll = () => overlayFrame.defer(job);
-    if (handoff) window.addEventListener("scroll", onScroll, { passive: true });
+    const offScroll = handoff ? subscribeScroll(onScroll) : undefined;
     const relayout = () => {
       measureLayer();
       apply();
@@ -244,7 +245,7 @@ export function PerspectivePlate({
       offSegment();
       offFrame();
       offClock?.();
-      window.removeEventListener("scroll", onScroll);
+      offScroll?.();
       ro.disconnect();
       offViewport();
       overlayFrame.cancel(job);
