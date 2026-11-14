@@ -3,15 +3,12 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   createFaceWriter,
-  createRestHint,
   flightQuad,
   HIDDEN,
-  HINT_REST_MS,
   liftFrameOf,
   mayBeReleased,
   rideTransform,
   trackRow,
-  type HintHost,
 } from "./plateFace";
 
 describe("trackRow and liftFrameOf", () => {
@@ -86,70 +83,6 @@ describe("rideTransform", () => {
   });
 });
 
-/** A fake clock and timer for the hint. */
-function fakeHintHost() {
-  let now = 0;
-  const timers = new Map<number, { at: number; fn: () => void }>();
-  let id = 0;
-  const changes: boolean[] = [];
-  const host: HintHost = {
-    set: (on) => changes.push(on),
-    now: () => now,
-    later: (fn, ms) => {
-      timers.set(++id, { at: now + ms, fn });
-      return id;
-    },
-    clear: (h) => {
-      timers.delete(h as number);
-    },
-  };
-  const advance = (ms: number) => {
-    const end = now + ms;
-    for (;;) {
-      const due = [...timers.entries()].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0];
-      if (!due) break;
-      timers.delete(due[0]);
-      now = due[1].at;
-      due[1].fn();
-    }
-    now = end;
-  };
-  return { host, advance, changes, timers };
-}
-
-describe("createRestHint", () => {
-  it("goes on at the first move, stays while moves keep coming, goes HINT_REST_MS after the last", () => {
-    const f = fakeHintHost();
-    const hint = createRestHint(f.host);
-    hint.moved();
-    assert.deepEqual(f.changes, [true]);
-    // 60 moves, one per 16 ms frame: one timer at a time, the hint stays on.
-    for (let k = 0; k < 60; k++) {
-      f.advance(16);
-      hint.moved();
-      assert.ok(f.timers.size <= 1);
-    }
-    assert.deepEqual(f.changes, [true]);
-    f.advance(HINT_REST_MS - 1);
-    assert.equal(hint.on, true);
-    f.advance(1);
-    assert.equal(hint.on, false);
-    assert.deepEqual(f.changes, [true, false]);
-    assert.equal(f.timers.size, 0);
-  });
-  it("goes at once when the plate hides, and on again at the next move", () => {
-    const f = fakeHintHost();
-    const hint = createRestHint(f.host);
-    hint.moved();
-    hint.off();
-    hint.off();
-    assert.deepEqual(f.changes, [true, false]);
-    assert.equal(f.timers.size, 0);
-    hint.moved();
-    assert.deepEqual(f.changes, [true, false, true]);
-  });
-});
-
 /** An element stand-in that counts every assignment (style properties and data attributes alike). */
 function fakeElements() {
   const writes: string[] = [];
@@ -168,9 +101,7 @@ function fakeElements() {
     });
   const plate = { style: counting("style", { transform: "", opacity: "0", visibility: "hidden" }) };
   const layer = { dataset: counting<Record<string, string | undefined>>("data", { plateFrame: "-1" }) };
-  const hints: string[] = [];
-  const hint = { moved: () => hints.push("moved"), off: () => hints.push("off") };
-  return { plate, layer, writes, hints, hint };
+  return { plate, layer, writes };
 }
 
 describe("createFaceWriter", () => {
@@ -179,7 +110,7 @@ describe("createFaceWriter", () => {
 
   it("writes everything once, then only what changed", () => {
     const e = fakeElements();
-    const write = createFaceWriter(e.layer, e.plate, e.hint);
+    const write = createFaceWriter(e.layer, e.plate);
     write(shown("matrix3d(1)", "1", 30));
     assert.deepEqual(e.writes, ["style.transform=matrix3d(1)", "style.opacity=1", "style.visibility=visible", "data.plateFrame=30", "delete data.plateFlight"]);
     e.writes.length = 0;
@@ -187,12 +118,11 @@ describe("createFaceWriter", () => {
     assert.deepEqual(e.writes, [], "the same face writes nothing");
     write(shown("matrix3d(2)", "1", 31));
     assert.deepEqual(e.writes, ["style.transform=matrix3d(2)", "data.plateFrame=31"]);
-    assert.deepEqual(e.hints, ["moved", "moved"]);
   });
 
   it("hides once, keeps the transform, and leaves the flight value unless told", () => {
     const e = fakeElements();
-    const write = createFaceWriter(e.layer, e.plate, e.hint);
+    const write = createFaceWriter(e.layer, e.plate);
     write(shown("matrix3d(1)", "0.5", 70, "0.400"));
     e.writes.length = 0;
     write(HIDDEN);
@@ -202,17 +132,19 @@ describe("createFaceWriter", () => {
     write(HIDDEN);
     write({ shown: false });
     assert.deepEqual(e.writes, []);
-    assert.deepEqual(e.hints.slice(-3), ["off", "off", "off"]);
     write({ shown: false, flight: null });
     assert.deepEqual(e.writes, ["delete data.plateFlight"]);
     assert.equal(e.layer.dataset.plateFlight, undefined);
   });
 
-  it("does not call an opacity or a row change a move", () => {
+  it("never sets a layer hint: through a whole move, a flight and a hide only the face's own properties are written", () => {
     const e = fakeElements();
-    const write = createFaceWriter(e.layer, e.plate, e.hint);
-    write(shown("m", "0.2", 26));
-    write(shown("m", "0.6", 27));
-    assert.deepEqual(e.hints, ["moved"]);
+    const write = createFaceWriter(e.layer, e.plate);
+    for (let k = 0; k < 40; k++) write(shown(`matrix3d(${k})`, String(Math.min(1, k / 10)), 26 + k));
+    for (let k = 0; k <= 10; k++) write(shown(`matrix3d(f${k})`, "1", 66, (k / 10).toFixed(3)));
+    write(HIDDEN);
+    const props = new Set(e.writes.map((w) => w.replace(/^delete /, "").split("=")[0]));
+    assert.deepEqual([...props].sort(), ["data.plateFlight", "data.plateFrame", "style.opacity", "style.transform", "style.visibility"]);
+    assert.equal(createFaceWriter.length, 2, "the writer takes the layer and the plate only (no hint)");
   });
 });

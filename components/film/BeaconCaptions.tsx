@@ -20,7 +20,7 @@ const noSubscribe = () => () => {};
 // block, sized to its content (a height cap only ever squashed the CTA: the block grows upward from the
 // bottom, clear of the intro, which has left by then), its email line ≥ 16 px above the edge while it drifts in.
 const FINALE = [
-  "absolute inset-x-0 bottom-0 flex flex-col items-center justify-end px-5 pb-[max(2.5rem,env(safe-area-inset-bottom))] text-center",
+  "absolute inset-x-0 bottom-0 flex flex-col items-center justify-end px-[max(1.25rem,env(safe-area-inset-left),env(safe-area-inset-right))] pb-[max(2.5rem,env(safe-area-inset-bottom))] text-center",
   "wide:inset-x-auto wide:top-1/2 wide:bottom-auto wide:left-[5vw] wide:w-[25vw] wide:max-w-[34rem] wide:min-w-[20rem] wide:-translate-y-1/2 wide:items-start wide:justify-start wide:px-0 wide:pb-0 wide:text-left",
 ].join(" ");
 

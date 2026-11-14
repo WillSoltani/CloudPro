@@ -15,8 +15,10 @@ export const metadata: Metadata = {
 };
 
 // Portfolio pages only (the root layout also serves ChapterFlow's hosts, so it is not set there): the page runs under a
-// phone's notch and home indicator, and the env(safe-area-inset-*) paddings (PageShell, the nav, the back-to-top button, the
-// captions and Contact's footer) keep the content clear of them. Without it they were always 0.
+// phone's notch and home indicator, and the env(safe-area-inset-*) paddings (the nav, the back-to-top button, the captions,
+// the stacked bands, the About and Projects bodies and Contact's footer) keep the text clear of them. Without it they were
+// always 0. The page column (PageShell) carries no inset: the compositions must stay as wide as the canvas, which runs under
+// the notch (frameBox.ts builds the frame on their width; the hero poster must match the canvas's crop).
 export const viewport: Viewport = { viewportFit: "cover" };
 
 

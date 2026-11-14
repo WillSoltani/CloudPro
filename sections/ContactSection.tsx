@@ -138,7 +138,7 @@ export function ContactSection() {
         style={{ backgroundImage: closingBand(), "--lamp-b": LAMP_FROM_BOTTOM } as CSSProperties}
       />
       <Reveal pin={C.pins?.[0]} y={0} className="absolute inset-x-0 bottom-0">
-        <footer className="px-5 wide:px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-center">
+        <footer className="px-[max(1.25rem,env(safe-area-inset-left),env(safe-area-inset-right))] wide:px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-center">
           <p className="font-mono text-xs uppercase tracking-[0.16em] text-slate-300 phone-short:tracking-[0.08em]">
             {/* The text's own box: ScrollToTop steps aside where it would cover it (phones). */}
             <span

@@ -161,8 +161,16 @@ test.describe("the hero badge", () => {
     expect(old.iterations, "the old ping never stops").toBe(Infinity);
     expect(watch.consoleErrors.filter((m) => /hydrat|did not match/i.test(m)), "hydration errors").toEqual([]);
 
-    // Desktop (a fine pointer) keeps the blur and gets the same three cycles.
-    const desktop = await browser.newContext({ viewport: { width: 1440, height: 900 }, baseURL });
+    // Desktop (a fine pointer) keeps the blur and gets the same three cycles. The touch options are named: a context made
+    // here takes every option of the describe's test.use(TOUCH) it does not set itself (Playwright fills in the missing
+    // keys), and hasTouch alone would make the pointer coarse.
+    const desktop = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      hasTouch: false,
+      isMobile: false,
+      deviceScaleFactor: 1,
+      baseURL,
+    });
     try {
       const d = await desktop.newPage();
       await openHome(d);
@@ -220,7 +228,7 @@ test.describe("nav clicks", () => {
 test.describe("structure", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test("the exit and the bridge have a hidden h2, heading order holds, the portfolio pages cover the screen @chrome", async ({ page }) => {
+  test("the exit and the bridge have a hidden h2, heading order holds, the portfolio pages cover the screen @chrome", async ({ page, browser, baseURL }) => {
     await openHome(page);
     expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
     const doc = await page.evaluate(() => {
@@ -278,5 +286,81 @@ test.describe("structure", () => {
     await page.goto("/projects/soltani-org", { waitUntil: "load" });
     const meta = await page.locator("meta[name=viewport]").getAttribute("content");
     expect(meta, "a project page's viewport").toContain("viewport-fit=cover");
+
+    // A notched phone in landscape (852x393 with the insets an iPhone Pro reports there: 59 px left and right, 21 px at the
+    // bottom; Chromium's safe-area override). With viewport-fit=cover the canvas runs under the notch at full width, so the
+    // compositions, the hero's stage and its poster must be exactly as wide (the frame variables, frameBox.ts, are built on
+    // the composition's width, and the poster must match the canvas's crop), and the insets belong to the text's padding:
+    // no visible text inside them. Every option is named: the context would otherwise take the describe's viewport.
+    const phone = await browser.newContext({
+      viewport: { width: 852, height: 393 },
+      hasTouch: true,
+      isMobile: true,
+      deviceScaleFactor: 3,
+      baseURL,
+    });
+    try {
+      const p = await phone.newPage();
+      const cdp = await phone.newCDPSession(p);
+      await cdp.send("Emulation.setSafeAreaInsetsOverride", { insets: { top: 0, left: 59, right: 59, bottom: 21 } });
+      await openHome(p);
+      await p.evaluate(() => document.fonts.ready.then(() => undefined));
+      const notch = await p.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.cssText =
+          "position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;padding:0 env(safe-area-inset-right,0px) 0 env(safe-area-inset-left,0px)";
+        document.body.append(probe);
+        const cs = getComputedStyle(probe);
+        const inset = { left: parseFloat(cs.paddingLeft), right: parseFloat(cs.paddingRight) };
+        probe.remove();
+        const box = (el: Element | null) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { left: r.left, width: r.width };
+        };
+        const canvas = box(document.querySelector("canvas[data-segment]"))!;
+        const poster = document.querySelector<HTMLElement>('section[data-film-segment][data-index="0"] img');
+        const W = window.innerWidth;
+        // Visible text inside the insets (the plates are painted onto the film and aria-hidden; sr-only text is 1x1).
+        const intrusions: string[] = [];
+        const walker = document.createTreeWalker(document.querySelector("main")!, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const text = (n.textContent ?? "").trim();
+          const el = n.parentElement;
+          if (!text || !el || el.closest('[aria-hidden="true"],[data-perspective-plate],.sr-only')) continue;
+          range.selectNodeContents(n);
+          for (const r of range.getClientRects()) {
+            if (r.width <= 1 || r.height <= 1) continue;
+            if (r.left < inset.left - 0.5 || r.right > W - inset.right + 0.5)
+              intrusions.push(`"${text.slice(0, 40)}" x ${Math.round(r.left)}..${Math.round(r.right)}`);
+          }
+        }
+        return {
+          inset,
+          width: W,
+          canvas,
+          compositions: [...document.querySelectorAll("[data-compose]")].map(box).filter((b): b is { left: number; width: number } => !!b && b.width > 0),
+          stage: box(poster?.closest(".sticky") ?? null),
+          poster: box(poster),
+          intrusions: intrusions.slice(0, 12),
+        };
+      });
+      expect(notch.inset, "the safe-area override took effect").toEqual({ left: 59, right: 59 });
+      expect(Math.abs(notch.canvas.width - notch.width), "the canvas covers the width, notch included").toBeLessThanOrEqual(0.5);
+      expect(notch.compositions.length, "compositions laid out").toBeGreaterThan(0);
+      for (const c of notch.compositions) {
+        expect(Math.abs(c.width - notch.canvas.width), "a composition is as wide as the canvas").toBeLessThanOrEqual(0.5);
+        expect(Math.abs(c.left - notch.canvas.left), "and starts where it starts").toBeLessThanOrEqual(0.5);
+      }
+      for (const [name, b] of [["the hero's stage", notch.stage], ["the hero poster", notch.poster]] as const) {
+        expect(b, name).not.toBeNull();
+        expect(Math.abs(b!.width - notch.canvas.width), `${name} is as wide as the canvas`).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(b!.left - notch.canvas.left), `${name} starts where the canvas starts`).toBeLessThanOrEqual(0.5);
+      }
+      expect(notch.intrusions, "visible text inside the safe-area insets").toEqual([]);
+    } finally {
+      await phone.close();
+    }
   });
 });

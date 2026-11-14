@@ -1,6 +1,5 @@
 // The pure parts of the plates and the anchors (PerspectivePlate, RideAnchor): which track row a painted frame shows,
-// where a flight is, when a flight must look at the page, writing only what changed, and the layer hint while a plate
-// moves. No React and no DOM (the writer takes anything with `style` and `dataset`), so node runs the tests
+// where a flight is, when a flight must look at the page, and writing only what changed. No React and no DOM (the writer takes anything with `style` and `dataset`), so node runs the tests
 // (plateFace.test.ts).
 
 /** A plate track's row for a painted film frame: row per frame when the track is at least as long, else proportional. */
@@ -65,65 +64,6 @@ export function rideTransform(
   return `translate3d(${dx.toFixed(2)}px, ${dy.toFixed(2)}px, 0)`;
 }
 
-/** How long a plate keeps its layer hint after its last move. */
-export const HINT_REST_MS = 250;
-
-export type HintHost = {
-  /** Sets (`true`) or removes the hint (`will-change: transform`). */
-  set(on: boolean): void;
-  now(): number;
-  later(fn: () => void, ms: number): unknown;
-  clear(handle: unknown): void;
-};
-
-export type RestHint = {
-  /** The plate's transform changed: the hint goes on (once) and stays until `restMs` without a move. */
-  moved(): void;
-  /** The plate hid or unmounts: the hint goes now. */
-  off(): void;
-  readonly on: boolean;
-};
-
-/**
- * The layer hint while a plate moves: `will-change: transform` from its first move, removed `restMs` after its last one
- * (or at once when it hides), so the browser keeps the plate's raster while it flies and draws it again at its final
- * scale at rest. One timer per rest, not one per frame.
- */
-export function createRestHint(host: HintHost, restMs = HINT_REST_MS): RestHint {
-  let on = false;
-  let lastMove = 0;
-  let timer: unknown = null;
-  const off = () => {
-    if (timer !== null) {
-      host.clear(timer);
-      timer = null;
-    }
-    if (!on) return;
-    on = false;
-    host.set(false);
-  };
-  const check = () => {
-    timer = null;
-    const left = restMs - (host.now() - lastMove);
-    if (left > 0) timer = host.later(check, left);
-    else off();
-  };
-  return {
-    moved() {
-      lastMove = host.now();
-      if (!on) {
-        on = true;
-        host.set(true);
-      }
-      if (timer === null) timer = host.later(check, restMs);
-    },
-    off,
-    get on() {
-      return on;
-    },
-  };
-}
-
 /**
  * What a plate shows. Hidden: `flight` null removes the layer's `data-plate-flight`, undefined leaves it (a plate that
  * hides after landing keeps its last flight value, as it always has). Shown: the plate element's transform and
@@ -141,9 +81,11 @@ type DatasetLike = { [key: string]: string | undefined };
 /**
  * Writes a PlateFace to the layer and the plate element, only what differs from what it wrote last (nothing is read
  * back from the DOM). The first write of each value always goes out (the effect may follow another one that left the
- * element in any state). A changed transform on a shown plate is a move (the hint); hiding drops the hint.
+ * element in any state). It writes nothing else, no layer hint either: a `will-change: transform` set while the plate is
+ * small can keep that raster scale in Chromium while the plate grows on its way into the h2 (soft text in motion), and the
+ * plate never had one before stage 8.
  */
-export function createFaceWriter(layer: { dataset: DatasetLike }, plate: { style: StyleLike }, hint: Pick<RestHint, "moved" | "off">) {
+export function createFaceWriter(layer: { dataset: DatasetLike }, plate: { style: StyleLike }) {
   const UNSET = "\u0000";
   let transform = UNSET;
   let opacity = UNSET;
@@ -158,7 +100,6 @@ export function createFaceWriter(layer: { dataset: DatasetLike }, plate: { style
   };
   return (face: PlateFace) => {
     if (!face.shown) {
-      hint.off();
       if (opacity !== "0") plate.style.opacity = opacity = "0";
       if (visibility !== "hidden") plate.style.visibility = visibility = "hidden";
       if (row !== "-1") layer.dataset.plateFrame = row = "-1";
@@ -167,7 +108,6 @@ export function createFaceWriter(layer: { dataset: DatasetLike }, plate: { style
     }
     if (face.transform !== transform) {
       plate.style.transform = transform = face.transform;
-      hint.moved();
     }
     if (face.opacity !== opacity) plate.style.opacity = opacity = face.opacity;
     if (visibility !== "visible") plate.style.visibility = visibility = "visible";

@@ -14,7 +14,6 @@ import { overlayFrame } from "@/components/film/overlayFrame";
 import type { OverlayJob } from "@/components/film/overlayScheduler";
 import {
   createFaceWriter,
-  createRestHint,
   flightQuad,
   HIDDEN,
   liftFrameOf,
@@ -113,7 +112,7 @@ const onServer = () => false;
  * (overlayFrame.ts: the frame loop's pre-render step after the clock's tick, or a microtask after a paint outside it),
  * with its layout reads before any overlay's writes. Before the flight it reads only the section's top (the raw frame);
  * in flight the h2's box too, and the composition's top once the raw frame is at camera rest. It writes only what
- * changed (plateFace.ts createFaceWriter) and carries `will-change: transform` only while it moves.
+ * changed (plateFace.ts createFaceWriter) and never sets `will-change` (as before stage 8).
  *
  * Render it outside any sticky stage or transformed ancestor (FilmChapter `plate`), since both would
  * break `fixed` or lift it above the panels. Decorative: `aria-hidden` (the section's real heading stays
@@ -163,16 +162,8 @@ export function PerspectivePlate({
     const liftRow = t && handoff ? liftOf(t) : -1;
     const liftFrame = t ? liftFrameOf(liftRow, t.count, film.count) : liftRow;
 
-    // The layer hint while the plate moves (plateFace.ts createRestHint), and the writer that sets only what changed.
-    const hint = createRestHint({
-      set: (on) => {
-        plate.style.willChange = on ? "transform" : "";
-      },
-      now: () => performance.now(),
-      later: (fn, ms) => window.setTimeout(fn, ms),
-      clear: (handle) => window.clearTimeout(handle as number),
-    });
-    const write = createFaceWriter(layer, plate, hint);
+    // The writer that sets only what changed.
+    const write = createFaceWriter(layer, plate);
 
     // The flight: the track quad at lift → the target box, smootherstep on the smoothed clock; `snap`
     // completes it at once (released, or a jump the smoothed clock has not caught up with yet).
@@ -249,7 +240,6 @@ export function PerspectivePlate({
       ro.disconnect();
       offViewport();
       overlayFrame.cancel(job);
-      hint.off();
     };
   }, [backdrop, index, track, portraitTrack, off, w0, h0, handoff]);
 

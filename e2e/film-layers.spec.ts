@@ -11,8 +11,9 @@ import { assertPlaceholdersPresent, openHome, settle, settleNote } from "./film-
 //   reads    layout reads (getBoundingClientRect, offset*, client*) on the elements that work reads
 //   writes   style writes on the plate's elements and on the anchors' wrappers, and its data attributes
 // It also checks, at every frame, that the plate shows the track row of the frame the canvas has painted (a plate one
-// frame behind the picture is a visible defect), and that the plate carries its layer hint (will-change) only while
-// it moves. Counts and the frame order only: nothing here depends on how fast the machine is.
+// frame behind the picture is a visible defect), and that the plate never carries a layer hint (will-change: a hint set
+// while the plate is small can keep that raster scale while it grows into the h2). Counts and the frame order only:
+// nothing here depends on how fast the machine is.
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
@@ -168,7 +169,7 @@ function scripted(page: Page, from: number, to: number, steps: number, tail: num
             row: Number(layer.dataset.plateFrame ?? -1),
             flight: layer.dataset.plateFlight !== undefined,
             visible: plate.style.visibility === "visible",
-            hint: plate.style.willChange,
+            hint: getComputedStyle(plate).willChange,
           });
           prev = now;
           if (i < steps) {
@@ -223,10 +224,6 @@ async function run(page: Page, label: string, camera: "landscape" | "portrait", 
   const mid = Math.round(g.top + (g.move * MID_ROW) / (count - 1));
   const a = await scripted(page, g.top - 4, mid, Math.round(STEPS / 3), 4);
   expect(await settle(page), `${label}: settle on the well${settleNote(page)}`).toBe(true);
-  // At rest the hint is gone (it is held for a moment after the last move).
-  await expect
-    .poll(() => page.evaluate((i) => document.querySelector<HTMLElement>(`[data-perspective-plate="${i}"] [data-plate]`)!.style.willChange, INDEX))
-    .toBe("");
   const rest = await page.evaluate((i) => {
     const layer = document.querySelector<HTMLElement>(`[data-perspective-plate="${i}"]`)!;
     return { row: Number(layer.dataset.plateFrame), visible: layer.querySelector<HTMLElement>("[data-plate]")!.style.visibility === "visible" };
@@ -257,12 +254,11 @@ async function run(page: Page, label: string, camera: "landscape" | "portrait", 
   // On the track only the section's top, once per run (the anchor's offset is read once, then cached).
   const trackReads = samples.filter((x) => x.visible && !x.flight && x.reads > x.runs);
   expect(trackReads.length, `${label}: track frames with more than one read per run`).toBeLessThanOrEqual(1);
-  // Writes: only what changed, so at most transform, opacity, visibility and the hint per run, and no data attribute
-  // written without a change (the row moves at most once per run).
-  expect(max(samples.map((x) => x.plateWrites)), `${label}: plate style writes per frame`).toBeLessThanOrEqual(4 * max(samples.map((x) => x.runs)));
-  // The hint: on while it moves, never on a hidden plate.
-  expect(samples.some((x) => x.visible && x.hint === "transform"), `${label}: will-change while the plate moves`).toBe(true);
-  expect(samples.filter((x) => !x.visible && x.hint !== "").length, `${label}: will-change on a hidden plate`).toBe(0);
+  // Writes: only what changed, so at most transform, opacity and visibility per run, and no data attribute written
+  // without a change (the row moves at most once per run).
+  expect(max(samples.map((x) => x.plateWrites)), `${label}: plate style writes per frame`).toBeLessThanOrEqual(3 * max(samples.map((x) => x.runs)));
+  // No layer hint at any frame, moving, in flight or hidden (the plate's computed will-change stays auto, as before stage 8).
+  expect([...new Set(samples.map((x) => x.hint))], `${label}: the plate's computed will-change`).toEqual(["auto"]);
   if (framed) {
     // The four cartridges' columns ride their anchors: one write each per frame at most.
     expect(max(samples.map((x) => x.rideWrites)), `${label}: anchor writes per frame`).toBeLessThanOrEqual(4);
