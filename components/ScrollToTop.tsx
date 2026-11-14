@@ -7,6 +7,7 @@ import { useReelChrome } from "@/components/film/useReelChrome";
 import { coarsePointerStore } from "@/components/film/filmCore";
 import { subscribeScroll } from "@/components/film/scrollHub";
 import { subscribeFilmViewport } from "@/components/film/viewport";
+import { createFirstReportSkip, createTextCache } from "@/components/film/textCache";
 import {
   cornerZone,
   measureChapterText,
@@ -70,32 +71,47 @@ export function ScrollToTop() {
   // a chapter's text (its composition or its body): there the button steps aside, and comes back once the
   // corner has been clear for TEXT_CLEAR_MS.
   //
-  // Stage 8: the text is measured once (cornerText.ts measureChapterText: one layout pass, the lines' boxes relative to
-  // the chapter's sticky composition) when the chapter becomes the current one, when its box changes size, when fonts
-  // load or when the film's viewport changes. A scroll compares the corner with those numbers and the scroll offset only
-  // (no layout read, no text walk, no timer). What moves the text afterwards is the composition's own lift, which
-  // framer-motion writes on its inline style as the clock settles (a MutationObserver on that one attribute re-checks,
-  // reading the style string, not the layout), and the reveals' rise of at most REVEAL_SLACK px, covered by a margin.
+  // Stage 8: every chapter's text is measured once (cornerText.ts measureChapterText: one layout pass, the lines' boxes
+  // relative to the chapter's sticky composition): the current chapter's at once, the others one per idle slice
+  // (textCache.ts), and all again when a composition's box changes size, fonts load or the film's viewport changes. A
+  // scroll compares the corner with those numbers and the scroll offset only (no layout read, no text walk, no timer).
+  // What moves the text afterwards is the composition's own lift, which framer-motion writes on its inline style as the
+  // clock settles (a MutationObserver on that one attribute re-checks, reading the style string, not the layout), and the
+  // reveals' rise of at most REVEAL_SLACK px, covered by a margin (not a re-measure when a reveal settles).
+  const watcher = useRef<((section: string) => void) | null>(null);
   useEffect(() => {
-    if (chrome === "film" || !section) return;
-    const root = document.querySelector(`[data-chapter="${section}"]`);
-    const compose = root?.querySelector<HTMLElement>("[data-compose]") ?? null;
-    const sectionEl = compose?.closest("section") ?? null;
-    if (!compose || !sectionEl || !coarsePointerStore.get()) {
-      setChecked(section);
-      return;
+    if (!coarsePointerStore.get()) return;
+    const chapters = new Map<string, { compose: HTMLElement; section: HTMLElement }>();
+    for (const root of document.querySelectorAll<HTMLElement>("[data-chapter]")) {
+      const compose = root.querySelector<HTMLElement>("[data-compose]");
+      const sectionEl = compose?.closest("section");
+      if (root.dataset.chapter && compose && sectionEl) chapters.set(root.dataset.chapter, { compose, section: sectionEl });
     }
-    let measured: ChapterText | null = null;
     let insets: Insets = { right: 0, bottom: 0 };
+    let current = "";
     let raf = 0;
     let clearTimer = 0;
-    let skipFirstResize = true;
     let alive = true;
+    const cache = createTextCache<ChapterText>({
+      ids: [...chapters.keys()],
+      measure: (id) => {
+        const c = chapters.get(id)!;
+        return measureChapterText(c.compose, c.section);
+      },
+      schedule: (fn) =>
+        typeof window.requestIdleCallback === "function"
+          ? window.requestIdleCallback(fn, { timeout: 1500 })
+          : window.setTimeout(fn, 300),
+      cancel: (h) =>
+        typeof window.cancelIdleCallback === "function" ? window.cancelIdleCallback(h) : window.clearTimeout(h),
+    });
     const check = () => {
       raf = 0;
-      if (!measured) return;
-      setChecked(section);
-      const top = stickyTop(measured, window.scrollY) + translateYOf(compose.style.transform);
+      const c = chapters.get(current);
+      const measured = cache.peek(current);
+      if (!c || !measured) return;
+      setChecked(current);
+      const top = stickyTop(measured, window.scrollY) + translateYOf(c.compose.style.transform);
       const zone = cornerZone(document.documentElement.clientWidth, window.innerHeight, insets);
       if (textInZone(measured.boxes, top, zone)) {
         window.clearTimeout(clearTimer);
@@ -111,39 +127,62 @@ export function ScrollToTop() {
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(check);
     };
-    const measure = () => {
+    // Everything measured is stale: the current chapter is measured now, the rest when idle.
+    const remeasure = () => {
       if (!alive) return;
-      measured = measureChapterText(compose, sectionEl);
       insets = safeInsets();
+      cache.invalidate(current);
       check();
     };
-    measure();
+    // The chapter on screen changes: the button's text check follows it.
+    let mo: MutationObserver | null = null;
+    watcher.current = (id) => {
+      current = id;
+      mo?.disconnect();
+      mo = null;
+      const c = chapters.get(id);
+      if (!c) return;
+      cache.ensure(id);
+      mo = new MutationObserver(schedule);
+      mo.observe(c.compose, { attributes: true, attributeFilter: ["style"] });
+      check();
+    };
+    insets = safeInsets();
+    cache.start();
     const offScroll = subscribeScroll(schedule);
     // `resize` alone is a phone's toolbar moving: the corner moves with the dynamic viewport, the text does not.
     window.addEventListener("resize", schedule, { passive: true });
-    const offViewport = subscribeFilmViewport(measure);
-    const ro = new ResizeObserver(() => {
-      // The observer reports once on observing: that is the measurement above.
-      if (skipFirstResize) skipFirstResize = false;
-      else measure();
+    const offViewport = subscribeFilmViewport(remeasure);
+    // The observer reports each element once on observing; only a later report is a resize.
+    const resized = createFirstReportSkip();
+    const ro = new ResizeObserver((entries) => {
+      if (resized(entries.map((e) => e.target))) remeasure();
     });
-    ro.observe(compose);
-    ro.observe(sectionEl);
-    const mo = new MutationObserver(schedule);
-    mo.observe(compose, { attributes: true, attributeFilter: ["style"] });
-    void document.fonts?.ready.then(measure);
-    document.fonts?.addEventListener("loadingdone", measure);
+    for (const c of chapters.values()) {
+      ro.observe(c.compose);
+      ro.observe(c.section);
+    }
+    void document.fonts?.ready.then(remeasure);
+    document.fonts?.addEventListener("loadingdone", remeasure);
     return () => {
       alive = false;
+      watcher.current = null;
       cancelAnimationFrame(raf);
       window.clearTimeout(clearTimer);
+      cache.stop();
       offScroll();
       window.removeEventListener("resize", schedule);
       offViewport();
       ro.disconnect();
-      mo.disconnect();
-      document.fonts?.removeEventListener("loadingdone", measure);
+      mo?.disconnect();
+      document.fonts?.removeEventListener("loadingdone", remeasure);
     };
+  }, []);
+  useEffect(() => {
+    // Under a moving film (and over the hero's and the epilogue's passages) there is no chapter to check.
+    if (chrome === "film" || !section) return;
+    if (watcher.current) watcher.current(section);
+    else setChecked(section);
   }, [chrome, section]);
 
   // Stay out of the film: hidden while a camera move plays (the hero throughout, every chapter move and the
