@@ -139,8 +139,8 @@ export function NavbarClient({ initialLoggedIn }: Props) {
   return (
     // The header stays clear at every scroll position (no fill, blur or hairline), so the reel reads as one
     // piece; the nav pill keeps its own 5 % fill.
-    <header className="fixed top-0 left-0 right-0 z-50 bg-transparent">
-      <div className="flex items-center justify-between px-4 py-4 sm:px-6">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-transparent pt-[env(safe-area-inset-top)]">
+      <div className="flex items-center justify-between py-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]">
         {/* The current route: nothing to prefetch (it only produced aborted `/?_rsc=` requests). */}
         <Link
           href="/#about"
@@ -246,7 +246,12 @@ export function NavbarClient({ initialLoggedIn }: Props) {
             exit="exit"
             className="md:hidden"
           >
-            <div ref={panelRef} id="mobile-nav" className="px-4 pb-4 sm:px-6" onBlur={onPanelBlur}>
+            <div
+              ref={panelRef}
+              id="mobile-nav"
+              className="pb-4 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))]"
+              onBlur={onPanelBlur}
+            >
               <nav
                 aria-label="Primary"
                 className="rounded-2xl border border-white/10 bg-[#070b16]/80 p-2 backdrop-blur"

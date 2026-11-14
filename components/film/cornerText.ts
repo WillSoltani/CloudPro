@@ -23,9 +23,29 @@ export const CLEAR = 8;
 // when a reveal settles (it makes the button step aside up to 10 px earlier at the edges of a line, never later).
 export const REVEAL_SLACK = 10;
 
-/** The button's corner with CLEAR around it, in viewport coordinates. */
-export function cornerZone(vw: number, vh: number): TextBox {
-  return [vw - INSET - SIZE - CLEAR, vh - INSET - SIZE - CLEAR, vw - INSET + CLEAR, vh - INSET + CLEAR];
+/** The safe-area insets the button keeps clear of (a phone's notch in landscape, its home indicator), in px. */
+export type Insets = { right: number; bottom: number };
+
+/**
+ * The button's corner with CLEAR around it, in viewport coordinates. The button sits INSET px from the corner, or the
+ * safe-area inset where that is larger (`right-[max(1.5rem,env(safe-area-inset-right))]`, ScrollToTop).
+ */
+export function cornerZone(vw: number, vh: number, insets: Insets = { right: 0, bottom: 0 }): TextBox {
+  const right = Math.max(INSET, insets.right);
+  const bottom = Math.max(INSET, insets.bottom);
+  return [vw - right - SIZE - CLEAR, vh - bottom - SIZE - CLEAR, vw - right + CLEAR, vh - bottom + CLEAR];
+}
+
+/** The right and bottom safe-area insets now (0 where there are none): one probe element, read and removed. */
+export function safeInsets(): Insets {
+  const probe = document.createElement("div");
+  probe.style.cssText =
+    "position:fixed;visibility:hidden;pointer-events:none;width:0;height:0;padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) 0";
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const insets = { right: parseFloat(cs.paddingRight) || 0, bottom: parseFloat(cs.paddingBottom) || 0 };
+  probe.remove();
+  return insets;
 }
 
 /** What was measured of one chapter: its text boxes and the sticky geometry (document px at the time). */

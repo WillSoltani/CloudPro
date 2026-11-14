@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { fraunces } from "@/app/_lib/fraunces";
 import { preconnect, preload } from "react-dom";
 import { WIDE_QUERY } from "@/components/film/filmBase";
@@ -13,6 +13,11 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image" },
   alternates: { canonical: "/" },
 };
+
+// Portfolio pages only (the root layout also serves ChapterFlow's hosts, so it is not set there): the page runs under a
+// phone's notch and home indicator, and the env(safe-area-inset-*) paddings (PageShell, the nav, the back-to-top button, the
+// captions and Contact's footer) keep the content clear of them. Without it they were always 0.
+export const viewport: Viewport = { viewportFit: "cover" };
 
 
 const json = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");

@@ -28,7 +28,9 @@ export function PageShell({ children, className }: Props) {
           .filter(Boolean)
           .join(" ")}
       >
-        <div className="relative z-10">{children}</div>
+        {/* The content column keeps clear of a phone's notch in landscape (the safe-area insets are 0 elsewhere): the film's
+            fixed layers are not inside it and still run under the notch. */}
+        <div className="relative z-10 pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">{children}</div>
       </main>
     </>
   );

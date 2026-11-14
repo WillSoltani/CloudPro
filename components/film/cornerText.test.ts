@@ -23,6 +23,14 @@ describe("cornerZone", () => {
   });
 });
 
+describe("cornerZone with safe-area insets", () => {
+  it("moves with the button where an inset is larger than its 24 px, and not otherwise", () => {
+    assert.deepEqual(cornerZone(844, 390, { right: 47, bottom: 21 }), [844 - 47 - SIZE - CLEAR, 390 - INSET - SIZE - CLEAR, 844 - 47 + CLEAR, 390 - INSET + CLEAR]);
+    assert.deepEqual(cornerZone(390, 844, { right: 0, bottom: 34 }), [314, 844 - 34 - SIZE - CLEAR, 374, 844 - 34 + CLEAR]);
+    assert.deepEqual(cornerZone(390, 844, { right: 10, bottom: 10 }), cornerZone(390, 844));
+  });
+});
+
 describe("stickyTop", () => {
   it("travels with the page before the pin, holds at the top through it, and travels on at the section's end", () => {
     assert.equal(stickyTop(sec, 0), 1000); // 1000 px below the viewport's top

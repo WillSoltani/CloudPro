@@ -8,15 +8,14 @@ import { coarsePointerStore } from "@/components/film/filmCore";
 import { subscribeScroll } from "@/components/film/scrollHub";
 import { subscribeFilmViewport } from "@/components/film/viewport";
 import {
-  CLEAR,
-  INSET,
-  SIZE,
   cornerZone,
   measureChapterText,
+  safeInsets,
   stickyTop,
   textInZone,
   translateYOf,
   type ChapterText,
+  type Insets,
 } from "@/components/film/cornerText";
 
 // After the corner has been clear of text this long, the button comes back (no flicker as lines pass it).
@@ -59,10 +58,7 @@ export function ScrollToTop() {
       const text = document.querySelector("[data-page-footer]")?.getBoundingClientRect();
       const vw = document.documentElement.clientWidth;
       const vh = window.innerHeight;
-      const left = vw - INSET - SIZE - CLEAR;
-      const top = vh - INSET - SIZE - CLEAR;
-      const right = vw - INSET + CLEAR;
-      const bottom = vh - INSET + CLEAR;
+      const [left, top, right, bottom] = cornerZone(vw, vh, safeInsets());
       setOverFooter(!!text && text.right > left && text.left < right && text.bottom > top && text.top < bottom);
     };
     check();
@@ -90,6 +86,7 @@ export function ScrollToTop() {
       return;
     }
     let measured: ChapterText | null = null;
+    let insets: Insets = { right: 0, bottom: 0 };
     let raf = 0;
     let clearTimer = 0;
     let skipFirstResize = true;
@@ -99,7 +96,7 @@ export function ScrollToTop() {
       if (!measured) return;
       setChecked(section);
       const top = stickyTop(measured, window.scrollY) + translateYOf(compose.style.transform);
-      const zone = cornerZone(document.documentElement.clientWidth, window.innerHeight);
+      const zone = cornerZone(document.documentElement.clientWidth, window.innerHeight, insets);
       if (textInZone(measured.boxes, top, zone)) {
         window.clearTimeout(clearTimer);
         clearTimer = 0;
@@ -117,6 +114,7 @@ export function ScrollToTop() {
     const measure = () => {
       if (!alive) return;
       measured = measureChapterText(compose, sectionEl);
+      insets = safeInsets();
       check();
     };
     measure();
@@ -228,7 +226,7 @@ export function ScrollToTop() {
             whileHover={{ y: -2, scale: 1.03 }}
             whileTap={{ scale: 0.96 }}
             transition={{ type: "spring", stiffness: 450, damping: 28 }}
-            className="fixed bottom-6 right-6 z-50 inline-flex items-center justify-center rounded-full bg-white/10 p-3 text-slate-100 backdrop-blur hover:bg-white/15 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night"
+            className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-[max(1.5rem,env(safe-area-inset-right))] z-50 inline-flex items-center justify-center rounded-full bg-white/10 p-3 text-slate-100 backdrop-blur hover:bg-white/15 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-lamp focus-visible:ring-offset-2 focus-visible:ring-offset-night"
           >
             <ArrowUp className="h-5 w-5" />
           </motion.button>
