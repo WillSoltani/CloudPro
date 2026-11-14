@@ -11,6 +11,8 @@ import { useAuthStatus } from "@/components/auth/useAuthStatus";
 import { HERO_INTRO_END } from "@/components/film/heroBeats";
 import { HERO_FILM_SELECTOR, useFilmInView } from "@/components/film/useFilmInView";
 import { useReelChrome } from "@/components/film/useReelChrome";
+import { subscribeScroll } from "@/components/film/scrollHub";
+import { subscribeFilmViewport } from "@/components/film/viewport";
 import { social, type SocialId } from "@/content/social";
 
 const links = [
@@ -65,23 +67,37 @@ export function NavbarClient({ initialLoggedIn }: Props) {
     setOpen(false);
   };
 
+  // Stage 8: the hero's scroll range is read when the film's viewport changes (it is a function of the viewport's size
+  // only), not on every scroll event, and the scroll listener is the shared one (scrollHub.ts).
   useEffect(() => {
+    // The hero's height (a layout read: at mount and after a film viewport change); the range takes the live innerHeight off it.
+    let heroHeight = 0;
+    const measure = () => {
+      heroHeight = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR)?.offsetHeight ?? 0;
+    };
     const onScroll = () => {
-      const f = document.querySelector<HTMLElement>(HERO_FILM_SELECTOR);
+      if (!heroHeight) measure(); // not there yet (a late hero): look again, which costs nothing once it is
+      const range = heroHeight ? heroHeight - window.innerHeight : 0;
       // The hero's opening caption is gone at the end of its intro window (heroBeats HERO_INTRO_END), so the
       // name returns there (a fixed half screen would leave it missing for a few hundred px on the long
       // hero). On phones it waits for the whole hero: the data hall's ceiling panels would put it white on
       // white.
-      const range = f ? f.offsetHeight - window.innerHeight : 0;
       const until = window.innerWidth < 768 ? 1 : HERO_INTRO_END;
       setNearTop(window.scrollY < (range > 0 ? until * range : 0.55 * window.innerHeight));
     };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
+    const remeasure = () => {
+      measure();
+      onScroll();
+    };
+    remeasure();
+    const offScroll = subscribeScroll(onScroll);
+    // `resize` alone is a phone's toolbar moving: innerHeight changes, the hero's height does not.
     window.addEventListener("resize", onScroll, { passive: true });
+    const offViewport = subscribeFilmViewport(remeasure);
     return () => {
-      window.removeEventListener("scroll", onScroll);
+      offScroll();
       window.removeEventListener("resize", onScroll);
+      offViewport();
     };
   }, []);
 

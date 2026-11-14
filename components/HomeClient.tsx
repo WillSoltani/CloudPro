@@ -4,6 +4,7 @@ import { BeaconHero } from "@/components/film/BeaconHero";
 import { FilmBackdrop } from "@/components/film/FilmBackdrop";
 import { FilmSegment } from "@/components/film/FilmSegment";
 import { HOLD_KEYS, REEL, REEL_INDEX, keyInOf, lengthOf } from "@/components/film/reel";
+import { AnchorJumps } from "@/components/AnchorJumps";
 import { ScrollToTop } from "@/components/ScrollToTop";
 
 import { AboutSection } from "@/sections/AboutSection";
@@ -76,6 +77,7 @@ export function HomeClient() {
 
       <ContactSection />
 
+      <AnchorJumps />
       <ScrollToTop />
     </FilmBackdrop>
   );
