@@ -699,7 +699,7 @@ up after 2 looks, both on target, with nothing wrong in the engine (stage 7, 202
 | `film-smoke` | page 200, canvas paints, pixels name the frame, no 4xx/5xx, no console errors |
 | `film-stats` | the counters exist, move with a scroll and add up; reset zeroes counters and keeps gauges; HUD only with `?hud=1` |
 | `film-reel` | a full one-way pass at 390x844 (touch, portrait films) and 1440x900: every film of the reel is painted, the frame read back from the canvas pixels equals `data-frame`, refetches 0, no 4xx/5xx, no console errors; then back up: refetches 0 and decoded MB within the budget; the counts are printed and added to the test annotations |
-| `film-backing` | 1440x900 at DPR 2 and 390x844 at DPR 3: the canvas is at most the widest tier in use (and at most 1920), keeps the box aspect within a pixel, is allocated at most twice after load and a short scroll, the gauges equal the canvas size and the painted frame read from the pixels equals `data-frame` |
+| `film-backing` | 1440x900 at DPR 2 and 390x844 at DPR 3: the canvas is at most the widest tier in use (and at most 1920), keeps the box aspect within a pixel, is allocated at most twice after load and a short scroll, the gauges equal the canvas size and the painted frame read from the pixels equals `data-frame`. And the frame size by device: 430x932 at DPR 3 (a wide phone held upright) paints from the 432 frames, 768x1024 at DPR 2 (a tablet) and 844x390 at DPR 3 (a phone held sideways) from the 720 frames |
 | `film-viewports` | 390x844, 360x740, 320x568, 844x390, 1440x900: the page loads, the canvas paints, the backing store is sized to the box (not the 300x150 default), no horizontal scroll bar at the top or at the end |
 | `film-reduced-motion` | with reduced motion the canvas paints stills (5 frames per film at most) and the page scrolls to its end |
 | `film-memory` | budget loader, 390x844 touch and 1440x900: a walk down the whole page and back up, twice (a stop every viewport height, each settled). After every leg decoded MB peak and the decoded MB held are within `budgetMB`, the compressed bytes peak is within the cap for that budget (48 MiB on a phone budget, 160 MiB otherwise), nothing failed and nothing was fetched twice; the two legs up make 0 frame requests and decode again (redecodes > 0), and so does the second leg down (0 requests); every film is painted. With `?budget=96` the film plays to the end (down and up, every stop settled, pixels equal `data-frame`) inside the 96 MiB budget |
@@ -721,6 +721,8 @@ the plan's targets and the same baseline: "Lab gate" in `docs/cinematic-homepage
 ```
 npm run film:quality -- --profiles desktop,iphone,slowphone --back --json out.json
 ```
+
+**Wide phones.** Three more profiles run only when named in `--profiles` (the default stays `desktop,iphone,slowphone`): `iphone393` (WebKit, Playwright device "iPhone 15", 393x659, 600 px/s), `iphone440` (WebKit, device "iPhone 17 Pro Max", 440x763, 600 px/s) and `slowphone412` (the `slowphone` throttles at 412x915). They exist because, until 2026-11-27, a phone whose painted width was above 391.84 CSS px (by layout width, 393 px and wider) ran on a larger size (720) than the 390 px profiles (432) and no gate run saw it. Since then a phone held upright takes 432 whatever its width, and these profiles show it (the row "frame width px"; no threshold reads it). `--query-<profile>` works for them too (the option takes profile names with digits). Each profile's result now carries `frameWidth`: at the top level, the frame size (tier width) painted before the first scroll; in each leg, the size on the canvas when the leg closed (after a pass down that is the last film's). The gate's printed table has a row "frame width px", which shows the top-level value ("n/a" when it is 0). A threshold on the size should read the top-level one. The measurement made with them: "Wide phones (2026-11-27)" below.
 
 **Choosing the budget in the gate.** `--query "<a=b&c=d>"` is appended to the page URL (after `?`) for every profile,
 and `--query-desktop`, `--query-iphone`, `--query-slowphone` set it for one profile (replacing `--query` for that profile). The
@@ -786,6 +788,90 @@ tests (`npm run test:film-unit`, on Node 20 and on Node 22). CI time: see the co
 **A check made before the removal (2026-11-27, a simulator, not a device).** iOS 26.5 Safari in the iOS Simulator, on the live
 site with `?hud=1`, ran mode `budget` with 8 films on packs; at the Projects anchor 321 frames had come from packs and 0 from
 files, with 162 of 168 MB decoded.
+
+## Wide phones (2026-11-27)
+
+This section records the rule as it was when measured and what the measurement found. What was built from it is at the end ("Built"). The present tense below is that of the measurement.
+
+**The rule when measured.** `tier()` in `components/film/FilmBackdrop.tsx` takes, for a coarse pointer at a device pixel ratio of 1.5 or more without Save-Data or a slow network, the smallest manifest width `w` with `w >= span x 1.1025` (that is `span x min(dpr, 1.5) x 0.75 x (1 - TIER_SLACK)`, `TIER_SLACK = 0.02`). `span` is the width the picture is painted at, `max(layout width, stage height x film aspect)` (`components/film/placement.ts`). The six rack films have the portrait widths 432, 720 and 1080 (1080 is above the coarse-pointer cap, `COARSE_MAX_PIXELS` in the same file), the two tower films 432 and 499. So a phone held upright whose span is above 391.84 CSS px (432 / 1.1025) takes 720 for the rack films and 499 for the tower films; at or below it, 432 for all eight.
+
+**Which phones.** By layout width, 360, 375, 384 and 390 px phones take 432 (iPhone SE, mini, 12, 13, 14, 16e, 17e; narrow Android phones). 393 px and wider take 720: iPhone 14 Pro, 15, 15 Pro and 16 at 393; 16 Pro, 17 and 17 Pro at 402; XR, 11 and the other 414 px models; Air at 420; every Plus and Pro Max at 428, 430 and 440; Android phones 412 px wide. The height term can tip a narrow phone to 720: when the large viewport height is above `0.45 x svh + 466.98` (765.8 px at an svh of 664). The iPhone 17e in the Simulator has an lvh of about 739 and stays on 432. The 375 px iPhones were not checked on a device or in the Simulator.
+
+**What the lab and the Simulator read.** The gate's `frameWidth` field reads 432 at 390x664 and 390x844, and 720 at 393x659, 412x915 and 440x763. In the iOS 26.5 Simulator (Safari, the live site with `?hud=1#projects`, one page view each, no scroll): iPhone 17e (390 pt) `432w`, canvas 432x819, 50 frames alive (81 MB); iPhone 17 (402 pt) `720w`, canvas 720x1350, 28 frames alive (126 MB); iPhone Air (420 pt) `720w`, canvas 720x1347. A simulator, not a device.
+
+**History.** `TIER_SLACK` came in commit `e5a5e35d` (2026-10-19): "a tier up to 2 % narrower than the need is accepted, so a 390 px phone at DPR 3 gets 432 (10.6 MB a full scroll instead of 17.1)". Before it the edge was 384 px (432 / 1.125), so 375 and 360 px phones already took 432 and 390 px phones took 720. The stated reason was bytes. Until this measurement the gate's two phone profiles were both 390 px wide, so no timing, delivery or memory run had used the 720 size on a phone. Three e2e specs run phones on 720 on placeholder frames, for geometry only (`film-toolbar` at 411x882, `film-viewports` at 844x390, `film-chrome` at 852x393).
+
+**How it was measured.** One local production build of main (`35900c70`) on 127.0.0.1, with real frames and packs from the film CDN. Every run was a steady pass down, 1 s of rest and the same pass back, with `scripts/films/packs-live.assert.json`. 73 gate calls (81 profile runs) all exited 0: no console error, no failed response, no stopped loader, no film on per-frame files, every leg complete. Paces: 600 px/s (the gate's standing pace; the page takes 26 to 33 s depending on the profile), 1200 px/s (13 to 17 s) and 2400 px/s (6.5 to 7.2 s). Another job on the lab machine took the CPU in bursts during the session (1-minute load from 1.4 to 55.6). Each run's load at its start was noted, and a burst shows inside a run as a slower decode (`decodeMsMean`). "Exact %" is the share of paints that showed the exact frame; a paint one frame off counts as a miss. The misses were small at every pace: the paints that were not exact were 1.0 to 2.2 frames from the wanted frame on average. The canvas was painted about as often at either size, except in the first call (frame clock at about 30 per second, see 600 px/s below) and in four 1200 px/s runs on the 393 px profile (383, 448, 459 and 477 paints, against 488 to 519 in its other 15 runs at that pace). "Held" counts ticks on which the canvas stayed on an old frame.
+
+**Safari engine** (Playwright WebKit, 160 MiB budget, 2 decodes at once; under these devices lab WebKit reports `(pointer: coarse)`, has no `navigator.deviceMemory`, which gives the 160 MiB budget as on an iPhone, and runs at a device pixel ratio of 3). 432 is `iphone` (390x664); 720 is `iphone393` (393x659) and `iphone440` (440x763). Exact % per run, in the order run:
+
+| Pace | 390 px, 432 frames | 393 px, 720 frames | 440 px, 720 frames |
+| --- | --- | --- | --- |
+| 600 px/s | 100, 99.8, 100, 100, 100 | 99.4, 98.6, 100, 99.9, 99.3 | 100, 100, 100, 100, 99.9 |
+| 1200 px/s | 100, 99.8, 99.8, 97.4, 99.8, 100, 99.8, 99.8 | 99.8, 86.7, 86.9, 55.4, 98.2, 84.2, 99.6, 99.8 | 100, 99.7, 99.6 |
+| 2400 px/s | 89.2, 92.5, 84.2 | 54.9, 50.0, 49.5 | 54.4, 56.2, 50.5 |
+
+**At 600 px/s** there is no practical difference. Total time on a frame that was not exact, per 26 to 29 s pass: 0 to 113 ms at 432, 16 to 402 ms on the 393 px profile, 33 to 99 ms on the 440 px one. In the first call (the busiest of the Safari-engine calls: load 19 and rising) the browser's own frame clock fell to about 30 per second on the 432 profile's way back (1,187 ticks, 143 frame intervals over 33 ms) and stayed there through both 720 profiles, which ran after it (815 and 891 ticks in the pass, 270 and 297 intervals over 33 ms). It was the machine, not the frame size, and no later run showed it (1 to 9 intervals over 33 ms). One 393 px run's way back fell to 94.3 % (1,078 ms not exact) in a run whose decode time was 9.6 ms.
+
+**At 1200 px/s** the 432 profile never fell under 97 % in 8 runs, and its way back was 100 % in all 8. The 393 px profile on 720 fell under 97 % in 4 of its 8 runs (86.7, 86.9, 84.2 and 55.4 %), with 1.2 to 4.9 s of a 13.1 s pass on a frame that was not exact and the misses 1.06 to 1.61 frames on average. In the worst run the decoder also skipped a third of the frames (895 of about 1,338 decoded, decode time 12.9 ms, 16 held ticks). Its way back fell to 76.5 and 72.1 % in two runs (2.4 and 2.9 s not exact, the right frame about 165 ms after the stop). The 440 px profile on 720 held 99.6 to 100 % in its 3 runs, all on a calm machine. It is taller (763 px against 659) and the moves are measured in viewport heights, so the same px/s asks it for about 16 % fewer frames per second.
+
+**At 2400 px/s** 432 showed the exact frame on 84.2 to 92.5 % of paints, 720 on 49.5 to 56.2 %. At 720 the page was on a frame that was not exact for 2.3 to 3.1 s of a 6.5 to 7.2 s pass (0.4 to 0.8 s at 432), the misses 1.4 to 2.2 frames on average (1.2 to 1.5 at 432). The decoder skipped about a third of the frames (753 to 931 decoded against 1,246 to 1,273), there were 0 to 15 held ticks (0 at 432), and after the fast pass back the right frame came 183 to 250 ms after the stop (17 ms at 432). The way back: 60.2 to 64.6 % exact at 720, 92.2 to 93.5 % at 432.
+
+**What makes 720 run late.** Five rounds at 1200 px/s; each round ran the five setups below (three on the 393 px profile, two on the 390 px profile) one after another, in a different order each round. Exact % per run:
+
+| Setup | Exact % | Under 97 % |
+| --- | --- | --- |
+| 393 px, 720, default budget (160 MiB: 2 decodes, 77 frames alive at the peak) | 55.4, 98.2, 84.2, 99.6, 99.8 | 2 of 5 (4 of 8 with the three earlier runs) |
+| 393 px, 720, `?budget=255` (2 decodes, 124 frames) | 88.7, 77.8, 100, 99.8, 99.8 | 2 of 5 |
+| 393 px, 720, `?budget=257` (3 decodes, 125 frames) | 99.4, 88.1, 73.7, 100, 99.8 | 2 of 5 |
+| 390 px, 432, `?budget=56` (2 decodes, 36 frames: as many as 720 holds of the rack films at 160 MiB) | 92.5, 98.8, 99.8, 86.6, 100 | 2 of 5 |
+| 390 px, 432, default budget (103 frames) | 97.4, 99.8, 100, 99.8, 99.8 | 0 of 5 (0 of 8) |
+
+Neither more room nor a third decode at once made 720 hold: both still fell under 90 % in 2 of 5 runs. With 3 decodes at once each decode took longer (8.5 and 8.8 ms in the two rounds where nothing dipped, against 6.4 to 6.6 ms with 2 at once in the same rounds), and at 2400 px/s the third decode gave 56.9 to 61.0 % exact against 49.5 to 54.9 %. Two control runs on the 393 px profile with `?budget=444` (215 frames, 3 decodes at once), one at each pace, read 100 % at 600 px/s and 98 % at 1200 px/s (the 1200 px/s run started at a load of 15.2). A small window hurts 432 too (2 of 5 under 97 %), so the number of frames held matters; and 720 with more frames held than 432 has by default still fell behind, so the size of the frame matters as well.
+
+Decode time, the mean over a pass (for a 720 profile that includes the tower films at 499): 6.4 to 7.1 ms at 720 and 3.8 to 4.4 ms at 432 in the runs the other job left alone. When it took the CPU those rose, at 1200 px/s, to as much as 12.9 ms at 720 and 5.6 ms at 432: the 720 runs fell behind and the 432 runs did not. But two of the 393 px runs that fell to about 87 % had an ordinary decode time (6.8 and 7.0 ms) on a calm machine, so 720 at this pace on that profile is at the edge even undisturbed. The reading is headroom: 720 costs about 1.7 times the decode time and holds about a third of the frames, so it has less slack when anything else wants the CPU.
+
+**The slow phone** (Chromium, CPU 4x slower, 9 Mbit/s down, 165 ms; `?budget=192`, a 4 GB phone's budget, 2 decodes at once). 432 is `slowphone` (390x844); 720 is `slowphone412` (412x915):
+
+| Pace | 390 px, 432 frames | 412 px, 720 frames |
+| --- | --- | --- |
+| 600 px/s, exact % | 99.6, 99.8, 99.8, 99.6 | 98.0, 97.6, 98.1, 97.9 |
+| 600 px/s, time not exact per pass | 0.17 to 0.25 s of 31.3 s | 1.24 to 1.41 s of 33.1 s |
+| 1200 px/s, exact % | 92.6, 94.3, 93.6 | 83.8, 90.4, 83.8 |
+| 1200 px/s, time not exact per pass | 1.44 to 1.58 s of 15.7 s | 3.10 to 3.94 s of 16.5 s |
+| 1200 px/s, longest stretch not exact | 215 to 237 ms | 851 to 936 ms |
+| 1200 px/s, held ticks | 0 | 25 to 28 |
+
+The misses were one frame (1.0 to 1.19). The longest stretches began waiting for pack bytes at both sizes. At the lab's default budget (512 MiB, 3 decodes at once) the 600 px/s result was the same: 99.6 and 99.8 % at 432, 97.9 and 97.8 % at 720. The throttle hardly slows the decode worker (1.4 to 4.4 ms per decode), so a slow phone's decoder is not modelled.
+
+**Memory.** Memory at the peak is the same at either size, because the budget is: 166.6 MB at 432, 167.7 MB at 720. What differs is how many frames that is: 103 at 432; at 720, 37 of the rack films (computed: 160 MiB / 4,492,800 bytes) and 77 at the peak of a pass, in the tower films at 499.
+
+**Data.** Film data for the whole page (the load and one pass down) is 15.0 MB at 720/499 against 8.2 MB at 432, 82 % more. There are 11 pack requests in a pass either way and 0 on the way back, except on the slow phones at 1200 px/s (13 at 432, 13 or 14 at 720; then 0 on the way back at 432 and 2 at 720).
+
+**Sharpness** (device pixels per frame pixel across the screen, DPR 3). At 720: 1.64 on a 393 pt phone, 1.68 at 402, 1.79 at 430, 1.83 at 440. At 432: 2.73, 2.79, 2.99 and 3.06. A 390 pt phone today is at 2.71. So at 432 a 393 or 402 pt phone would look about as soft as a 390 pt phone does today, and a 430 or 440 pt phone softer than any phone today. The hold keys and the poster are fixed files and do not depend on the size.
+
+**Limits.** Playwright's WebKit on a Mac is not an iPhone: decode speed on the chip, the canvas path, 120 Hz screens, Low Power Mode and heat are not modelled, and the Simulator shares Safari's code, not a phone's chip or memory limits. A steady pass is not a flick; no flick was measured. The other job's bursts were not controlled: which runs they hit is read from each run's decode time, after the fact. Cells have 3 to 8 runs; the 440 px profile at 1200 px/s has 3, all calm. Whether a visitor sees a paint that is one or two frames off was not measured. The clear cases are the held ticks, the late frame after a fast scroll back, the skipped frames at 2400 px/s and the long waits on the slow connection. Tablets held upright and phones held sideways also play the portrait films at 720 on the 160 MiB budget; not measured.
+
+**Options as weighed.**
+
+- **A. Every phone held upright takes the smallest portrait size.** The least surprising form: in a `tier` function pulled out of the effect so it can be unit-tested, a coarse pointer playing the portrait films with a span of at most about 520 CSS px returns the manifest's smallest width. That moves only upright phones 393 to about 450 px wide (racks 720 to 432, towers 499 to 432); tablets, phones held sideways, touch laptops and desktops keep their size. Not through a bigger `TIER_SLACK`: at the 0.127 it would need, 1920x1080 at DPR 1, 1536x864 at DPR 1.25 and 1280x800 at DPR 2 desktops would drop from the 1920 frames to the 1280 ones.
+- **B. Leave it.** Wide phones stay sharper, on the smaller margin measured above.
+- **C. A bigger budget or a third decode for 720.** Measured above: it does not hold.
+- **D. 720 only where the budget is 256 MiB or more** (Android phones reporting 8 GB). On iPhones the same as A. Not measured on a device.
+
+**Built (2026-11-27).** Option A in its smallest form: in `tier()` a coarse pointer playing a portrait film in a window at most `PHONE_MAX_WIDTH` (520 CSS px) wide takes the manifest's smallest width. The test is the window's width, not the painted width, so the height term cannot tip a phone back to 720. It was not pulled out into a function of its own; `film-backing` pins it in the browser (see "The specs"). The same lab method after the change, the three wide profiles now on 432 (`frameWidth` 432; 103 frames alive at the peak, 124 on the slow phone):
+
+| | Before (720) | After (432) |
+| --- | --- | --- |
+| 393 px, 1200 px/s, exact % | 4 of 8 runs under 97 (55.4 to 86.9) | 100, 100, 100 |
+| 440 px, 1200 px/s, exact % | 99.6 to 100 | 99.8, 100 |
+| 393 px / 440 px, 2400 px/s, exact % | 49.5 to 54.9 / 50.5 to 56.2 | 93.2 / 94.6 |
+| 2400 px/s, the right frame after the pass back | 183 to 250 ms | 15 and 18 ms |
+| slow phone, 600 px/s, exact % (time not exact per pass) | 97.6 to 98.1 (1.24 to 1.41 s) | 99.8, 99.7 (0.15 and 0.17 s) |
+| slow phone, 1200 px/s, exact % (longest stretch not exact, held ticks) | 83.8 to 90.4 (851 to 936 ms, 25 to 28) | 95.8 (217 ms, 0) |
+| film data for the page | 15.0 MB | 8.2 MB |
+
+One to three runs per cell after the change, on a calm machine (load 2.5 to 7.3 at the start of each call). All but three of them ran on a first form of the change that tested the painted width, which is the same thing on these profiles; the last value in the first, second and fifth rows is from the final form. The standing gate (`desktop,iphone,slowphone` with the assert file) read 100, 100 and 99.7 % exact, the desktop still on the 1920 frames. The price is the sharpness line above: wide phones now show the 432 frames. Tablets held upright and phones held sideways still play 720 on the 160 MiB budget, not measured.
 
 ## Baseline
 

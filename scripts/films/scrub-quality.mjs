@@ -12,7 +12,7 @@
  *   npm run film:quality -- [options]            (a production server must be running on --base)
  *
  *   --base <url>          page to measure (default http://127.0.0.1:3006)
- *   --profiles a,b,c      desktop, iphone, slowphone (default: all three)
+ *   --profiles a,b,c      the profiles to run (default: desktop, iphone, slowphone; a wide phone runs when named)
  *   --speed <px/s>        scroll speed for every profile (default: 900 desktop, 600 iphone and slowphone)
  *   --back                after the pass down, wait, then scroll back up at the same speed; its numbers are
  *                         reported separately (the "back" rows)
@@ -32,6 +32,11 @@
  *   iphone     WebKit, Playwright device "iPhone 14", 600 px/s
  *   slowphone  Chromium 390x844 mobile, DPR 3, touch, CPU 4x slower, network 9 Mbit/s down / 1.5 up / 165 ms
  *              latency (CDP emulation), 600 px/s
+ *   Wide phones, run only when named in --profiles. They check that a phone wider than the 390 px profiles runs
+ *   on the same small frame size ("frame width px" in the table says which size a profile ran on):
+ *   iphone393     WebKit, Playwright device "iPhone 15" (393 px wide), 600 px/s
+ *   iphone440     WebKit, Playwright device "iPhone 17 Pro Max" (440 px wide), 600 px/s
+ *   slowphone412  slowphone at 412x915
  *
  * Thresholds (--assert file.json): { "<profile>|*": { "<path>": { "min": n, "max": n } } } where <path> is a
  * dot path into a profile's result in the JSON output, for example "pass.exactShare" or "back.requests"
@@ -75,7 +80,8 @@ const PLAYWRIGHT_VERSION = require("@playwright/test/package.json").version;
 
 // ---- options ---------------------------------------------------------------------------------------------
 
-const PROFILE_NAMES = { desktop: 1, iphone: 1, slowphone: 1 };
+const DEFAULT_PROFILES = ["desktop", "iphone", "slowphone"];
+const PROFILE_NAMES = [...DEFAULT_PROFILES, "iphone393", "iphone440", "slowphone412"];
 
 function parseArgs(argv) {
   const o = { base: "http://127.0.0.1:3006", profiles: null, speed: null, back: false, cap: 0, allowRemote: false, json: null, assert: null, headed: false, query: "", queries: {} };
@@ -95,13 +101,13 @@ function parseArgs(argv) {
     else if (a === "--assert") o.assert = need(i++, a);
     else if (a === "--headed") o.headed = true;
     else if (a === "--query") o.query = need(i++, a);
-    else if (/^--query-[a-z]+$/.test(a)) o.queries[a.slice("--query-".length)] = need(i++, a);
+    else if (/^--query-[a-z0-9]+$/.test(a)) o.queries[a.slice("--query-".length)] = need(i++, a);
     else if (a === "--help" || a === "-h") {
       console.log("see the comment at the top of scripts/films/scrub-quality.mjs");
       process.exit(0);
     } else fail(`scrub-quality: unknown option ${a}`);
   }
-  for (const p of Object.keys(o.queries)) if (!(p in PROFILE_NAMES)) fail(`scrub-quality: --query-${p}: unknown profile "${p}" (desktop, iphone, slowphone)`);
+  for (const p of Object.keys(o.queries)) if (!PROFILE_NAMES.includes(p)) fail(`scrub-quality: --query-${p}: unknown profile "${p}" (${PROFILE_NAMES.join(", ")})`);
   if (o.speed !== null && !(o.speed > 0)) fail("scrub-quality: --speed must be a positive number");
   if (!Number.isFinite(o.cap) || o.cap < 0) fail("scrub-quality: --cap must be a number of requests");
   return o;
@@ -123,20 +129,26 @@ if (!isLocal && !(opts.allowRemote && opts.cap > 0)) {
   );
 }
 
+const iphone = (device) => ({ engine: "webkit", context: { ...devices[device] }, speed: 600, label: `WebKit, device "${device}"` });
+const slowPhone = (width, height) => ({
+  engine: "chromium",
+  context: { viewport: { width, height }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: devices["Pixel 7"].userAgent },
+  speed: 600,
+  // 9 Mbit/s down, 1.5 up, 165 ms latency, CPU 4x slower.
+  throttle: { cpu: 4, latency: 165, down: 9e6 / 8, up: 1.5e6 / 8 },
+  label: "Chromium mobile (touch), CPU 4x slower, 9 Mbit/s down, 1.5 up, 165 ms",
+});
 const PROFILES = {
   desktop: { engine: "chromium", context: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 }, speed: 900, label: "Chromium" },
-  iphone: { engine: "webkit", context: { ...devices["iPhone 14"] }, speed: 600, label: 'WebKit, device "iPhone 14"' },
-  slowphone: {
-    engine: "chromium",
-    context: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: devices["Pixel 7"].userAgent },
-    speed: 600,
-    // 9 Mbit/s down, 1.5 up, 165 ms latency, CPU 4x slower.
-    throttle: { cpu: 4, latency: 165, down: 9e6 / 8, up: 1.5e6 / 8 },
-    label: "Chromium mobile (touch), CPU 4x slower, 9 Mbit/s down, 1.5 up, 165 ms",
-  },
+  iphone: iphone("iPhone 14"),
+  slowphone: slowPhone(390, 844),
+  // The wide phones (see the top of the file): only when named in --profiles.
+  iphone393: iphone("iPhone 15"),
+  iphone440: iphone("iPhone 17 Pro Max"),
+  slowphone412: slowPhone(412, 915),
 };
-const wanted = opts.profiles ?? Object.keys(PROFILES);
-for (const p of wanted) if (!PROFILES[p]) fail(`scrub-quality: unknown profile "${p}" (desktop, iphone, slowphone)`);
+const wanted = opts.profiles ?? DEFAULT_PROFILES;
+for (const p of wanted) if (!PROFILES[p]) fail(`scrub-quality: unknown profile "${p}" (${PROFILE_NAMES.join(", ")})`);
 
 const PRE_SCROLL_IDLE_MS = 5000; // the page at rest before the first scroll
 const TAIL_MS = 3000; // after the film shows the target frame: late requests still count to the leg
@@ -423,6 +435,8 @@ async function measureProfile(name) {
       decodeMsMean: round(s.decodeMsMean, 1),
       mode: s.mode,
       stopped: s.mode === "stopped" ? 1 : 0,
+      // frame size (tier width) of the frame on the canvas when the leg closed
+      frameWidth: s.width ?? 0,
       errorSamples: n.errors.slice(0, 3),
     };
   }
@@ -442,6 +456,8 @@ async function measureProfile(name) {
     documentHeight: before.height,
     // canvas backing store in device px, as window.__filmStats reports it (null on a build without the gauge)
     backing: before.stats.backingW ? [before.stats.backingW, before.stats.backingH] : null,
+    // frame size (tier width) of the frame painted before the first scroll: which size this profile runs on
+    frameWidth: before.stats.width ?? 0,
     longTasksSupported: before.longSupported,
     load: {
       requests: loadLeg.requests,
@@ -472,6 +488,7 @@ function rowsFor(results) {
   const add = (label, get) => rows.push([label, ...results.map((r) => String(get(r)))]);
   add("scroll speed px/s", (r) => r.speed);
   add("canvas backing px", (r) => (r.backing ? r.backing.join("x") : "n/a"));
+  add("frame width px", (r) => r.frameWidth || "n/a");
   add("load: requests (all)", (r) => r.load.requests);
   add("load: film frames", (r) => r.load.filmFrames);
   add("load: film packs", (r) => r.load.filmPacks ?? 0);

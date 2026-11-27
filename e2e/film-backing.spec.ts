@@ -75,3 +75,24 @@ for (const vp of VIEWPORTS) {
     });
   });
 }
+
+// The frame size by device (FilmBackdrop tier()): a phone held upright takes the smallest size whatever its width;
+// a tablet held upright and a phone held sideways keep the larger portrait size.
+const SIZES = [
+  { name: "430x932 dpr 3, a wide phone", w: 430, h: 932, dpr: 3, width: 432 },
+  { name: "768x1024 dpr 2, a tablet", w: 768, h: 1024, dpr: 2, width: 720 },
+  { name: "844x390 dpr 3, a phone held sideways", w: 844, h: 390, dpr: 3, width: 720 },
+] as const;
+
+for (const vp of SIZES) {
+  test.describe(`${vp.name}`, () => {
+    test.use({ viewport: { width: vp.w, height: vp.h }, deviceScaleFactor: vp.dpr, hasTouch: true, isMobile: true });
+
+    test(`the film is painted from the ${vp.width} wide frames @tier`, async ({ page }) => {
+      await openHome(page);
+      expect(await settle(page), `the first frame settles${settleNote(page)}`).toBe(true);
+      const width = await page.evaluate(() => Number(document.querySelector<HTMLCanvasElement>("canvas[data-segment]")?.dataset.width ?? 0));
+      expect(width).toBe(vp.width);
+    });
+  });
+}
