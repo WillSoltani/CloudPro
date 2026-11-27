@@ -629,8 +629,13 @@ distance): on the unthrottled profiles that favours the packs; on the slow phone
 with packs (a 206 from cache with an exposed Content-Range, the cache headers, the immutable name, the answer to a Range preflight) is
 checked by `npm run film:pack -- --check-cdn` once they are uploaded, and the gate must then be re-run against a page that reads them
 from the CDN without `?packorigin=`, with `--assert scripts/films/packs-live.assert.json` (it fails when any film falls back to frame
-files; `docs/film-lab-gate.md`, "Shipping packs"). This document holds no record of the `--check-cdn` run or of the live gate run;
-record them here once run (a check of the live site in the iOS Simulator on 2026-11-27 is in "Stage 9: one loader" in `docs/film-lab-gate.md`). The pack server
+files; `docs/film-lab-gate.md`, "Shipping packs"). Both have run. `--check-cdn --all --full` on 2026-11-13, after the
+upload: all 46 packs served right. The gate against the live site with that assert file met every threshold on 2026-11-13, after
+the stage 7 deploy (11 film data requests per pass on each profile, where the per-frame page had made 924 to 1,384; 1 before the
+first scroll; 0 on the way back; slow phone 98.9 % exact, longest stale stretch 100 ms), and again on 2026-11-14, after the stage 8
+deploy (11 or 12 per pass, 0 on the way back, desktop and the iphone profile 100 % exact, slow phone 99.7 %, longest stale stretch
+115 ms). Each was one pass per profile from one machine. A check of the live site in the iOS Simulator on 2026-11-27 is in
+"Stage 9: one loader" in `docs/film-lab-gate.md`. The pack server
 answered preflights, but none were sent: Chromium 151 and WebKit 26.5 do not preflight a single-range `Range` header (checked
 separately), and the CDN's preflight answer for a pack path already allows any header (`docs/film-lab-gate.md`, "The preflight"). A real phone's decode speed, Safari's HTTP cache on a second visit, and a real mobile network are open, as in
 stage 4. How many bytes still arrive after the page aborts a pack read on the CDN's HTTP/2 connection (loopback has almost none in flight)
