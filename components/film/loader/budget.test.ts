@@ -567,6 +567,33 @@ describe("budget loader: a decoder that cannot decode the frames", () => {
     assert.equal(t.stats.framesAlive, 0);
   });
 
+  it("a slow network does not retier a stopped loader: the frames decoded before the stop stay", async () => {
+    let broken = false;
+    let tierNow = 1280;
+    const counts = [32, 32, 32, 32];
+    const t = setup({ decodeFails: () => broken, env: { connection: { effectiveType: "3g" }, tier: () => tierNow } });
+    joinAll(t.loader, counts, 1280);
+    assert.equal(t.loader.isSlow(), true);
+    t.loader.want(plan(2, 0, 1, counts));
+    await flush();
+    assert.ok(t.loader.loaded(3) > 0, "segment 3's entry frame decoded");
+    // From now on no decode works; segment 3 becomes active and its new frames fail on both threads.
+    broken = true;
+    t.loader.want(plan(3, 16, 1, counts));
+    for (let k = 0; k < 20 && t.loader.mode !== "stopped"; k++) await flush(4);
+    assert.equal(t.loader.mode, "stopped");
+    const held3 = t.loader.loaded(3);
+    assert.ok(held3 > 0);
+    // Back to segment 1 on a slow network with a narrower tier: a running loader would move segment 3 to it.
+    tierNow = 768;
+    t.loader.want(plan(1, 31, -1, counts));
+    await flush();
+    assert.deepEqual(t.widths, [], "no retier once stopped");
+    assert.equal(t.loader.width(3), 1280);
+    assert.equal(t.loader.loaded(3), held3, "segment 3's frames stay");
+    assert.ok(t.loader.nearest(3, 0) !== null);
+  });
+
   it("a page without createImageBitmap: stopped from the start, nothing fetched, mode stopped", async () => {
     const t = setup({ worker: "none", noPageDecode: true });
     assert.equal(t.loader.mode, "stopped", "stopped in the constructor");

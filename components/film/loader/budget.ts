@@ -43,7 +43,8 @@ import type { FrameLoader, HeldFrame, LoaderEnv } from "./types";
  * main thread (createFrameStore from the same ./frame-worker.js) and its name becomes "budget-main"; decoded frames already held stay, bytes the worker
  * held are fetched again. The same move happens when the worker's createImageBitmap keeps rejecting the frames
  * (DECODE_FALLBACK_ERRORS). If main-thread decodes reject them too, the films reading a pack give it up once (its
- * frames may be what does not decode) and load one file per frame; if those are rejected as well, the loader stops
+ * frames may be what does not decode) and load one file per frame; if no film has a pack left to give up, or those
+ * files are rejected as well, the loader stops
  * (`stop`, mode "stopped"): every job is dropped and nothing more is requested, and the frames already decoded stay.
  * Where the page itself lacks fetch, Blob or createImageBitmap it is stopped from the start (./select.ts).
  *
@@ -663,7 +664,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     want(plan) {
       if (plan.active !== active) {
         active = plan.active;
-        if (slow) retier(active + 1);
+        // Stopped: no retier (the new tier's frames would never come, and the frames decoded before the stop would go).
+        if (slow && !stopped) retier(active + 1);
       }
       planner.want(plan.active, plan.frame, plan.direction, plan.entry);
       pump();

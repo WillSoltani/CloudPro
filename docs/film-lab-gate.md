@@ -270,8 +270,8 @@ give up (stage 9, "Stage 9: one loader" below):
 - **The stop** (`stop()`: the same streak with no pack left to give up or the rescue already used, the main-thread store
   answering `ready: false`, or a page without `fetch`, `Blob` or `createImageBitmap`, which stops it in the constructor): every
   job is cancelled, the retry timer is cleared, the store is closed, `bytesHeld` reads 0, `mode` becomes `"stopped"`, and
-  nothing more is requested (the planner pump and the answer handler return at once). Frames decoded before the stop stay and
-  `nearest()` still returns them; `isComing` answers false, so `draw()` paints the nearest decoded frame instead of waiting
+  nothing more is requested (the planner pump and the answer handler return at once). Frames decoded before the stop stay (a
+  slow network no longer retiers, which would let them go) and `nearest()` still returns them; `isComing` answers false, so `draw()` paints the nearest decoded frame instead of waiting
   for one. A stop is final: that loader never starts again (a new one comes only from a new run of `FilmBackdrop`'s effect,
   see "The frame loader").
 
@@ -780,7 +780,7 @@ there is no way to put a Worker-capable page on the main thread from a URL (`fil
 up a pack that does not decode, but taking packs away from a deployed page means editing the manifest's `packs` entry by hand
 and deploying; no tool does it.
 
-**Tests after stage 9:** 51 Chromium browser tests in 13 files (`npx playwright test --list --project=chromium`) and 278 unit
+**Tests after stage 9:** 51 Chromium browser tests in 13 files (`npx playwright test --list --project=chromium`) and 279 unit
 tests (`npm run test:film-unit`, on Node 20 and on Node 22). CI time: see the comment in `.github/workflows/ci.yml`.
 
 **A check made before the removal (2026-11-27, a simulator, not a device).** iOS 26.5 Safari in the iOS Simulator, on the live
