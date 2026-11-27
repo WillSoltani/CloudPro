@@ -8,7 +8,7 @@ test("pageUrl: no query is the bare page", () => {
 });
 
 test("pageUrl: a query is appended after a question mark, a leading ? or & is dropped", () => {
-  assert.equal(pageUrl("http://127.0.0.1:3006", "loader=legacy"), "http://127.0.0.1:3006/?loader=legacy");
-  assert.equal(pageUrl("http://127.0.0.1:3006", "?budget=160&loader=budget"), "http://127.0.0.1:3006/?budget=160&loader=budget");
+  assert.equal(pageUrl("http://127.0.0.1:3006", "budget=160"), "http://127.0.0.1:3006/?budget=160");
+  assert.equal(pageUrl("http://127.0.0.1:3006", "?budget=160&hud=1"), "http://127.0.0.1:3006/?budget=160&hud=1");
   assert.equal(pageUrl("http://127.0.0.1:3006", "&hud=1"), "http://127.0.0.1:3006/?hud=1");
 });
