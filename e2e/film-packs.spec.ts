@@ -107,34 +107,39 @@ for (const vp of VIEWPORTS) {
 test.describe("pack fallbacks", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  /** Plays the whole page down; returns the counters at the end. */
-  async function playDown(page: Page) {
+  /** Plays the whole page down; returns the counters at the end. `portrait`: the phone films ("-p") are the ones shown. */
+  async function playDown(page: Page, portrait = false) {
     const end = await maxScroll(page);
     const films = await play(page, 0, end, page.viewportSize()!.height);
-    expect([...films].sort(), "films painted").toEqual(filmNames().filter((n) => !n.endsWith("-p")));
+    expect([...films].sort(), "films painted").toEqual(filmNames().filter((n) => n.endsWith("-p") === portrait));
     return (await readFilmStats(page))!;
   }
 
   /** Console errors other than the browser's own line about a pack answer the route made fail. */
   const otherErrors = (errors: string[]) => errors.filter((e) => !/Failed to load resource/.test(e));
 
-  test("a pack that 404s: its film loads frame by frame @packs", async ({ page, baseURL }) => {
-    test.setTimeout(300_000);
-    const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
-    const net = countNet(page);
-    await page.context().route(PACK_RE, (route) => route.fulfill({ status: 404, body: "not here" }));
-    await openHome(page);
-    expect(await settle(page), settleNote(page)).toBe(true);
-    const s = await playDown(page);
-    expect(s.mode).toBe("budget");
-    expect(s.packFallbackFilms, "films given up to frame files").toBeGreaterThanOrEqual(8);
-    expect(s.packFilms, "films still reading packs").toBe(0);
-    expect(s.framesFromFiles, "frames from files").toBeGreaterThan(0);
-    expect(s.framesFromPacks).toBe(0);
-    expect(s.refetches, "refetches").toBe(0);
-    expect(net.packs, "a 404 is not retried: one pack request per film").toBe(s.packFallbackFilms);
-    expect(watch.failed.every((f) => f.startsWith("404 ") && PACK_RE.test(f.slice(4))), `only the packs failed: ${watch.failed.join(", ")}`).toBe(true);
-    expect(otherErrors(watch.consoleErrors), "console errors").toEqual([]);
+  // The 404 runs at both sizes: the phone films have packs of their own.
+  for (const vp of VIEWPORTS) test.describe(vp.name, () => {
+    test.use(vp.use);
+
+    test("a pack that 404s: its film loads frame by frame @packs", async ({ page, baseURL }) => {
+      test.setTimeout(300_000);
+      const watch = watchPage(page, baseURL ?? "http://127.0.0.1:3006");
+      const net = countNet(page);
+      await page.context().route(PACK_RE, (route) => route.fulfill({ status: 404, body: "not here" }));
+      await openHome(page);
+      expect(await settle(page), settleNote(page)).toBe(true);
+      const s = await playDown(page, vp.portrait);
+      expect(s.mode).toBe("budget");
+      expect(s.packFallbackFilms, "films given up to frame files").toBeGreaterThanOrEqual(8);
+      expect(s.packFilms, "films still reading packs").toBe(0);
+      expect(s.framesFromFiles, "frames from files").toBeGreaterThan(0);
+      expect(s.framesFromPacks).toBe(0);
+      expect(s.refetches, "refetches").toBe(0);
+      expect(net.packs, "a 404 is not retried: one pack request per film").toBe(s.packFallbackFilms);
+      expect(watch.failed.every((f) => f.startsWith("404 ") && PACK_RE.test(f.slice(4))), `only the packs failed: ${watch.failed.join(", ")}`).toBe(true);
+      expect(otherErrors(watch.consoleErrors), "console errors").toEqual([]);
+    });
   });
 
   test("a pack whose bytes are not a pack: given up, its film loads frame by frame @packs", async ({ page, baseURL }) => {

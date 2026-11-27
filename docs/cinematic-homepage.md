@@ -193,7 +193,7 @@ npm run film:quality -- --profiles iphone --speed 400 --assert thresholds.json
 ```
 Options: `--base`, `--profiles desktop,iphone,slowphone`, `--speed <px/s>`, `--back`, `--cap <requests>`, `--allow-remote`,
 `--json <file>`, `--assert <file>` (`{"*" or "<profile>": {"pass.exactShare": {"min": 97}}}`, dot paths into the JSON; exit 1 when
-one is missed; nothing is enforced by default yet), `--headed`. The Playwright specs (`npm run test:film`) check correctness on
+one is missed; nothing is enforced unless a file is given: `scripts/films/packs-live.assert.json` enforces the pack reads, see "Stage 7: packs"), `--headed`. The Playwright specs (`npm run test:film`) check correctness on
 placeholder frames (every film painted, the frame read back from the canvas equals `data-frame`, no 4xx/5xx, no console errors,
 viewports, reduced motion); they have no timing thresholds.
 
@@ -210,7 +210,7 @@ paint counts 0), "settle ms" = time from the scroll stopping until the canvas sh
 list and where the engine updates each: `docs/film-lab-gate.md`.
 
 **Baseline** (the numbers later stages are compared with). Date 2026-11-12, engine at commit `c01c36aa` (the gate adds counters
-only), loader: legacy. Machine: Apple M1 laptop, macOS 26.5, Node 20.20.2, Playwright 1.62.1, Chromium 151.0.7922.34, WebKit 26.5.
+only), loader: legacy (removed in stage 9, last commit with it `2af13317`). Machine: Apple M1 laptop, macOS 26.5, Node 20.20.2, Playwright 1.62.1, Chromium 151.0.7922.34, WebKit 26.5.
 Real frames from the film CDN, local production build (`NEXT_DIST_DIR=.next-film-cdn`, no `NEXT_PUBLIC_FILM_BASE`) on
 127.0.0.1:3006, no other build or test running at the time. Three runs in a row of
 `npm run film:quality -- --profiles desktop,iphone,slowphone --back --json <file>`; each cell is the **median of the three
@@ -251,7 +251,8 @@ profiles keep up (desktop 97.8 % exact, iphone 100 %), the slow phone does not (
 on the iphone profile and 0.6 to 0.9 GB on the slow phone); a pass makes 1,000 to 1,400 requests; and the way back refetches
 nearly every frame it asks for (an engine that evicts what the visitor just saw).
 
-**Targets set by the plan** (none is enforced yet):
+**Targets set by the plan** (where they stand: the stage 7 verdict below with packs, and the stage 6 toolbar table for the
+canvas reallocations; the baseline table above is the starting point, not today's numbers):
 - the exact frame on 97 % of draws at 600 px/s on the phone profile without throttling;
 - on Fast 4G: a mean fallback distance of 4 frames or less, and the exact frame within 1 s of stopping;
 - longest stale stretch 100 ms or less;
@@ -260,9 +261,14 @@ nearly every frame it asks for (an engine that evicts what the visitor just saw)
 - scrolling back costs 0 requests;
 - 0 canvas reallocations when the address bar moves.
 
+Where the stage 7 verdict (medians of three alternating runs, packs) stands against them: 11 to 12 film data requests per pass
+(target 30) and 0 on the way back; the exact frame on 99.7 % (slow phone) to 100 % of draws; decoded 530.8 of 536.9 MB on desktop
+and 166.6 of 167.8 MB on the phone profiles (160 MiB); the longest stale stretch 100 ms on the slow phone. The pack reads are
+enforced by `scripts/films/packs-live.assert.json`.
+
 ### Stage 4: budget loader
-The second loader (`components/film/loader/budget.ts`, the default; the legacy loader stays selectable with `?loader=legacy`) against the
-legacy one, on **real frames**. Design and counters: "The budget loader" in `docs/film-lab-gate.md`.
+The second loader (`components/film/loader/budget.ts`, the default; the legacy loader stayed selectable with `?loader=legacy`; both the
+legacy loader and the switch were removed in stage 9, last commit with them `2af13317`) against the legacy one, on **real frames**. Design and counters: "The budget loader" in `docs/film-lab-gate.md`.
 
 **Setup.** Date 2026-11-13, commit `84e879ab` (the gate script and specs of this stage are added on top; no engine file changed).
 Machine: Apple M1 laptop, macOS 26.5, Node 20.20.2, Playwright 1.62.1, Chromium 151.0.7922.34, WebKit 26.5. Local production build
@@ -371,7 +377,7 @@ needs fewer, larger requests (the pack stage) and is the place to look for the p
 how it counts `ImageBitmap` memory against it differ from a Mac's), its decode speed (an M1 decodes a frame in 1.5 to 7 ms in the
 worker; an A-series phone under thermal pressure may be several times slower, which the 4x CPU throttle only approximates, and the
 decode cap of 2 at once was not tuned against it), and a real mobile network (the CDN is close to this machine). The first and the
-last of these need a phone on the page with `?hud=1&loader=budget` against `?loader=legacy`.
+last of these need a phone on the page with `?hud=1` (the A/B against `?loader=legacy` was possible then; the legacy loader was removed in stage 9).
 
 ### Stage 5: smoothing by input
 
@@ -482,8 +488,9 @@ at a reading hold; 1440x900 before and after, which are pixel for pixel the same
 
 ### Stage 7: packs
 One file per film directory and width holding all its frames (`docs/film-lab-gate.md`, "Packs" and "Packs at run time"), read by the
-budget loader with a few streaming reads instead of one request per frame. The per-frame path stays the fallback (`?pack=0`, and any
-film whose pack fails).
+budget loader with a few streaming reads instead of one request per frame. The per-frame path stays the fallback for any film whose
+pack fails (the `?pack=0` switch and the `?loader=legacy` control used for the measurements below were removed in stage 9, last
+commit with them `2af13317`).
 
 **Note on the F column (added after review).** These runs used a per-frame fetch order that this stage had changed
 (commit `2275913d`: the head of the film ahead fetched before the active film's strides 2 and 1). That change touched the per-frame
@@ -622,7 +629,13 @@ distance): on the unthrottled profiles that favours the packs; on the slow phone
 with packs (a 206 from cache with an exposed Content-Range, the cache headers, the immutable name, the answer to a Range preflight) is
 checked by `npm run film:pack -- --check-cdn` once they are uploaded, and the gate must then be re-run against a page that reads them
 from the CDN without `?packorigin=`, with `--assert scripts/films/packs-live.assert.json` (it fails when any film falls back to frame
-files; `docs/film-lab-gate.md`, "Shipping packs"). Neither has run yet: no browser has read a pack from the CDN. The pack server
+files; `docs/film-lab-gate.md`, "Shipping packs"). Both have run. `--check-cdn --all --full` on 2026-11-13, after the
+upload: all 46 packs served right. The gate against the live site with that assert file met every threshold on 2026-11-13, after
+the stage 7 deploy (11 film data requests per pass on each profile, where the per-frame page had made 924 to 1,384; 1 before the
+first scroll; 0 on the way back; slow phone 98.9 % exact, longest stale stretch 100 ms), and again on 2026-11-14, after the stage 8
+deploy (11 or 12 per pass, 0 on the way back, desktop and the iphone profile 100 % exact, slow phone 99.7 %, longest stale stretch
+115 ms). Each was one pass per profile from one machine. A check of the live site in the iOS Simulator on 2026-11-27 is in
+"Stage 9: one loader" in `docs/film-lab-gate.md`. The pack server
 answered preflights, but none were sent: Chromium 151 and WebKit 26.5 do not preflight a single-range `Range` header (checked
 separately), and the CDN's preflight answer for a pack path already allows any header (`docs/film-lab-gate.md`, "The preflight"). A real phone's decode speed, Safari's HTTP cache on a second visit, and a real mobile network are open, as in
 stage 4. How many bytes still arrive after the page aborts a pack read on the CDN's HTTP/2 connection (loopback has almost none in flight)

@@ -73,7 +73,7 @@ jobs:
   film:
     name: Film specs (placeholder frames)
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 40
     permissions:
       contents: read
     env:
@@ -171,9 +171,9 @@ jobs:
 
       - name: Film specs (Chromium)
         # playwright.config.ts builds with NEXT_PUBLIC_FILM_BASE=/films and starts `next start` on 127.0.0.1:3006.
-        # One worker in CI, so the time grows with the number of tests: 38 tests took 11.8 minutes, the 57 with the
-        # pack specs 18.5, and the 75 with the toolbar and feel specs need about 24.
-        timeout-minutes: 40
+        # One worker in CI, so the time grows with the number of tests: the 81 before stage 9 took 19.7 minutes, the 51
+        # since (one loader) 13.9. The limit leaves room for a slow runner and for a retried test.
+        timeout-minutes: 25
         run: npm run test:film
 
       - name: Upload Playwright report

@@ -1,4 +1,4 @@
-// Pure (no React, no DOM): the canvas backing-store size and the page-load flag that restores the old rule.
+// Pure (no React, no DOM): the canvas backing-store size.
 
 /** Device pixel ratio above this adds fill, not detail: the film's frames are far below 3x a phone's CSS box. */
 export const MAX_DPR = 2;
@@ -24,9 +24,4 @@ export function backingSize(boxW: number, boxH: number, dpr: number, maxW: numbe
  */
 export function growCap(prev: number, inUse: number, reelMax: number): number {
   return Math.max(prev, inUse > 0 ? inUse : reelMax);
-}
-
-/** `?backing=full` in the URL restores the old size rule (round(CSS size x capped DPR), no width cap) for this page load. */
-export function wantsFullBacking(search: string): boolean {
-  return new URLSearchParams(search).get("backing") === "full";
 }

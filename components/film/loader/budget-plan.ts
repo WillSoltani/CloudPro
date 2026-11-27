@@ -1234,7 +1234,7 @@ export function createBudgetPlanner(config: PlannerConfig) {
      * A decode failed. True when the frame is now missing: report it once.
      * - The decoder rejected the bytes (`bytesLost` false): no fetch try is spent and the bytes are kept; the decode is
      *   retried after RETRY_BASE_MS, then twice that, and after FETCH_TRIES failed decodes the bytes go and the frame
-     *   is missing (its neighbours cover it), as a frame the legacy loader cannot decode. The frame's first failure
+     *   is missing (its neighbours cover it). The frame's first failure
      *   adds to `decodeErrorStreak`.
      * - The store no longer had the bytes (`bytesLost`): they are fetched again, and that counts as a fetch try.
      */

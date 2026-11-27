@@ -43,7 +43,7 @@ describe("budget bytes: the ?budget= override", () => {
     assert.equal(budgetOverrideBytes("?hud=1&budget=96.5"), Math.round(96.5 * MB));
     assert.equal(budgetOverrideBytes("?budget=2"), 8 * MB);
     assert.equal(budgetOverrideBytes("?budget=99999"), 4096 * MB);
-    for (const q of ["", "?budget=", "?budget=abc", "?budget=-5", "?budget=0", "?loader=budget"]) {
+    for (const q of ["", "?budget=", "?budget=abc", "?budget=-5", "?budget=0"]) {
       assert.equal(budgetOverrideBytes(q), null, q);
     }
   });

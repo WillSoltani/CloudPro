@@ -76,21 +76,24 @@ export const HOLD_SECTIONS = [[], ["about"], ["certifications"], ["skills"], ["p
   <AboutSection />            {/* FilmChapter join, plate handoff, body = DeliveryStrip */}
   <CertificationsSection /> <SkillsSection /> <ProjectsBlock />
   <FilmSegment film={exit} id="exit" length={lengthOf(exit)} reducedSteps={2} section="" />
-  <FilmSegment id="bridge" … />  {/* tower-01: a wordless passage, joined, dissolveIn 0.2, pace 120 */}
+  <FilmSegment id="bridge" … />  {/* tower-01: a wordless passage, joined, dissolveIn 0.2, pace 160 */}
   <ContactSection />          {/* the footer inside, the page ends in its read pin */}
 </FilmBackdrop>
 ```
 - **`FilmEntry`** (`filmCore.ts`): `landscape`, `portrait?`, `key?`, `portraitKey?`, `pace?` (frames per viewport; default the
-  timeline's 96; chapters, exit and tower 84), `breath?` `{ scale, origin }` (the key's stand-in push while no tail frames play),
+  timeline's 96; chapters and tower-04 84, the exit 110, the bridge 160: `CHAPTER_PACE`, `EXIT_PACE`, `BRIDGE_PACE` in `reel.ts`), `breath?` `{ scale, origin }` (the key's stand-in push while no tail frames play),
   `tail?` `{ from, frames }`. Helpers `moveVhOf`, `lengthOf`, `segmentOf`, `breathOf`, `tailOf`.
 - **`FilmBackdrop`**: mount once, no transformed ancestor. The **reel clock**: per started segment y = −top, m the move, q = D − m,
-  μ = m/(m+q), u = y < m ? μy/m : μ + (1−μ)(y−m)/q; c = max(i + u), one spring (140/24; jumps on first measure, the first 500 ms and
+  μ = m/(m+q), u = y < m ? μy/m : μ + (1−μ)(y−m)/q; c = max(i + u), one spring (140/24 for the wheel, keys and the scroll bar; touch has 35 ms of lag, `smoothing.ts`; jumps on first measure, the first 500 ms and
   leaps > 1 segment). seg = floor(c), p = min(1, u/μ), τ = (u−μ)/(1−μ); painted round(p·M) in the move, M + round(g(τ)·T) in the tail
   (g: 0 → 0.5 at τ_read → 1). Per segment MotionValues `progress`, `frame` (float), `tau`, `tauRead`; `drawnSegment`/`drawnFrame`
   for overlays on the picture. Chrome on `<html data-reel-chrome data-reel-section>` + `reel:chrome` (`useReelChrome()` drives the
-  navbar, ScrollToTop and `useFilmInView`). One crop for everything: `coverRect` at `REEL_FOCUS` (0.50, 0.45).
-  Loading: within 1.5 viewports, ranked around the target, 6 in flight; frames 0, M and last stay resident; segments > 1 away release
-  the rest. Keys: tails off, crossfaded at the move's end and the next segment's start (120 px or `dissolveIn`) and breathing;
+  navbar, ScrollToTop and `useFilmInView`). One placement for everything, `placement.ts`: the cover fit of the small-viewport stage at `REEL_FOCUS` (0.50, 0.45), which is `coverRect` itself where lvh = svh.
+  Loading: the budget loader (`components/film/loader/`): film packs streamed (one file per film and width), the compressed bytes kept,
+  decodes in a worker inside a decoded-frame budget (`pickFrameBudgetBytes`: with `navigator.deviceMemory` min(512, max(96,
+  memory × 48)) MiB, else 160 MiB on a narrow or portrait window and 384 MiB otherwise), the active film's frames 0, M and last
+  and each neighbour's entry frame always kept decoded; see
+  `docs/film-lab-gate.md`. Keys: tails off, crossfaded at the move's end and the next segment's start (120 px or `dissolveIn`) and breathing;
   tails on, only the boot key (fades 400 ms after its segment paints).
 - **`FilmChapter`** (`film`, `id`, `moveVh`, `choreo`, `section`, `reducedSteps` 3, `tail?`, `breath?`, `plate?`, `join?`,
   `dissolveIn?`, `body?`): the anchor at camera rest, the sticky composition (`pointer-events: none`; revealed items opt in), the
@@ -136,7 +139,12 @@ export const HOLD_SECTIONS = [[], ["about"], ["certifications"], ["skills"], ["p
 | Per film | within its manifest `kb` per tier; rack door clip ≤ 9 KB mean per frame at 768 |
 | Keys, posters | each ≤ 200 KB |
 | Load | LCP < 2.5 s (production), first scrub ≤ 1.5 s, zero console errors |
-| Pace | hero 96 frames / vh, chapters, exit and tower 84; page ≈ 24 vh at 1440×900, ≈ 27 on phones |
+| Pace | hero 96 frames / vh, chapters and tower-04 84, exit 110, bridge 160; page ≈ 24 vh at 1440×900, ≈ 27 on phones |
+| Film data requests per pass (pack reads + frame files) | ≤ 30 (11 to 12 measured, stage 7) |
+| Way back | 0 requests |
+| Decoded frames | decoded MB ≤ the budget (96 to 512 MiB by `navigator.deviceMemory`; without it 160 MiB phone, 384 MiB desktop) |
+| Toolbar moves | 0 canvas reallocations per move |
+| Window scroll listeners at rest | ≤ 3 (2 measured, stage 8) |
 | Contrast | slate-300 ≥ 7:1 and slate-400 ≥ 4.5:1 over the brightest 1 % under each text block, composited with its halo or tone |
 
 Over budget: QUALITY 70 for the whole page (never per film across a join), even tail frames on coarse pointers, the tower's `-p`
@@ -144,7 +152,10 @@ quarter crops; never FPS or count changes (the timeline owns them).
 
 ## Ship
 Only on Will's go, after he has seen `cdk diff`: `cdk deploy CloudPortfolioFilms`, then `sync-film.sh <film> --write-manifest` in
-page order (`rack-00`, `rack-00-p`, … `rack-05(-p)`, `tower-01(-p)`, `tower-04(-p)`; never a preview or stand-in film), `scroll-qa`
+page order (`rack-00`, `rack-00-p`, … `rack-05(-p)`, `tower-01(-p)`, `tower-04(-p)`; never a preview or stand-in film), then the
+packs (they are built from the CDN's frames: `npm run film:pack -- --from-cdn <film> --write-manifest`, upload them under the
+same path, `npm run film:pack -- --check-cdn --all`, the live gate with `--assert scripts/films/packs-live.assert.json`; see
+`docs/film-lab-gate.md`, "Shipping packs"), `scroll-qa`
 against the CDN, then commit the manifests (CI fails until every tracked manifest `base` is https). Frames are gitignored; only
 manifests are tracked. **Rename on re-cut**: CDN paths are immutable (`max-age=31536000, immutable`), so a film changed after its first
 sync gets a new name (`rack-02-v2`) and REEL points at it; never re-upload under an old name. Retired films still sitting in

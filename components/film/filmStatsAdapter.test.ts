@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { loaderStatsFor, newInstrument, resetFilmStats } from "./filmStats";
 
-describe("loaderStatsFor: the legacy way (a frame is held once it has decoded)", () => {
-  it("counts requests, refetches, decodes, drops and failures as before the seam", () => {
+describe("loaderStatsFor: requests, drops and failures", () => {
+  it("counts requests, refetches, drops and failures; the decode counters stay 0 until a decode runs", () => {
     const inst = newInstrument();
     const ls = loaderStatsFor(inst);
     const s = inst.stats;
@@ -16,17 +16,17 @@ describe("loaderStatsFor: the legacy way (a frame is held once it has decoded)",
     assert.deepEqual([s.requests, s.refetches, s.inflight, s.inflightPeak], [4, 1, 3, 3]);
     ls.released(2);
     assert.equal(s.inflight, 2);
-    ls.decoded(1000);
-    ls.decoded(1000);
+    ls.decodeStarted!(1000, 1, false);
+    ls.decodeStarted!(1000, 2, false);
     ls.dropped(1000);
     ls.failed();
-    assert.deepEqual([s.decodes, s.framesAlive, s.framesAlivePeak, s.decodedBytes, s.failures], [2, 1, 2, 1000, 1]);
-    // The budget loader's counters stay 0.
+    assert.deepEqual([s.framesAlive, s.framesAlivePeak, s.decodedBytes, s.failures], [1, 2, 1000, 1]);
+    // No decode has settled, and no worker, byte or budget gauge has been reported.
     assert.deepEqual(
-      [s.redecodes, s.workerDecodes, s.mainThreadDecodes, s.decodeMsMean, s.decodeInFlightPeak, s.budgetMB, s.bytesHeldMB, s.bytesHeldMBPeak],
+      [s.decodes, s.redecodes, s.workerDecodes, s.mainThreadDecodes, s.decodeMsMean, s.budgetMB, s.bytesHeldMB, s.bytesHeldMBPeak],
       [0, 0, 0, 0, 0, 0, 0, 0],
     );
-    assert.equal(s.mode, "legacy");
+    assert.equal(s.mode, "budget");
   });
 });
 

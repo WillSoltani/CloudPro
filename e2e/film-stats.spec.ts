@@ -1,10 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { FilmStats } from "../components/film/filmStats";
-import { assertPlaceholdersPresent, LOADERS, loaderQuery } from "./film-frames";
+import { assertPlaceholdersPresent } from "./film-frames";
 
 // The engine's counters (components/film/filmStats.ts): `window.__filmStats` exists on the home page of a
-// production build, moves with a scroll, and its parts add up; `?hud=1` shows them and nothing else does. With both
-// frame loaders (LOADERS).
+// production build, moves with a scroll, and its parts add up; `?hud=1` shows them and nothing else does.
 
 test.beforeAll(() => assertPlaceholdersPresent());
 
@@ -18,11 +17,10 @@ async function scrollDown(page: Page) {
   }
 }
 
-for (const loader of LOADERS) test.describe(loader.name, () => {
 test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
-  await page.goto(`/${loaderQuery(loader)}`, { waitUntil: "load" });
+  await page.goto("/", { waitUntil: "load" });
   await expect(page.locator("canvas[data-segment]")).toHaveAttribute("data-frame", /^\d+$/);
-  await expect.poll(async () => (await readStats(page))?.mode).toBe(loader.mode);
+  await expect.poll(async () => (await readStats(page))?.mode).toBe("budget");
   expect(await page.evaluate(() => typeof window.__filmStatsReset)).toBe("function");
 
   const before = (await readStats(page)) as FilmStats;
@@ -44,34 +42,24 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
   expect(s.decodedMBPeak).toBeGreaterThan(0);
   // A frame decoded again from kept bytes (a redecode) needs no request; a frame from a pack needed no request of its own.
   expect(s.decodes - s.redecodes + s.failures).toBeLessThanOrEqual(s.requests + s.framesFromPacks);
-  if (loader.packs) {
-    // Every film reads its pack (the placeholder packs): no frame file, no pack given up.
-    expect(s.packRequests).toBeGreaterThan(0);
-    expect(s.packFilms).toBeGreaterThan(0);
-    expect(s.packFallbackFilms).toBe(0);
-    expect(s.framesFromPacks).toBeGreaterThan(0);
-    expect(s.framesFromFiles).toBe(0);
-    expect(s.requests).toBe(0);
-    expect(s.packBytesMB).toBeGreaterThan(0);
-  } else {
-    for (const k of ["packRequests", "packFilms", "packFallbackFilms", "framesFromPacks", "packBytesMB"] as const) expect(s[k], k).toBe(0);
-  }
-  if (loader.mode === "budget") {
-    // Decoded in the film worker, inside the budget, from bytes kept since they were fetched.
-    expect(s.workerDecodes).toBeGreaterThan(0);
-    expect(s.mainThreadDecodes).toBe(0);
-    expect(s.workerDecodes).toBe(s.decodes);
-    expect(s.decodeMsMean).toBeGreaterThanOrEqual(0);
-    expect(s.decodeInFlightPeak).toBeGreaterThan(0);
-    expect(s.budgetMB).toBeGreaterThan(0);
-    expect(s.decodedMBPeak).toBeLessThanOrEqual(s.budgetMB + 1e-6);
-    expect(s.bytesHeldMB).toBeGreaterThan(0);
-    expect(s.bytesHeldMBPeak).toBeGreaterThanOrEqual(s.bytesHeldMB);
-  } else {
-    for (const k of ["redecodes", "workerDecodes", "mainThreadDecodes", "decodeInFlightPeak", "budgetMB", "bytesHeldMB"] as const) expect(s[k], k).toBe(0);
-  }
-  // Per-frame file requests in flight (pack reads are not counted there: packRequests).
-  if (!loader.packs) expect(s.inflightPeak).toBeGreaterThan(0);
+  // Every film reads its pack (the placeholder packs): no frame file, no pack given up.
+  expect(s.packRequests).toBeGreaterThan(0);
+  expect(s.packFilms).toBeGreaterThan(0);
+  expect(s.packFallbackFilms).toBe(0);
+  expect(s.framesFromPacks).toBeGreaterThan(0);
+  expect(s.framesFromFiles).toBe(0);
+  expect(s.requests).toBe(0);
+  expect(s.packBytesMB).toBeGreaterThan(0);
+  // Decoded in the film worker, inside the budget, from bytes kept since they were fetched.
+  expect(s.workerDecodes).toBeGreaterThan(0);
+  expect(s.mainThreadDecodes).toBe(0);
+  expect(s.workerDecodes).toBe(s.decodes);
+  expect(s.decodeMsMean).toBeGreaterThanOrEqual(0);
+  expect(s.decodeInFlightPeak).toBeGreaterThan(0);
+  expect(s.budgetMB).toBeGreaterThan(0);
+  expect(s.decodedMBPeak).toBeLessThanOrEqual(s.budgetMB + 1e-6);
+  expect(s.bytesHeldMB).toBeGreaterThan(0);
+  expect(s.bytesHeldMBPeak).toBeGreaterThanOrEqual(s.bytesHeldMB);
   expect(s.inflight).toBeGreaterThanOrEqual(0);
   expect(s.ticks).toBeGreaterThan(0);
   expect(s.staleTicks).toBeLessThanOrEqual(s.ticks);
@@ -107,12 +95,12 @@ test("window.__filmStats counts a one-way scroll @stats", async ({ page }) => {
 });
 
 test("the HUD shows only with ?hud=1 @stats", async ({ page }) => {
-  await page.goto(`/${loaderQuery(loader)}`, { waitUntil: "load" });
+  await page.goto("/", { waitUntil: "load" });
   await expect(page.locator("canvas[data-segment]")).toHaveAttribute("data-frame", /^\d+$/);
   await page.waitForTimeout(600);
   await expect(page.locator("[data-film-hud]")).toHaveCount(0);
 
-  await page.goto(`/${loaderQuery(loader, "hud=1")}`, { waitUntil: "load" });
+  await page.goto("/?hud=1", { waitUntil: "load" });
   const hud = page.locator("[data-film-hud]");
   await expect(hud).toHaveCount(1);
   await expect(hud).toHaveAttribute("aria-hidden", "true");
@@ -120,24 +108,9 @@ test("the HUD shows only with ?hud=1 @stats", async ({ page }) => {
   await expect(hud).toHaveCSS("position", "fixed");
   await expect(hud).toContainText("rack-00");
   await expect(hud).toContainText(/exact \d+%/);
-  await expect(hud).toContainText(loader.mode);
-  if (loader.mode === "budget") await expect(hud).toContainText(/alive \d+ \(\d+\/\d+ MB\).*bytes [\d.]+ MB · redecode \d+/);
-  if (loader.packs) await expect(hud).toContainText(/packs \d+ · data req \d+ \(\d+ pack \+ 0 file\)/);
-  else await expect(hud).not.toContainText("packs ");
-});
-});
-
-test("?loader=budget-main decodes on the main thread and ?budget= sets the budget @stats", async ({ page }) => {
-  await page.goto("/?loader=budget-main&budget=160", { waitUntil: "load" });
-  await expect(page.locator("canvas[data-segment]")).toHaveAttribute("data-frame", /^\d+$/);
-  await expect.poll(async () => (await readStats(page))?.mode).toBe("budget-main");
-  await scrollDown(page);
-  await page.waitForTimeout(800);
-  const s = (await readStats(page)) as FilmStats;
-  expect(s.mainThreadDecodes).toBeGreaterThan(0);
-  expect(s.workerDecodes).toBe(0);
-  expect(s.budgetMB).toBeCloseTo((160 * 1024 * 1024) / 1e6, 3);
-  expect(s.decodedMBPeak).toBeLessThanOrEqual(s.budgetMB + 1e-6);
-  expect(s.refetches).toBe(0);
-  expect(s.failures).toBe(0);
+  // The canvas backing size in device px.
+  await expect(hud).toContainText(/canvas [1-9]\d*x[1-9]\d*/);
+  await expect(hud).toContainText("budget");
+  await expect(hud).toContainText(/alive \d+ \(\d+\/\d+ MB\).*bytes [\d.]+ MB · redecode \d+/);
+  await expect(hud).toContainText(/packs \d+ · data req \d+ \(\d+ pack \+ 0 file\)/);
 });

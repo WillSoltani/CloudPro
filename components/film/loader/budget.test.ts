@@ -7,13 +7,11 @@ import { describe, it } from "node:test";
 import type { FilmManifest } from "../filmCore";
 import { frameBytes, loaderStatsFor, newInstrument } from "../filmStats";
 import { createBudgetLoader, DECODE_FALLBACK_ERRORS, type BudgetOptions, type WorkerLike } from "./budget";
-import { withLegacyFallback } from "./fallback";
 import { RETRY_BASE_MS } from "./budget-plan";
 import { createFrameStore, type BitmapLike, type FetchLike } from "./frame-worker";
 import type { FromWorker, ToWorker } from "./frame-worker-protocol";
-import { createLegacyLoader } from "./legacy";
-import { loaderFromQuery, packOriginFromQuery, packsFromQuery, rehostUrl, runnableLoader } from "./select";
-import type { FrameLoader, ImageLike, JoinOptions, LoaderEnv, WantPlan } from "./types";
+import { packOriginFromQuery, rehostUrl, runnableLoader } from "./select";
+import type { FrameLoader, JoinOptions, LoaderEnv, WantPlan } from "./types";
 
 const W = 768;
 const ASPECT = 16 / 9;
@@ -66,22 +64,9 @@ type SetupOptions = {
   answer?: (url: string, attempt: number) => number | "error" | undefined;
   /** createImageBitmap rejects this frame here (an engine that cannot decode it). */
   decodeFails?: (site: "worker" | "main", url: string) => boolean;
-  /** Build the loader as FilmBackdrop does: behind withLegacyFallback, the legacy loader on a fake Image. */
-  withFallback?: boolean;
+  /** The page has no createImageBitmap (none is injected, and Node has none). */
+  noPageDecode?: boolean;
 };
-
-/** A stand-in for the browser's Image for the legacy loader: every decode works at once. */
-class AutoImage implements ImageLike {
-  decoding = "";
-  crossOrigin: string | null = null;
-  src = "";
-  naturalWidth = 0;
-  naturalHeight = 0;
-  async decode() {
-    this.naturalWidth = W;
-    this.naturalHeight = Math.round(W / ASPECT);
-  }
-}
 
 function setup(o: SetupOptions = {}) {
   let clock = 0;
@@ -153,8 +138,17 @@ function setup(o: SetupOptions = {}) {
   const inst = newInstrument("budget");
   const loaded = new Map<number, number>();
   const widths: [number, number][] = [];
+  // Every mode the loader reports, in order.
+  const modes: string[] = [];
+  const pageStats = loaderStatsFor(inst);
   const env: LoaderEnv = {
-    stats: loaderStatsFor(inst),
+    stats: {
+      ...pageStats,
+      mode: (m) => {
+        modes.push(m);
+        pageStats.mode?.(m);
+      },
+    },
     connection: { effectiveType: "4g" },
     engaged: true,
     tier: () => W,
@@ -170,7 +164,7 @@ function setup(o: SetupOptions = {}) {
       return new FakeWorker();
     },
     fetch: fakeFetch,
-    createImageBitmap: decodeIn("main"),
+    createImageBitmap: o.noPageDecode ? undefined : decodeIn("main"),
     now: () => clock,
     setTimer: (fn, ms) => {
       const id = timerIds++;
@@ -183,19 +177,7 @@ function setup(o: SetupOptions = {}) {
     },
     resolveUrl: (u) => u,
   };
-  let unusable = 0;
-  const loader = o.withFallback
-    ? withLegacyFallback(
-        env,
-        (onUnusable) => createBudgetLoader(env, { ...budget, onUnusable }),
-        (e) => createLegacyLoader({ ...e, Image: AutoImage, timing: { getEntriesByName: () => [] } }),
-      )
-    : createBudgetLoader(env, {
-        ...budget,
-        onUnusable: () => {
-          unusable++;
-        },
-      });
+  const loader = createBudgetLoader(env, budget);
   const advance = async (ms: number) => {
     clock += ms;
     for (;;) {
@@ -213,7 +195,9 @@ function setup(o: SetupOptions = {}) {
   };
   return {
     loader,
-    unusable: () => unusable,
+    modes,
+    /** Timers set and not yet run or cleared. */
+    timersPending: () => timers.length,
     stats: inst.stats,
     fetched,
     bitmaps,
@@ -523,26 +507,113 @@ describe("budget loader: a decoder that cannot decode the frames", () => {
     await flush();
     assert.equal(t.loader.loaded(0), 32, "every frame decoded on the main thread");
     assert.equal(t.stats.failures, 0, "no frame given up");
-    assert.equal(t.unusable(), 0);
+    assert.notEqual(t.loader.mode, "stopped");
   });
 
-  it("hands the page to the legacy loader when main-thread decodes reject the frames too", async () => {
-    const t = setup({ decodeFails: () => true, withFallback: true });
-    const counts = [32, 32];
+  it("stops when main-thread decodes reject the frames too: nothing more runs, the frames decoded before stay", async () => {
+    let broken = false;
+    const t = setup({ decodeFails: () => broken, budgetFrames: 400 });
+    const counts = [64, 64, 64];
     joinAll(t.loader, counts);
     t.loader.want(plan(0, 0, 1, counts));
     await flush();
+    const decodedBefore = t.loader.loaded(0);
+    assert.ok(decodedBefore > 0 && t.loader.nearest(0, 10)?.frame === 10, "film 0 decoded in the worker");
+    const arrivals: number[] = [];
+    t.loader.onArrive((_i, f) => arrivals.push(f));
+    // From now on no decode works: the worker's fail, then the main thread's (no pack to give up here), then a stop.
+    broken = true;
+    t.loader.want(plan(2, 32, 1, counts));
     await flush();
-    assert.equal(t.loader.mode, "legacy");
-    assert.equal(t.stats.mode, "legacy");
-    // The budget loader's frames are all let go and reported; the legacy loader holds its own.
-    assert.ok(t.bitmaps.every((b) => b.closed));
-    // At rest, with no further tick: the last plan was replayed, so the legacy loader requested and decoded frames.
-    assert.ok(t.loader.loaded(0) > 0, "the legacy loader shows the film");
-    assert.equal(t.loader.nearest(0, 0)?.frame, 0);
-    assert.equal(t.loader.width(0), W);
-    // A small failure count: the first loader stopped after a handful of frames, not three tries of every frame.
-    assert.ok(t.stats.failures < 32, `failures ${t.stats.failures}`);
+    await flush();
+    assert.equal(t.loader.mode, "stopped");
+    assert.equal(t.stats.mode, "stopped");
+    assert.deepEqual(t.modes, ["budget-main", "stopped"], "the stop reported once");
+    assert.equal(t.workers[0].terminated, true);
+    assert.ok(t.decodeSites.filter((s) => s === "main").length >= DECODE_FALLBACK_ERRORS, "the main thread tried");
+    assert.equal(t.timersPending(), 0, "no timer left (the decode retries' timer is cleared)");
+    const fetched = t.fetched.length;
+    const decodes = t.decodeSites.length;
+    const arrived = arrivals.length;
+    // Nothing more runs: ticks over both films, the retry delays, the network back, the page shown, a rerank.
+    for (let s = 0; s < counts.length; s++) {
+      for (let f = 0; f < counts[s]; f += 8) {
+        t.loader.want(plan(s, f, 1, counts));
+        await flush(4);
+      }
+    }
+    await t.advance(30_000);
+    t.loader.network(true);
+    t.loader.visibility(false);
+    t.loader.rerank();
+    t.loader.want(plan(1, 0, 1, counts));
+    await flush();
+    assert.equal(t.fetched.length, fetched, "nothing fetched after the stop");
+    assert.equal(t.decodeSites.length, decodes, "nothing decoded after the stop");
+    assert.equal(arrivals.length, arrived, "no arrival after the stop");
+    assert.equal(t.timersPending(), 0);
+    assert.deepEqual(t.modes, ["budget-main", "stopped"]);
+    // The frames decoded before the stop stay paintable, and nothing is waited for.
+    assert.equal(t.loader.loaded(0), decodedBefore);
+    assert.equal(t.loader.nearest(0, 10)?.frame, 10);
+    assert.equal(t.loader.isComing(2, 32, 8), false, "nothing is coming once stopped");
+    assert.equal(t.bitmaps.filter((b) => !b.closed).length, t.stats.framesAlive);
+    assert.equal(t.stats.decodeInFlight, 0);
+    assert.equal(t.stats.inflight, 0);
+    // dispose() after the stop still closes them.
+    assert.ok(t.stats.framesAlive > 0);
+    t.loader.dispose();
+    assert.ok(t.bitmaps.every((b) => b.closed), "every bitmap closed");
+    assert.equal(t.stats.framesAlive, 0);
+  });
+
+  it("a slow network does not retier a stopped loader: the frames decoded before the stop stay", async () => {
+    let broken = false;
+    let tierNow = 1280;
+    const counts = [32, 32, 32, 32];
+    const t = setup({ decodeFails: () => broken, env: { connection: { effectiveType: "3g" }, tier: () => tierNow } });
+    joinAll(t.loader, counts, 1280);
+    assert.equal(t.loader.isSlow(), true);
+    t.loader.want(plan(2, 0, 1, counts));
+    await flush();
+    assert.ok(t.loader.loaded(3) > 0, "segment 3's entry frame decoded");
+    // From now on no decode works; segment 3 becomes active and its new frames fail on both threads.
+    broken = true;
+    t.loader.want(plan(3, 16, 1, counts));
+    for (let k = 0; k < 20 && t.loader.mode !== "stopped"; k++) await flush(4);
+    assert.equal(t.loader.mode, "stopped");
+    const held3 = t.loader.loaded(3);
+    assert.ok(held3 > 0);
+    // Back to segment 1 on a slow network with a narrower tier: a running loader would move segment 3 to it.
+    tierNow = 768;
+    t.loader.want(plan(1, 31, -1, counts));
+    await flush();
+    assert.deepEqual(t.widths, [], "no retier once stopped");
+    assert.equal(t.loader.width(3), 1280);
+    assert.equal(t.loader.loaded(3), held3, "segment 3's frames stay");
+    assert.ok(t.loader.nearest(3, 0) !== null);
+  });
+
+  it("a page without createImageBitmap: stopped from the start, nothing fetched, mode stopped", async () => {
+    const t = setup({ worker: "none", noPageDecode: true });
+    assert.equal(t.loader.mode, "stopped", "stopped in the constructor");
+    assert.equal(t.stats.mode, "stopped");
+    // FilmBackdrop joins and plans in the same task as it builds the loader.
+    joinAll(t.loader, [16, 16]);
+    t.loader.want(plan(0, 0, 1, [16, 16]));
+    assert.equal(t.fetched.length, 0, "nothing fetched in the first tick");
+    await flush();
+    t.loader.engage();
+    t.loader.want(plan(1, 8, 1, [16, 16]));
+    await t.advance(30_000);
+    assert.equal(t.fetched.length, 0, "nothing fetched later");
+    assert.equal(t.decodeSites.length, 0);
+    assert.equal(t.stats.requests, 0);
+    assert.equal(t.loader.loaded(0), 0);
+    assert.equal(t.loader.nearest(0, 0), null);
+    assert.equal(t.loader.isComing(0, 0, 8), false);
+    assert.equal(t.timersPending(), 0);
+    assert.deepEqual(t.modes, ["stopped"]);
   });
 
   it("a decode error is not a fetch try: the bytes are kept and the decode retried; one bad frame moves nothing", async () => {
@@ -553,7 +624,6 @@ describe("budget loader: a decoder that cannot decode the frames", () => {
     await flush();
     for (let k = 0; k < 6; k++) await t.advance(RETRY_BASE_MS * 2);
     assert.equal(t.loader.mode, "budget");
-    assert.equal(t.unusable(), 0);
     assert.equal(t.fetched.filter((u) => u === bad).length, 1, "fetched once: the decode was retried from the kept bytes");
     assert.equal(t.stats.refetches, 0);
     assert.equal(t.stats.failures, 1, "given up after its decode tries");
@@ -564,12 +634,6 @@ describe("budget loader: a decoder that cannot decode the frames", () => {
 
 describe("loader selection", () => {
   const all = { fetch: true, blob: true, createImageBitmap: true, worker: true };
-  it("?loader= picks a loader, anything else the default", () => {
-    assert.equal(loaderFromQuery("?loader=legacy", "budget"), "legacy");
-    assert.equal(loaderFromQuery("?loader=budget-main&hud=1", "budget"), "budget-main");
-    assert.equal(loaderFromQuery("?loader=nope", "budget"), "budget");
-    assert.equal(loaderFromQuery("", "legacy"), "legacy");
-  });
   it("?packorigin= (lab only) is honoured on a local page for a local http origin, nowhere else", () => {
     const q = "?packorigin=http://127.0.0.1:3008";
     assert.equal(packOriginFromQuery(q, "127.0.0.1"), "http://127.0.0.1:3008");
@@ -583,13 +647,12 @@ describe("loader selection", () => {
     assert.equal(packOriginFromQuery("?packorigin=nonsense", "127.0.0.1"), null);
     assert.equal(packOriginFromQuery("", "127.0.0.1"), null);
     assert.equal(rehostUrl("https://dkkkpszkw3bz9.cloudfront.net/films/rack-00/768/pack-abc.bin", "http://127.0.0.1:3008"), "http://127.0.0.1:3008/films/rack-00/768/pack-abc.bin");
-    assert.equal(packsFromQuery("?pack=0&packorigin=http://127.0.0.1:3008"), false);
   });
   it("falls back to what the page can run", () => {
-    assert.equal(runnableLoader("budget", all), "budget");
-    assert.equal(runnableLoader("budget", { ...all, worker: false }), "budget-main");
-    assert.equal(runnableLoader("budget", { ...all, createImageBitmap: false }), "legacy");
-    assert.equal(runnableLoader("budget-main", { ...all, fetch: false }), "legacy");
-    assert.equal(runnableLoader("legacy", all), "legacy");
+    assert.equal(runnableLoader(all), "budget");
+    assert.equal(runnableLoader({ ...all, worker: false }), "budget-main");
+    assert.equal(runnableLoader({ ...all, createImageBitmap: false }), "budget-main");
+    assert.equal(runnableLoader({ ...all, fetch: false }), "budget-main");
+    assert.equal(runnableLoader({ ...all, blob: false }), "budget-main");
   });
 });

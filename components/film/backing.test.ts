@@ -1,7 +1,7 @@
 // Tests for components/film/backing.ts (pure). Run: npm run test:film-unit
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { backingSize, growCap, wantsFullBacking } from "./backing";
+import { backingSize, growCap } from "./backing";
 
 /** The size rule FilmBackdrop used before the cap: round(CSS size x DPR capped at 2), at least 1. */
 const old = (w: number, h: number, dpr: number) => ({
@@ -73,15 +73,5 @@ describe("growCap", () => {
     assert.equal(cap, 1280);
     cap = growCap(cap, 1920, 1920);
     assert.equal(cap, 1920);
-  });
-});
-
-describe("wantsFullBacking", () => {
-  it("reads ?backing=full only", () => {
-    assert.equal(wantsFullBacking("?backing=full"), true);
-    assert.equal(wantsFullBacking("?hud=1&backing=full"), true);
-    assert.equal(wantsFullBacking(""), false);
-    assert.equal(wantsFullBacking("?backing=capped"), false);
-    assert.equal(wantsFullBacking("?backing="), false);
   });
 });

@@ -3,7 +3,7 @@ import type { JoinOptions } from "./types";
 /**
  * The frames a segment ever shows on this page load, and so the only ones any loader may fetch or decode: the move
  * (0 … M); tail frames (after M) only while tails play, and only the even ones on coarse pointers; under reduced
- * motion only the stills. One rule for every loader (legacy.ts, the budget planner) and for the counters (filmStats
+ * motion only the stills. One rule for the loader (the budget planner) and for the counters (filmStats
  * `aimAt`, through `FrameLoader.usable`), so a frame never loaded by design is never counted as lag.
  *
  * Pure. `i` is not range-checked: callers keep it within 0 … count − 1.

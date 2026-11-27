@@ -13,11 +13,11 @@ import type { LoaderStats } from "./loader/types";
  */
 export type FilmStats = {
   /**
-   * The frame loader that fills the canvas now (components/film/loader): "legacy" is legacy.ts, "budget" the budget
-   * loader decoding in a worker, "budget-main" the same decoding on the main thread. May change during a page load.
+   * The frame loader's mode now (components/film/loader/budget.ts): "budget" decoding in a worker, "budget-main" the
+   * same decoding on the main thread, "stopped" where nothing can decode the frames. May change during a page load.
    */
   mode: string;
-  /** Network requests for frames started (legacy: an <img> given a frame URL; budget: a fetch of a frame's bytes). */
+  /** Network requests for frames started (a fetch of a frame's bytes). */
   requests: number;
   /**
    * Requests for a frame (same film, width and index) already requested earlier in this page load (budget: whose bytes
@@ -26,15 +26,15 @@ export type FilmStats = {
   refetches: number;
   /** Frames that finished decoding and joined their segment (a request evicted or torn down meanwhile is not counted). */
   decodes: number;
-  /** Decodes of a frame decoded before on this page load, from bytes kept since (budget loaders; 0 for legacy). */
+  /** Decodes of a frame decoded before on this page load, from bytes kept since. */
   redecodes: number;
-  /** Decodes that ran in a worker / on the main thread with createImageBitmap (budget loaders; 0 for legacy). */
+  /** Decodes that ran in a worker / on the main thread with createImageBitmap. */
   workerDecodes: number;
   mainThreadDecodes: number;
-  /** Summed and mean time of those decodes, in ms (budget loaders; 0 for legacy). */
+  /** Summed and mean time of those decodes, in ms. */
   decodeMsTotal: number;
   decodeMsMean: number;
-  /** Decodes running now, and the most at once (budget loaders; 0 for legacy, whose decodes are its requests). */
+  /** Decodes running now, and the most at once. */
   decodeInFlight: number;
   decodeInFlightPeak: number;
   /** Frames that failed to load or decode (a request cancelled by evict, dispose or teardown is not counted). */
@@ -51,9 +51,9 @@ export type FilmStats = {
   /** decodedBytes in MB (10^6 bytes), now and at its peak. */
   decodedMB: number;
   decodedMBPeak: number;
-  /** The decoded-frame budget of this page load in MB (10^6 bytes; budget loaders; 0 for legacy, which has none). */
+  /** The decoded-frame budget of this page load in MB (10^6 bytes). */
   budgetMB: number;
-  /** Compressed frame bytes held in MB, now and at its peak (budget loaders; 0 for legacy, which keeps none). */
+  /** Compressed frame bytes held in MB, now and at its peak. */
   bytesHeldMB: number;
   bytesHeldMBPeak: number;
   /** Canvas paints. */
@@ -161,7 +161,7 @@ export type StaleClock = {
  */
 export type EffectiveTarget = { lo: number; hi: number };
 
-export function newFilmStats(mode = "legacy"): FilmStats {
+export function newFilmStats(mode = "budget"): FilmStats {
   return {
     mode,
     requests: 0,
@@ -473,10 +473,6 @@ export function loaderStatsFor(inst: Instrument): LoaderStats {
     released: (inflight) => {
       stats.inflight = inflight;
     },
-    decoded: (bytes) => {
-      stats.decodes++;
-      holdFrame(stats, bytes);
-    },
     dropped: (bytes) => dropFrame(stats, bytes),
     failed: () => {
       stats.failures++;
@@ -512,7 +508,7 @@ export function loaderStatsFor(inst: Instrument): LoaderStats {
 }
 
 /** A fresh instrument that is not published on `window` (tests). */
-export function newInstrument(mode = "legacy"): Instrument {
+export function newInstrument(mode = "budget"): Instrument {
   return { stats: newFilmStats(mode), clock: newStaleClock(), requested: new Set() };
 }
 

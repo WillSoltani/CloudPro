@@ -5,11 +5,10 @@ import type { ConnectionInfo } from "./network";
  * The seam between the film engine (components/film/FilmBackdrop.tsx) and the code that decides which frames exist in
  * memory. FilmBackdrop owns the clock, the draw call, the hold keys, the chrome and the registration; a FrameLoader
  * owns the requests, the decoded frames and their eviction. FilmBackdrop picks one loader per page load
- * (`createBudgetLoader` in ./budget.ts by default, `createLegacyLoader` in ./legacy.ts; ./select.ts) and talks to it
- * only through this interface, so another loader can be
- * dropped in without touching the clock, the hold keys, the breathing tails, the overlays or the choreography.
+ * (`createBudgetLoader` in ./budget.ts; ./select.ts) and talks to it only through this interface, so another loader
+ * can be dropped in without touching the clock, the hold keys, the breathing tails, the overlays or the choreography.
  *
- * A loader knows nothing of the page beyond Image, performance and navigator.connection (passed in `LoaderEnv`):
+ * A loader knows nothing of the page beyond navigator.connection (passed in `LoaderEnv`):
  * the canvas, the data attributes and `window.__filmStats` are written by FilmBackdrop, through the callbacks below.
  *
  * Shared rules, never re-implemented per loader: which frames a segment ever shows (`isUsable`, ./usable.ts) and the
@@ -68,12 +67,9 @@ export type HeldFrame = {
  * instead of written into the page's stats object, so every loader reports the same way. The adapter that turns
  * these calls into `window.__filmStats` is `loaderStatsFor` in filmStats.ts.
  *
- * Two ways to report decodes:
- * - legacy (a frame is held once it has decoded): `decoded(bytes)` when a decode lands, `dropped(bytes)` when it goes.
- * - a budget loader (a decode reserves its bytes when it starts, and the reservation counts as held):
- *   `decodeStarted(bytes, …)` when it starts, `decodeEnded(…)` when it settles, and `dropped(bytes)` when the frame
- *   goes, or at once when the decode failed or landed for a frame no longer wanted. Such a loader never calls
- *   `decoded`.
+ * Decodes are reported the budget way (a decode reserves its bytes when it starts, and the reservation counts as
+ * held): `decodeStarted(bytes, …)` when it starts, `decodeEnded(…)` when it settles, and `dropped(bytes)` when the
+ * frame goes, or at once when the decode failed or landed for a frame no longer wanted.
  * The optional hooks are for loaders that have the thing they count; a loader without them leaves the counters at 0.
  */
 export type LoaderStats = {
@@ -84,8 +80,6 @@ export type LoaderStats = {
   requested(film: string, width: number, frame: number, inflight: number): void;
   /** A request's slot was freed (settled, or cancelled); `inflight` is the number in flight after it. */
   released(inflight: number): void;
-  /** A frame finished decoding and is now held; `bytes` is its estimated decoded size (filmStats frameBytes). */
-  decoded(bytes: number): void;
   /** A held (or reserved) frame was let go (evicted, retiered, its segment left, the loader disposed, a decode failed). */
   dropped(bytes: number): void;
   /** A live request failed to load or decode (a cancelled one is not reported). */
@@ -116,15 +110,6 @@ export type LoaderStats = {
   framesArrived?(fromPack: boolean, n: number): void;
 };
 
-export type ImageLike = {
-  decoding: string;
-  crossOrigin: string | null;
-  src: string;
-  readonly naturalWidth: number;
-  readonly naturalHeight: number;
-  decode(): Promise<void>;
-};
-
 export type LoaderEnv = {
   stats: LoaderStats;
   /** navigator.connection, where the browser has one (Save-Data, the network class). */
@@ -133,7 +118,7 @@ export type LoaderEnv = {
   engaged: boolean;
   /**
    * The frame tier a segment's film would get now (FilmBackdrop's tier(), from the canvas box, the DPR and the network
-   * class). The legacy loader asks it at a segment boundary on a slow network, for the segments not yet started.
+   * class).
    */
   tier(film: FilmManifest): number;
   /** A segment's count of decoded frames changed (FilmBackdrop writes it to the section's `data-loaded`). */
@@ -143,14 +128,11 @@ export type LoaderEnv = {
    * whose cap follows the widths in use. Not called for `join` (FilmBackdrop picked that width itself).
    */
   onWidth?(index: number, width: number): void;
-  /** Injected for tests; default: the browser's Image and performance. */
-  Image?: new () => ImageLike;
-  timing?: { getEntriesByName(name: string): readonly { duration: number }[] };
 };
 
 export interface FrameLoader {
   /**
-   * The loader's name, `window.__filmStats.mode` ("legacy", "budget", "budget-main"). It may change at run time (a
+   * The loader's name, `window.__filmStats.mode` ("budget", "budget-main", "stopped"). It may change at run time (a
    * worker loader that falls back to decoding on the main thread); the loader then reports it through `stats.mode`.
    */
   readonly mode: string;
@@ -181,25 +163,24 @@ export interface FrameLoader {
   /** The network is slow (by navigator.connection, or by the timed first hero frames): the smallest tier, fewer requests. */
   isSlow(): boolean;
   /**
-   * The document was hidden (true) or shown again (false). A loader may pause fetching and decoding while hidden;
-   * the legacy loader ignores it.
+   * The document was hidden (true) or shown again (false). A loader may pause fetching and decoding while hidden.
    */
   visibility(hidden: boolean): void;
   /**
    * The browser went offline (false) or came back online (true). A loader may retry failed fetches when the network
-   * returns; the legacy loader ignores it.
+   * returns.
    */
   network(online: boolean): void;
   /** Let go of everything; nothing is requested afterwards. */
   dispose(): void;
   /**
    * Why frame `frame` of segment `index` is not on the canvas yet, in words (the counters' stale-stretch locator, read
-   * once when a stale stretch starts); optional, the legacy loader has none.
+   * once when a stale stretch starts); optional.
    */
   waitReason?(index: number, frame: number): string;
   /**
    * The loader's state around frame `frame` of segment `index`, for the film specs' diagnostic when the film does not
-   * come to rest (FilmBackdrop's `window.__filmWhy`, e2e/film-frames.ts settle). Read-only; optional, the legacy loader has none.
+   * come to rest (FilmBackdrop's `window.__filmWhy`, e2e/film-frames.ts settle). Read-only; optional.
    */
   debugState?(index: number, frame: number): Record<string, unknown>;
 }

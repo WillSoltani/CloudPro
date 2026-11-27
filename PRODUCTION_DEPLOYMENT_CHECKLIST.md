@@ -138,7 +138,16 @@ After the infra deploy, with the film built locally by `scripts/films/build-film
 scripts/films/sync-film.sh <film> --write-manifest
 ```
 
-Commit the rewritten `public/films/<film>/manifest.json` (its `base` and `poster` now point at CloudFront). The frames themselves are gitignored and never committed; a re-cut film gets a new name rather than overwriting an immutable path.
+Then the film's packs (one file per film and width; they are built from the CDN's frames, so the frames come first):
+
+```bash
+npm run film:pack -- --from-cdn <film> --write-manifest   # builds the packs, adds packs[width] to the manifest
+# upload films/<name>/<width>/pack-<hash>.bin from the pack output tree under the same path
+# (Cache-Control: public, max-age=31536000, immutable; Content-Type: application/octet-stream)
+npm run film:pack -- --check-cdn --all
+```
+
+Commit the rewritten `public/films/<film>/manifest.json` (its `base` and `poster` now point at CloudFront, and `packs` names the packs) only after the packs are on the CDN and `--check-cdn` passes. The frames and packs themselves are gitignored and never committed; a re-cut film gets a new name rather than overwriting an immutable path. See `docs/film-lab-gate.md`, "Shipping packs".
 
 ## 5. Stripe billing setup
 
@@ -243,7 +252,7 @@ Run these checks against the deployed app:
 - checkout and billing portal buttons behave correctly based on Stripe configuration
 
 ### Homepage film
-- film frames load from the CloudFront host (Network panel: `https://<distribution>.cloudfront.net/films/<film>/…`, `image/webp`)
+- film frames and packs load from the CloudFront host (Network panel: `https://<distribution>.cloudfront.net/films/<film>/…`, `image/webp` for frames, `pack-*.bin` as `application/octet-stream` with a 206 on a Range read)
 - no console errors, including CORS
 - the poster image is the LCP element
 
