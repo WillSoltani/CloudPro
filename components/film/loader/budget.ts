@@ -53,8 +53,8 @@ import type { FrameLoader, HeldFrame, LoaderEnv } from "./types";
  * `nearest()` returns one HeldFrame object reused between calls: read it at once, never keep it.
  *
  * PACKS (stage 7). A segment whose manifest names a pack for its tier (filmBase packUrl) reads its frames from that one
- * file instead of one file per frame, unless the page asked `?pack=0` (`packs: false`) or plays reduced-motion stills
- * (five frames do not need the film). The planner says which pack reads run and over which bytes (budget-plan.ts
+ * file instead of one file per frame, unless it plays reduced-motion stills (five frames do not need the film) or a test
+ * turned packs off (`packs: false`). The planner says which pack reads run and over which bytes (budget-plan.ts
  * `nextPackOp`); the store runs them (frame-worker.js) and puts each frame it cuts out under the same key a fetch of it
  * would have used, so the planner, the decodes and the cap see a frame's bytes arrive either way. A pack whose server
  * gives a final answer (the film CDN answers 403 for a pack it does not hold, other servers 404), that fails its header
@@ -86,7 +86,7 @@ export type BudgetOptions = {
   resolveUrl?: (url: string) => string;
   /** The worker must answer `ready` within this, or the loader decodes on the main thread. */
   readyTimeoutMs?: number;
-  /** Read films from their packs where the manifest names one (default true; `?pack=0` turns it off). */
+  /** Read films from their packs where the manifest names one (default true; tests turn it off). */
   packs?: boolean;
   /** LAB ONLY (`?packorigin=`, select.ts packOriginFromQuery): read packs from this origin, frames from where they are. */
   packOrigin?: string;
@@ -532,7 +532,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     for (const [id, r] of packReads) if (r.seg === index && r.epoch === epoch) source.post({ t: "pack-stop", id });
   };
 
-  // The pack segment `index` reads at `width`, if any (not with `?pack=0`, not for reduced-motion stills).
+  // The pack segment `index` reads at `width`, if any (not with `packs: false`, not for reduced-motion stills).
   const choosePack = (index: number, film: FilmManifest, width: number, stills: boolean) => {
     const url = packsOn && !stills ? packUrl(film, width) : null;
     planner.setPack(index, url ? (options.packOrigin ? rehostUrl(resolveUrl(url), options.packOrigin) : resolveUrl(url)) : null, url ? packFor(film, width) : null);

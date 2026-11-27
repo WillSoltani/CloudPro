@@ -60,7 +60,7 @@ import { createBudgetLoader } from "@/components/film/loader/budget";
 import { withLegacyFallback } from "@/components/film/loader/fallback";
 import { budgetOverrideBytes } from "@/components/film/loader/budget-bytes";
 import { readConnection, saveDataOn } from "@/components/film/loader/network";
-import { loaderFromQuery, packOriginFromQuery, packsFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
+import { loaderFromQuery, packOriginFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
 import type { FrameLoader, LoaderEnv, WantPlan } from "@/components/film/loader/types";
 
 /**
@@ -459,9 +459,8 @@ export function FilmBackdrop({
     };
 
     // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load
-    // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab; `?pack=0`
-    // turns film packs off, so every film loads one file per frame). Its counters reach `window.__filmStats` through the
-    // one adapter in filmStats.ts.
+    // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab). Its
+    // counters reach `window.__filmStats` through the one adapter in filmStats.ts.
     const search = window.location.search;
     const loaderName = runnableLoader(loaderFromQuery(search, DEFAULT_LOADER), pageCaps());
     const loaderEnv: LoaderEnv = {
@@ -494,7 +493,6 @@ export function FilmBackdrop({
               createBudgetLoader(loaderEnv, {
                 mainThread: loaderName === "budget-main",
                 budgetBytes: budgetOverrideBytes(search) ?? undefined,
-                packs: packsFromQuery(search),
                 packOrigin: packOriginFromQuery(search, window.location.hostname) ?? undefined,
                 onUnusable,
               }),

@@ -496,7 +496,7 @@ describe("film packs: fallbacks", () => {
     assert.equal(t.loader.isComing(0, 10, 2), false);
   });
 
-  it("?pack=0 (packs: false): one file per frame, no pack request", async () => {
+  it("packs: false: one file per frame, no pack request", async () => {
     const counts = [33, 33];
     const films = counts.map((c, i) => makeFilm(`z${i}`, c));
     const t = setup(films, { budget: { packs: false } });

@@ -12,7 +12,7 @@ import { RETRY_BASE_MS } from "./budget-plan";
 import { createFrameStore, type BitmapLike, type FetchLike } from "./frame-worker";
 import type { FromWorker, ToWorker } from "./frame-worker-protocol";
 import { createLegacyLoader } from "./legacy";
-import { loaderFromQuery, packOriginFromQuery, packsFromQuery, rehostUrl, runnableLoader } from "./select";
+import { loaderFromQuery, packOriginFromQuery, rehostUrl, runnableLoader } from "./select";
 import type { FrameLoader, ImageLike, JoinOptions, LoaderEnv, WantPlan } from "./types";
 
 const W = 768;
@@ -583,7 +583,6 @@ describe("loader selection", () => {
     assert.equal(packOriginFromQuery("?packorigin=nonsense", "127.0.0.1"), null);
     assert.equal(packOriginFromQuery("", "127.0.0.1"), null);
     assert.equal(rehostUrl("https://dkkkpszkw3bz9.cloudfront.net/films/rack-00/768/pack-abc.bin", "http://127.0.0.1:3008"), "http://127.0.0.1:3008/films/rack-00/768/pack-abc.bin");
-    assert.equal(packsFromQuery("?pack=0&packorigin=http://127.0.0.1:3008"), false);
   });
   it("falls back to what the page can run", () => {
     assert.equal(runnableLoader("budget", all), "budget");

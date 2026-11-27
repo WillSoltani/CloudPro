@@ -55,7 +55,7 @@ export function hudStatsLine(s: FilmStats): string {
 /**
  * Line 3, with film packs (stage 7): films reading a pack / given up to frame-by-frame files, the film data requests
  * (pack reads + per-frame file requests), pack MB received (read twice), frames from packs / from files. Empty when
- * no film has a pack on this page load (`?pack=0`, or no manifest names one).
+ * no film has a pack on this page load (no manifest names one).
  */
 export function hudPackLine(s: FilmStats): string {
   if (s.packFilms + s.packFallbackFilms === 0 && s.packRequests === 0) return "";
