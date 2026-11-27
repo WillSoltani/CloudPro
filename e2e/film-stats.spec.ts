@@ -120,6 +120,8 @@ test("the HUD shows only with ?hud=1 @stats", async ({ page }) => {
   await expect(hud).toHaveCSS("position", "fixed");
   await expect(hud).toContainText("rack-00");
   await expect(hud).toContainText(/exact \d+%/);
+  // The canvas backing size in device px.
+  await expect(hud).toContainText(/canvas [1-9]\d*x[1-9]\d*/);
   await expect(hud).toContainText(loader.mode);
   if (loader.mode === "budget") await expect(hud).toContainText(/alive \d+ \(\d+\/\d+ MB\).*bytes [\d.]+ MB · redecode \d+/);
   if (loader.packs) await expect(hud).toContainText(/packs \d+ · data req \d+ \(\d+ pack \+ 0 file\)/);

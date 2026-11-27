@@ -54,7 +54,7 @@ import {
   tickStale,
 } from "@/components/film/filmStats";
 import { FilmHud } from "@/components/film/FilmHud";
-import { backingSize, growCap, MAX_DPR, wantsFullBacking } from "@/components/film/backing";
+import { backingSize, growCap, MAX_DPR } from "@/components/film/backing";
 import { createLegacyLoader } from "@/components/film/loader/legacy";
 import { createBudgetLoader } from "@/components/film/loader/budget";
 import { withLegacyFallback } from "@/components/film/loader/fallback";
@@ -398,9 +398,6 @@ export function FilmBackdrop({
     const listeners = drawnListeners.current;
     const position = reduced ? scrolled : spring;
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-    // ?backing=full: the old canvas size rule for this page load (round(CSS size x dpr), no width cap), for an A/B on
-    // a real phone. Read once here, never during render.
-    const fullBacking = wantsFullBacking(window.location.search);
     const connection = readConnection(navigator);
     const saveData = saveDataOn(connection);
     const coarse = window.matchMedia("(pointer: coarse)").matches;
@@ -1128,15 +1125,10 @@ export function FilmBackdrop({
       measureBox();
       let w: number;
       let h: number;
-      if (fullBacking) {
-        w = Math.round(box.w * dpr);
-        h = Math.round(box.h * dpr);
-      } else {
-        let inUse = 0;
-        for (const t of segments.values()) inUse = Math.max(inUse, loader.width(t.reg.index));
-        backingCap = growCap(backingCap, inUse, reelMaxWidth);
-        ({ w, h } = backingSize(box.w, box.h, dpr, backingCap));
-      }
+      let inUse = 0;
+      for (const t of segments.values()) inUse = Math.max(inUse, loader.width(t.reg.index));
+      backingCap = growCap(backingCap, inUse, reelMaxWidth);
+      ({ w, h } = backingSize(box.w, box.h, dpr, backingCap));
       w = Math.max(1, w);
       h = Math.max(1, h);
       stats.backingW = w;
