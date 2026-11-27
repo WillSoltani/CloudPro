@@ -1,6 +1,6 @@
 ---
 name: scroll-qa
-description: Verifies the soltani.org homepage reel (part five, "Round Trip, then up") in a real browser via the Playwright MCP — one fixed canvas (FilmBackdrop) on one reel clock, the hero and six FilmChapters (About, Certifications, Skills, Projects on the rack; Experience, Contact + footer on the CN Tower), the exit film, reveals, pins, plate hand-offs, keys and breath, deep links, chrome, keyboard, reduced motion, phones, the contrast gate, bytes per tier and production mode. Use after changing FilmBackdrop, FilmChapter, Reveal, FrameLayout, a plate, reel.ts, choreo.ts or a film, and before calling the homepage done. Read-only; reports findings with evidence.
+description: Verifies the soltani.org homepage reel (part five, "Round Trip, then up") in a real browser via the Playwright MCP — one fixed canvas (FilmBackdrop) on one reel clock, the hero and five FilmChapters (About, Certifications, Skills, Projects on the rack; Contact + footer on the CN Tower), the exit film, reveals, pins, plate hand-offs, keys and breath, deep links, chrome, keyboard, reduced motion, phones, the contrast gate, bytes per tier and production mode. Use after changing FilmBackdrop, FilmChapter, Reveal, FrameLayout, a plate, reel.ts, choreo.ts or a film, and before calling the homepage done. Read-only; reports findings with evidence.
 model: sonnet
 ---
 
@@ -36,14 +36,13 @@ You QA the homepage reel. Do not edit source files: report findings with numbers
   `components/film/rack.timeline.json`; tower films: count − 1, beats from `tower.timeline.json`). Rack films rack-01…04 carry
   48 breathing-tail frames after M on both cameras (manifest counts 169/145/169/145; `tail.frames` 48 in the timeline; `TAILS_ON`
   true in reel.ts): the last tail frame is the hold frame byte for byte, so key = frame M = the film's last frame.
-  On coarse pointers only the even tail frames load by design, so `data-loaded` tops out at count − 24 for those four films
-  (145 of 169, 121 of 145): any "wait for loaded === count" precondition needs that exception on touch viewports.
-- `data-loaded` depends on the frame loader (`window.__filmStats.mode`). Under the budget loader (the default: `budget`, or
-  `budget-main`) it means **decoded frames held** for the segment, bounded by the decoded-frame budget: it rises and falls as
-  the window around the target moves and never reaches count on a phone. Every check below that waits for
-  `data-loaded === count` (C3, C10, C18) runs with **`?loader=legacy`** (where it still means every usable frame decoded), or
-  instead waits for the canvas to rest on the target (`e2e/film-frames.ts` `settle`). See `docs/film-lab-gate.md`, "The budget
-  loader".
+  On coarse pointers only the even tail frames load by design (145 of 169 and 121 of 145 frames of those four films are all that
+  can come): no check waits for `data-loaded` to equal count.
+- `data-loaded` is **decoded frames held** for the segment (the budget loader, `window.__filmStats.mode` `budget` or
+  `budget-main`; `stopped` keeps only what was decoded before the stop), bounded by the decoded-frame budget: it rises and falls
+  as the window around the target moves and never reaches count on a phone. C3, C10 and C18 therefore wait for the canvas to rest
+  on the target (as `e2e/film-frames.ts` `settle` does), not for `data-loaded === count`. See `docs/film-lab-gate.md`, "The
+  budget loader".
 - Move m = (M / pace)·svh (`moveVhOf`). Chapter section = the composition box (`min-h-svh`, plus a body) + an `aria-hidden` spacer of
   (moveVh + readVh)·svh; `readVh` 0.5 (Contact 0.6). The hero and the exit are legacy segments (section = move + one viewport).
 - Orientation is chosen once per load with `WIDE_QUERY` `(min-width: 64rem) and (orientation: landscape)`: wide plays landscape,
@@ -55,7 +54,7 @@ You QA the homepage reel. Do not edit source files: report findings with numbers
 
 ### The reel clock (`FilmBackdrop`)
 For every segment whose top has reached the viewport top: y = −top, m its move, q = D − m (D: to the next segment's top, or to the
-page end), μ = m/(m+q), u = y < m ? μ·y/m : μ + (1−μ)(y−m)/q; **c = max(i + u)**, spring-smoothed (140/24; jumps on the first
+page end), μ = m/(m+q), u = y < m ? μ·y/m : μ + (1−μ)(y−m)/q; **c = max(i + u)**, spring-smoothed (140/24 for the wheel, keys and the scroll bar, 35 ms of lag for touch; jumps on the first
 measure, until 500 ms after load and on leaps > 1 segment; no spring under reduced motion). seg = floor(c), p = min(1, u/μ),
 τ = (u − μ)/(1 − μ). Painted frame: round(p·M) in the move, M + round(g(τ)·T) in the tail, g = 0 at τ 0, 0.5 at τ_read
 (= read/q, the read pin's end), 1 at τ 1. T = 0 until tail frames exist (the tail paints M). Legacy r = seg + p.
@@ -100,11 +99,11 @@ measure, until 500 ms after load and on leaps > 1 segment; no spring under reduc
 **C1 Load.** Cold `/` at 1440×900: zero console errors and failed requests; one `canvas`; `rack-00` f0 at scroll 0 with the hero
 poster (`#hero img[fetchpriority=high]`) up until the first paint, then opacity 0; over 10 cold loads the first painted frame is
 always `rack-00` f0 (MutationObserver from navigation start); one `h1`.
-**C2 Structure.** 8 `section[data-film-segment]`, `data-index` 0…7, `data-film` per the table for this orientation; six
+**C2 Structure.** 8 `section[data-film-segment]`, `data-index` 0…7, `data-film` per the table for this orientation; five
 `[data-chapter]` with `section[aria-labelledby]` → an existing `h2#<id>-title`, one `span#<id>[data-anchor]` each; `#exit` has no
 anchor and no section. No retired hook or film anywhere.
 **C3 Clock in moves.** Every segment at p ∈ {0.02, 0.25, 0.5, 0.75, 1}: `data-segment` = its film, `data-frame` = round(p·M) ± 2
-(once `data-loaded === count`), `data-tail` 0, `data-clock` = i + μ·p ± 0.005.
+(once the canvas has rested on the target), `data-tail` 0, `data-clock` = i + μ·p ± 0.005.
 **C4 Clock in tails.** Every chapter at τ ∈ {0, τ_read/2, τ_read, 0.5, 0.75, 0.99}: `data-tail` = τ ± 0.005 and monotonic.
 Tails off: `data-frame` = M throughout. Tails on: `data-frame` monotonic M → M+T, M + round(T/2) ± 1 at τ_read, `count − 1` at the
 next segment's top, and frame `count − 1` byte-identical to frame M (and to the next rack film's f0).
@@ -127,7 +126,7 @@ the exported rest anchors (choreo.ts `ANCHORS` from `rack.timeline.json` `cartri
 centres within ± 0.02·fh of their page bands (SkillsSection `ROWS`: only two drive rows are in view at rest, so the exported
 `row_k` rests are timing beats, not layout); no text line box above 96 px or within 24 px of the viewport's left/right edge
 (measure Range rects of the text, not containers); no horizontal scroll.
-**C10 Plate hand-off** (desktop and phone, every rack chapter, after `data-loaded === count`): before `lift` the plate's `data-plate-frame` =
+**C10 Plate hand-off** (desktop and phone, every rack chapter, after the canvas has rested on the target): before `lift` the plate's `data-plate-frame` =
 the painted frame's track row and it sits on the well; at land + 2 the four corners of `[data-plate]` (parsed `matrix3d` applied to
 the box corners, or its client rect once the quad is a rectangle) are within 1.5 px of `[data-plate-target]`'s rect; at land + 4 the
 plate is hidden and the h2 at opacity 1; an instant jump from f0 to the read pin leaves no plate mid-flight after 2 animation
@@ -178,8 +177,9 @@ ratio too. Cross-check B against a screenshot with only the text hidden: mean |�
 **C17 No-edge lint.** Inside every `[data-compose]`: no border width > 0, no `box-shadow`, no `backdrop-filter`, no border radius
 except on `a` (focus rings are outlines); no `premium-card`, pill or glow class.
 **C18 Bytes.** Static: the sum of every frame of every reel film at each tier (`public/films/<film>/<w>/`), per orientation.
-Measured: unique `/films/` responses over a full stepped scroll (each segment reaching `data-loaded === count`) at 1440×900 DPR 1
-and 390×844 DPR 3 touch, sized from disk; keys (`/images/reel/`) and posters reported separately. **Pass**: landscape 768 ≤ 12 MB,
+Measured: unique `/films/` responses over a full stepped scroll (each step waits for the canvas to rest; with packs, size the film
+data from the response bodies, not from disk) at 1440×900 DPR 1
+and 390×844 DPR 3 touch; keys (`/images/reel/`) and posters reported separately. **Pass**: landscape 768 ≤ 12 MB,
 1280 ≤ 25 MB, report 1920 (≤ 40); portrait 432 ≤ 12 MB, 720 ≤ 25 MB, report 1080; each film within its manifest `kb`; keys ≤ 200 KB.
 **C19 Production** (:3006, cold context, cache disabled): LCP < 2.5 s (`largest-contentful-paint`, buffered); poster
 `encodedBodySize` ≤ 200 KB; first scrub ≤ 1.5 s (navigation start → the first `data-frame` change after a scroll issued once
