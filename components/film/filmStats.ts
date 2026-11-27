@@ -473,10 +473,6 @@ export function loaderStatsFor(inst: Instrument): LoaderStats {
     released: (inflight) => {
       stats.inflight = inflight;
     },
-    decoded: (bytes) => {
-      stats.decodes++;
-      holdFrame(stats, bytes);
-    },
     dropped: (bytes) => dropFrame(stats, bytes),
     failed: () => {
       stats.failures++;

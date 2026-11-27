@@ -1,5 +1,5 @@
 /**
- * The network class, shared by every frame loader (legacy.ts and the budget loader) and by FilmBackdrop: Save-Data,
+ * The network class, shared by the frame loader (the budget loader) and by FilmBackdrop: Save-Data,
  * a slow connection by navigator.connection, and, where the browser has no navigator.connection (Safari), a slow
  * network judged from the time the first hero frames took. Pure, apart from `readConnection`.
  *
