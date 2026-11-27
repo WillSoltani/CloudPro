@@ -251,7 +251,8 @@ profiles keep up (desktop 97.8 % exact, iphone 100 %), the slow phone does not (
 on the iphone profile and 0.6 to 0.9 GB on the slow phone); a pass makes 1,000 to 1,400 requests; and the way back refetches
 nearly every frame it asks for (an engine that evicts what the visitor just saw).
 
-**Targets set by the plan** (met with packs, see the stage 7 verdict below; the baseline table above is the starting point, not today's numbers):
+**Targets set by the plan** (where they stand: the stage 7 verdict below with packs, and the stage 6 toolbar table for the
+canvas reallocations; the baseline table above is the starting point, not today's numbers):
 - the exact frame on 97 % of draws at 600 px/s on the phone profile without throttling;
 - on Fast 4G: a mean fallback distance of 4 frames or less, and the exact frame within 1 s of stopping;
 - longest stale stretch 100 ms or less;
@@ -288,7 +289,7 @@ spiked to 87 during round 4's budget run); they are not in the table, only quote
 
 **Later fixes not in these numbers.** Every row below predates two failure-path fixes to the budget loader (failed fetches of
 frames other than the target are retried; a decoder that rejects the frames moves to main-thread decodes, then to the legacy
-loader, which stage 9 replaced by a stop). Both act only when a fetch or a decode fails, and these runs had 0 failed frames and 0 failed responses on every leg,
+loader). Both act only when a fetch or a decode fails, and these runs had 0 failed frames and 0 failed responses on every leg,
 so they were not re-run.
 
 **Pass down**

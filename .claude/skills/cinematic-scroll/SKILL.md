@@ -90,7 +90,9 @@ export const HOLD_SECTIONS = [[], ["about"], ["certifications"], ["skills"], ["p
   for overlays on the picture. Chrome on `<html data-reel-chrome data-reel-section>` + `reel:chrome` (`useReelChrome()` drives the
   navbar, ScrollToTop and `useFilmInView`). One placement for everything, `placement.ts`: the cover fit of the small-viewport stage at `REEL_FOCUS` (0.50, 0.45), which is `coverRect` itself where lvh = svh.
   Loading: the budget loader (`components/film/loader/`): film packs streamed (one file per film and width), the compressed bytes kept,
-  decodes in a worker inside a 160 / 384 / 512 MiB decoded-frame budget, frames 0, M and last of near films held; see
+  decodes in a worker inside a decoded-frame budget (`pickFrameBudgetBytes`: with `navigator.deviceMemory` min(512, max(96,
+  memory × 48)) MiB, else 160 MiB on a narrow or portrait window and 384 MiB otherwise), the active film's frames 0, M and last
+  and each neighbour's entry frame always kept decoded; see
   `docs/film-lab-gate.md`. Keys: tails off, crossfaded at the move's end and the next segment's start (120 px or `dissolveIn`) and breathing;
   tails on, only the boot key (fades 400 ms after its segment paints).
 - **`FilmChapter`** (`film`, `id`, `moveVh`, `choreo`, `section`, `reducedSteps` 3, `tail?`, `breath?`, `plate?`, `join?`,
@@ -140,7 +142,7 @@ export const HOLD_SECTIONS = [[], ["about"], ["certifications"], ["skills"], ["p
 | Pace | hero 96 frames / vh, chapters and tower-04 84, exit 110, bridge 160; page ≈ 24 vh at 1440×900, ≈ 27 on phones |
 | Film data requests per pass (pack reads + frame files) | ≤ 30 (11 to 12 measured, stage 7) |
 | Way back | 0 requests |
-| Decoded frames | decoded MB ≤ the budget (160 MiB phone, 384 to 512 MiB desktop) |
+| Decoded frames | decoded MB ≤ the budget (96 to 512 MiB by `navigator.deviceMemory`; without it 160 MiB phone, 384 MiB desktop) |
 | Toolbar moves | 0 canvas reallocations per move |
 | Window scroll listeners at rest | ≤ 3 (2 measured, stage 8) |
 | Contrast | slate-300 ≥ 7:1 and slate-400 ≥ 4.5:1 over the brightest 1 % under each text block, composited with its halo or tone |

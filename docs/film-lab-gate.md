@@ -123,8 +123,9 @@ separate step done by whoever owns the bucket); (3) `npm run film:pack -- --chec
 gate in Chromium and WebKit against a local production build that reads the packs from the CDN (built without `NEXT_PUBLIC_FILM_BASE`, e.g.
 `NEXT_DIST_DIR=.next-film-cdn`; no `?packorigin=`): `npm run film:quality -- --profiles desktop,iphone,slowphone --assert
 scripts/films/packs-live.assert.json`, which fails unless every profile read packs before the first scroll and through the pass with
-no per-frame file request, no film fallen back to files, at most 30 film data requests, no console error and no stopped loader (`pass.stopped`, stage 9) (checked on
-2026-11-13 before the upload, desktop against the CDN: it failed as it should, all 8 films fallen back to 1,387 frame files);
+no per-frame file request, no film fallen back to files, at most 30 film data requests and no console error (checked on
+2026-11-13 before the upload, desktop against the CDN: it failed as it should, all 8 films fallen back to 1,387 frame files),
+and since stage 9 no stopped loader (`pass.stopped`);
 (5) only then merge the manifests and deploy. A new or re-cut film gets a new name (frames are immutable) and its packs built the same way;
 `build-film.sh` writes a manifest without `packs`, which is correct until the packs exist.
 
@@ -210,18 +211,20 @@ registration. One loader implements it, the **budget loader**, `components/film/
 below. (Until stage 9 a second one, the legacy loader, one request and one main-thread decode per frame, stayed selectable
 with `?loader=legacy`; see "Stage 9: one loader" below.)
 
-`FilmBackdrop` builds it once per page load, in its effect (`select.ts` `runnableLoader`): the loader decodes in the film
+`FilmBackdrop` builds it in its effect (`select.ts` `runnableLoader`; a change of the reduced-motion setting runs the effect
+again and builds a new one): the loader decodes in the film
 worker where the page has `Worker`, `fetch`, `Blob` and `createImageBitmap`; without `Worker` it is built on the main thread
 (mode `budget-main`), and without `fetch`, `Blob` or `createImageBitmap` it is stopped from the start (mode `stopped`: no
-frame is requested, and the poster and keys stay). The modes are `budget`, `budget-main` and `stopped`, and `mode` may change
+frame is requested and the canvas never paints; what such a page shows is in "Stage 9: one loader"). The modes are `budget`, `budget-main` and `stopped`, and `mode` may change
 at run time (see "The budget loader"). **`?budget=<MB>`** (MiB, 8 to 4096) forces the budget loader's decoded-frame budget for
 the page load, so a desktop browser can run with a phone's figure; the lab-only **`?packorigin=`** moves the packs to a local
 origin (see "Packs"). The loader reports through the narrow `LoaderStats` hook (requests with refetches, decodes, failures,
 in flight, frames alive and their bytes, decode start and end, bytes held, its budget and a change of name), turned into
 `window.__filmStats` by the one adapter `loaderStatsFor` in `filmStats.ts`, and `mode` names the loader's state. The
 interface also carries a width-change signal (`onWidth`: a slow-network retier; the canvas backing cap follows it), page
-visibility and online/offline (`visibility`, `network`), and the rules the planner and the store share: the usable frames
-(`isUsable`, `usable.ts`) and the network class (Save-Data, slow connection, the timed hero frames: `network.ts`).
+visibility and online/offline (`visibility`, `network`), and the rules kept in their own files: the usable frames
+(`isUsable`, `usable.ts`, used by the planner) and the network class (Save-Data, slow connection, the timed hero frames:
+`network.ts`, used by the loader and `FilmBackdrop`).
 `FilmBackdrop` reuses one `WantPlan` object between ticks; a loader never keeps a reference to it.
 
 ## The budget loader
@@ -256,7 +259,8 @@ file exports `createFrameStore`, which the page runs itself when a worker cannot
 `createImageBitmap`, errors, does not answer within 10 s, or its `createImageBitmap` rejects 3 different frames in a row with no
 decode working in between, its jobs are cancelled (no try spent), the bytes it held are forgotten and fetched again (they count
 as refetches), decoded frames stay, and `mode` becomes `"budget-main"`. If main-thread decodes then reject 3 different frames in a
-row too, the loader gives the packs up once per page load, then stops (stage 9, "Stage 9: one loader" below):
+row too, the loader gives up the packs its films are reading (once per page load), and stops where there is no pack left to
+give up (stage 9, "Stage 9: one loader" below):
 
 - **The rescue** (once per page load, only on the main thread): a pack whose header is good but whose frames do not decode is
   given up like any other (`failPack`, "its frames do not decode"). The pack reads stop (the loader posts `pack-stop` for every
@@ -268,7 +272,8 @@ row too, the loader gives the packs up once per page load, then stops (stage 9, 
   job is cancelled, the retry timer is cleared, the store is closed, `bytesHeld` reads 0, `mode` becomes `"stopped"`, and
   nothing more is requested (the planner pump and the answer handler return at once). Frames decoded before the stop stay and
   `nearest()` still returns them; `isComing` answers false, so `draw()` paints the nearest decoded frame instead of waiting
-  for one. A stop is final for the page load.
+  for one. A stop is final: that loader never starts again (a new one comes only from a new run of `FilmBackdrop`'s effect,
+  see "The frame loader").
 
 **Lifetimes.** Every job carries its segment's epoch (a new one on join and on a retier): a fetch or decode that lands after its
 segment left or changed tier, or after `dispose`, is closed and never kept. Every ImageBitmap that leaves the store is
@@ -287,12 +292,11 @@ canvas to come to rest on the target (`e2e/film-frames.ts` `settle`), not for `d
 up to date where it already does the work; it only writes the object, never reads it back, so the film behaves
 exactly as without it. `mode` is the loader's state now: `"budget"` (decoding in the worker), `"budget-main"` (decoding on the
 main thread: from the start without `Worker`, or at run time when the worker fails) or `"stopped"` (nothing can decode the
-frames: from the start without `fetch`, `Blob` or `createImageBitmap`, or at run time after the rescue). `requests` are network fetches of one frame file each (pack reads are `packRequests`, see "Packs at run time"), `refetches` fetches of a frame (film,
+frames: from the start without `fetch`, `Blob` or `createImageBitmap`, or at run time when main-thread decodes keep failing
+and no pack is left to give up: after the one rescue, or with none to rescue). `requests` are network fetches of one frame file each (pack reads are `packRequests`, see "Packs at run time"), `refetches` fetches of a frame (film,
 width, index) whose bytes were fetched before (0 while the bytes are kept), `decodes` frames decoded and kept, `redecodes`
 decodes of a frame decoded before (from kept bytes, no request), and `framesAlive` / `decodedMB` count the ImageBitmaps held,
-reserved decodes included, so `decodedMBPeak` never passes `budgetMB`. The budget loader's own counters (redecodes, worker and
-main-thread decodes with their mean ms, decodes in flight and their peak, compressed bytes held and their peak, the budget)
-are the budget loader's own. `budgetMB` is in 10^6 bytes like every MB here, while the budget is set in MiB: a 160 MiB phone
+reserved decodes included, so `decodedMBPeak` never passes `budgetMB`. `budgetMB` is in 10^6 bytes like every MB here, while the budget is set in MiB: a 160 MiB phone
 budget reads 167.8. Counters (requests, refetches, decodes, failures,
 draws split into exact and fallback paints with their summed distance, ticks, stale ticks, stale ms and the
 longest stale stretch, held paints, canvas resizes, measures) grow until `window.__filmStatsReset()`; gauges
@@ -669,7 +673,8 @@ changes) before they look. The reel, stats, backing, viewports and reduced-motio
 whose `mode` must be `"budget"` (so the worker was emitted by the build and runs in that browser, reading the placeholder packs),
 the frame read back from the canvas pixels compared with `data-frame`. The reel and stats specs also check that every frame came
 from a pack (no frame file, no pack given up). The specs that run the per-frame path do so by routing the pack requests
-(`film-packs`) or by removing what the loader needs (`film-fallback`); no URL switch turns packs or the loader off.
+(`film-packs`), by removing what the loader needs (`film-fallback`), or by playing reduced-motion stills, which read no pack
+(`film-reduced-motion`); no URL switch turns packs or the loader off.
 
 **A stop that does not settle explains itself.** When `settle()` gives up (20 s of the page's own run time, below) it takes a
 snapshot in the same page call, logs it
@@ -730,7 +735,7 @@ The lab browsers report a desktop-sized `navigator.deviceMemory` (headless Chrom
 WebKit has none and a narrow window (160 MiB), so `budget=160` is how the slowphone profile gets a phone's figure. The table has, per
 leg, the budget loader's counters beside the existing columns: redecodes, compressed bytes held (peak), the budget in MB,
 decodes in flight (peak), decodes by worker / on the main thread, the mean decode time, and the loader running at the end of
-the leg (`loader at end`: `budget`, `budget-main` or `stopped`; it can differ from the start if the worker failed). The same figures are in the JSON (`redecodes`,
+the leg (`loader at end`: `budget`, `budget-main` or `stopped`; it can differ from the start if the worker failed or the loader stopped). The same figures are in the JSON (`redecodes`,
 `bytesHeldMBPeak`, `budgetMB`, `decodeInFlightPeak`, `workerDecodes`, `mainThreadDecodes`, `decodeMsMean`, `mode`, and `stopped`:
 1 when the mode at the end of the leg is `"stopped"`, else 0), and `query` is recorded per profile. The existing columns and their meaning are unchanged. A frame fetched by the budget loader is
 a page-initiated `fetch` from the worker, so Playwright's request events for the Chromium profiles still see it; in WebKit each
@@ -752,13 +757,16 @@ clock value, and stay.)
 **The modes** (`window.__filmStats.mode`, "The budget loader"): `budget` (decoding in the worker, the normal state);
 `budget-main` (decoding on the main thread: the page has no `Worker`, or the worker failed to start, errored, did not answer or
 kept rejecting frames); `stopped` (nothing can decode the frames: the page lacks `fetch`, `Blob` or `createImageBitmap`, the
-main-thread store could not start, or main-thread decodes rejected 3 different frames in a row after the one rescue). The rescue
-comes first and only once per page load: the films reading a pack give it up and load one file per frame, the rule the owner
+main-thread store could not start, or main-thread decodes rejected 3 different frames in a row with no pack left to give up or
+the rescue already used). Where a film is reading a pack, the rescue comes first, once per page load: the films reading a pack
+give it up and load one file per frame, the rule the owner
 kept ("a film whose pack cannot be read falls back to one file per frame"). A stop needs no code beyond that: it requests
 nothing and keeps what is decoded.
 
-**What a stopped page shows.** The canvas never paints (opacity 0), so the hero poster stays and the page's text sits on its base
-colour; no film data is requested, and frames decoded before a stop stay and are painted nearest-first. **Known limit, accepted:**
+**What a stopped page shows.** Stopped from the start (or before its first paint): the canvas never paints (opacity 0), so the
+hero poster stays and the page's text sits on its base colour, and no film data is requested. Stopped later: nothing more is
+requested; the canvas stays visible and paints the nearest frame decoded before the stop, or keeps its last frame where a
+segment has none. **Known limit, accepted:**
 the four rack holds that have tail frames show the page base on a stopped page, and a deep link into such a hold keeps its boot
 key. The hold-key code was not changed for a browser that cannot decode the film at all.
 
@@ -827,7 +835,8 @@ nearly every frame it asks for (an engine that evicts what the visitor just saw)
 
 ## Stage 4 on placeholder frames
 
-Measured with the legacy loader (`?loader=legacy`, flipped locally), removed in stage 9; the last commit with it is `2af13317`.
+The legacy side was measured with `DEFAULT_LOADER` flipped locally; the legacy loader was removed in stage 9, the last commit
+with it is `2af13317`.
 
 The real-frame A/B (three alternating runs, verdict per line) is in "Stage 4: budget loader" under "Lab gate" in `docs/cinematic-homepage.md`.
 
