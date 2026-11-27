@@ -154,7 +154,6 @@ export const readFilmStats = (page: Page) => page.evaluate(() => (window.__filmS
  */
 export const LOADERS = [
   { name: "budget", param: "", mode: "budget", packs: true },
-  { name: "legacy", param: "loader=legacy", mode: "legacy", packs: false },
 ] as const;
 export type SpecLoader = (typeof LOADERS)[number];
 

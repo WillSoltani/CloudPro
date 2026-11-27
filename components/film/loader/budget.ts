@@ -42,9 +42,10 @@ import type { FrameLoader, HeldFrame, LoaderEnv } from "./types";
  * bitmap). If the worker cannot start, lacks createImageBitmap or fails, the loader moves to the same frame store on the
  * main thread (createFrameStore from the same ./frame-worker.js) and its name becomes "budget-main"; decoded frames already held stay, bytes the worker
  * held are fetched again. The same move happens when the worker's createImageBitmap keeps rejecting the frames
- * (DECODE_FALLBACK_ERRORS); if main-thread decodes reject them too, `onUnusable` hands the page to the legacy loader
- * (./fallback.ts). FilmBackdrop picks the legacy loader from the start where the page itself lacks fetch, Blob or
- * createImageBitmap (./select.ts).
+ * (DECODE_FALLBACK_ERRORS). If main-thread decodes reject them too, the films reading a pack give it up once (its
+ * frames may be what does not decode) and load one file per frame; if those are rejected as well, the loader stops
+ * (`stop`, mode "stopped"): every job is dropped and nothing more is requested, and the frames already decoded stay.
+ * Where the page itself lacks fetch, Blob or createImageBitmap it is stopped from the start (./select.ts).
  *
  * Every bitmap that leaves the store is close()d and reported (`stats.dropped`); one that arrives after its segment has
  * left or changed tier, or after dispose, is closed and never kept (each job carries the planner's segment epoch).
@@ -90,11 +91,6 @@ export type BudgetOptions = {
   packs?: boolean;
   /** LAB ONLY (`?packorigin=`, select.ts packOriginFromQuery): read packs from this origin, frames from where they are. */
   packOrigin?: string;
-  /**
-   * Main-thread decodes cannot decode the frames either (DECODE_FALLBACK_ERRORS frames failed in a row): this loader
-   * cannot show the film here. Called once; the caller disposes it and runs the legacy loader (./fallback.ts).
-   */
-  onUnusable?: () => void;
 };
 
 /** The film worker must say it is ready within this (ms). */
@@ -102,7 +98,8 @@ export const READY_TIMEOUT_MS = 10_000;
 /**
  * This many different frames failing to decode with no decode working in between means the decoder cannot decode
  * them (an engine whose createImageBitmap rejects WebP, or rejects under memory pressure), not that the frames are bad:
- * the worker's decodes move to the main thread, and main-thread decodes to the legacy loader (`onUnusable`).
+ * the worker's decodes move to the main thread; on the main thread the packs in use are given up once, and then the
+ * loader stops.
  */
 export const DECODE_FALLBACK_ERRORS = 3;
 
@@ -152,7 +149,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   let retryAt = Infinity;
   let readyTimer: unknown = null;
   let worker: WorkerLike | null = null;
-  let unusable = false;
+  let stopped = false;
+  let rescued = false;
 
   const keyOf = (epoch: number, frame: number) => `${epoch}/${frame}`;
 
@@ -234,7 +232,10 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
 
   let source: Source = (!options.mainThread && workerSource()) || mainSource();
   if (source.where === "main") mode = "budget-main";
-  source.post({ t: "init", maxFetches: planner.maxFetches, maxDecodes: planner.maxDecodes });
+  // Without fetch, Blob or createImageBitmap on the page (the store's own checks) nothing can be decoded here: stopped
+  // before anything is sent (FilmBackdrop's first want() runs before the store could answer `ready: false`).
+  if (source.where === "main" && (!pageFetch || typeof Blob !== "function" || !pageDecode)) stop();
+  else source.post({ t: "init", maxFetches: planner.maxFetches, maxDecodes: planner.maxDecodes });
 
   /**
    * The worker cannot run (it failed to start, lacks createImageBitmap, crashed, never answered, or its
@@ -273,6 +274,33 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     pump();
   }
 
+  /**
+   * Nothing here can decode the frames (main-thread decodes keep rejecting them, or the page lacks fetch, Blob or
+   * createImageBitmap): every job is cancelled as in toMainThread, the store is closed (its reads and queues end) and
+   * nothing is requested from now on; mode "stopped". The frames already decoded stay paintable; dispose() closes them.
+   */
+  function stop() {
+    if (disposed || stopped) return;
+    stopped = true;
+    for (const j of fetches.values()) planner.fetchCancelled(j.seg, j.frame, j.epoch);
+    fetches.clear();
+    packReads.clear();
+    stats.released(planner.fetchesInFlight);
+    for (const j of decodes.values()) {
+      planner.decodeCancelled(j.seg, j.frame, j.epoch);
+      stats.dropped(j.bytes);
+    }
+    if (decodes.size) stats.decodeEnded?.(false, source.where, 0, planner.decodesInFlight);
+    decodes.clear();
+    if (retryTimer !== null) clearTimer(retryTimer);
+    retryTimer = null;
+    retryAt = Infinity;
+    source.close();
+    stats.bytesHeld?.(0);
+    mode = "stopped";
+    stats.mode?.(mode);
+  }
+
   // ------------------------------------------------------------------ answers from the store
 
   // The store's last answer (the specs' diagnostic only: debugState).
@@ -282,7 +310,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   function onMessage(m: FromWorker) {
     lastAnswerAt = now();
     lastAnswer = m.t;
-    if (disposed) {
+    if (disposed || stopped) {
       if (m.t === "decoded" && m.ok) m.bitmap.close();
       return;
     }
@@ -290,7 +318,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
       case "ready":
         if (readyTimer !== null) clearTimer(readyTimer);
         readyTimer = null;
-        if (!m.ok) return toMainThread();
+        if (!m.ok) return source.where === "worker" ? toMainThread() : stop();
         return;
       case "held":
         stats.bytesHeld?.(m.held);
@@ -381,10 +409,30 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
           if (missing) stats.failed();
           if (planner.decodeErrorStreak >= DECODE_FALLBACK_ERRORS) {
             if (source.where === "worker") return toMainThread();
-            if (!unusable && options.onUnusable) {
-              unusable = true;
-              return options.onUnusable();
+            // Main-thread decodes reject them too. Once per page load, the films reading a pack give it up (its frames
+            // may be what does not decode) and load one file per frame from fresh bytes; else nothing here can decode.
+            let gaveUp = false;
+            if (!rescued) {
+              for (let i = 0; i < recs.length; i++) {
+                if (recs[i] && planner.failPack(i, "its frames do not decode")) {
+                  gaveUp = true;
+                  packGivenUp();
+                }
+              }
             }
+            if (!gaveUp) return stop();
+            rescued = true;
+            // Their reads stop here (forgetBytes forgets the planner's read ids) and nothing they still deliver is taken.
+            for (const id of packReads.keys()) source.post({ t: "pack-stop", id });
+            packReads.clear();
+            // Decodes still running read the pack's bytes: cancelled, so forgetBytes lets those bytes go as well.
+            for (const d of decodes.values()) {
+              planner.decodeCancelled(d.seg, d.frame, d.epoch);
+              stats.dropped(d.bytes);
+            }
+            if (decodes.size) stats.decodeEnded?.(false, source.where, 0, planner.decodesInFlight);
+            decodes.clear();
+            planner.forgetBytes();
           }
         }
         return pump();
@@ -465,7 +513,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
 
   // Fetch, then decode, as far as the planner allows; then the batched drops, data-loaded, and the retry timer.
   function pump() {
-    if (disposed) return;
+    if (disposed || stopped) return;
     const t = now();
     let job: number;
     while ((job = planner.nextFetch(t)) !== NONE) startFetch(job);
@@ -499,7 +547,7 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
   };
 
   // Without navigator.connection (Safari): the first TIMED_FRAMES hero frames' fetch times, measured where the fetch
-  // ran (the worker), decide whether the network is slow (network.ts heroTimesSlow), as the legacy loader does.
+  // ran (the worker), decide whether the network is slow (network.ts heroTimesSlow).
   const timeHeroFrame = (ms: number) => {
     if (connection || slow || heroTimes.length >= TIMED_FRAMES || !(ms > 0)) return;
     heroTimes.push(ms);
@@ -547,8 +595,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
     bitmaps: new Array(film.count),
   });
 
-  // A slow network: every segment after `after` moves to the tier FilmBackdrop would pick now, as the legacy loader
-  // does (at a segment boundary, never mid-segment). Its frames and bytes go; fetches in flight land stale.
+  // A slow network: every segment after `after` moves to the tier FilmBackdrop would pick now (at a segment boundary,
+  // never mid-segment). Its frames and bytes go; fetches in flight land stale.
   const retier = (after: number) => {
     for (let i = after + 1; i < recs.length; i++) {
       const rec = recs[i];
@@ -633,7 +681,8 @@ export function createBudgetLoader(env: LoaderEnv, options: BudgetOptions = {}):
       return held;
     },
 
-    isComing: (index, at, tolerance) => planner.isComing(index, at, tolerance),
+    // Stopped: nothing is coming, so draw() paints the nearest frame held instead of waiting.
+    isComing: (index, at, tolerance) => !stopped && planner.isComing(index, at, tolerance),
     waitReason: (index, at) => {
       const why = WAIT_REASONS[planner.waitReason(index, at)];
       const p = planner.pack(index);

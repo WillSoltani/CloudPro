@@ -38,11 +38,14 @@ class FakeBitmap implements BitmapLike {
 
 type Film = { manifest: FilmManifest; pack: Uint8Array; url: string; skeletonEnd: number; header: number; order: number[] };
 
-/** A film of `count` frames whose pack holds each frame's URL as its bytes (padded so frames differ in size). */
-function makeFilm(name: string, count: number, moveEnd = count - 1): Film {
+/**
+ * A film of `count` frames whose pack holds each frame's URL as its bytes (padded so frames differ in size). `bad`: the
+ * pack's frames are "bad:" + the URL (a decoder may reject them; the frame files stay good).
+ */
+function makeFilm(name: string, count: number, moveEnd = count - 1, bad = false): Film {
   const base = `/films/${name}`;
   const m0: FilmManifest = { name, count, fps: 24, widths: [W], aspect: ASPECT, pad: 4, ext: "webp", base, poster: "" };
-  const frames = Array.from({ length: count }, (_, i) => enc.encode(frameUrl(m0, W, i)));
+  const frames = Array.from({ length: count }, (_, i) => enc.encode(`${bad ? "bad:" : ""}${frameUrl(m0, W, i)}`));
   const built = buildPack(frames, moveEnd);
   const file = `pack-${(count * 7919 + name.length).toString(16).padStart(8, "0").slice(-8)}.bin`;
   const manifest: FilmManifest = {
@@ -76,7 +79,17 @@ type ServerOptions = {
   truncate?: (url: string, attempt: number) => number | undefined;
 };
 
-function setup(films: Film[], o: { server?: ServerOptions; env?: Partial<LoaderEnv>; budget?: Partial<BudgetOptions>; budgetFrames?: number } = {}) {
+function setup(
+  films: Film[],
+  o: {
+    server?: ServerOptions;
+    env?: Partial<LoaderEnv>;
+    budget?: Partial<BudgetOptions>;
+    budgetFrames?: number;
+    /** createImageBitmap rejects bytes whose text this accepts (worker and main thread alike). */
+    decodeFails?: (text: string) => boolean;
+  } = {},
+) {
   const srv = o.server ?? {};
   let clock = 0;
   const timers: { at: number; fn: () => void; id: number }[] = [];
@@ -154,8 +167,11 @@ function setup(films: Film[], o: { server?: ServerOptions; env?: Partial<LoaderE
     const res: ResponseLike = { ok: true, status, blob: async () => new Blob([data as BlobPart]), headers, body: streamOf(data, init.signal) };
     return res;
   };
+  const decodes: string[] = [];
   const decode = async (blob: Blob) => {
     const url = await blob.text();
+    decodes.push(url);
+    if (o.decodeFails?.(url)) throw new DOMException("cannot decode", "InvalidStateError");
     const bm = new FakeBitmap(W, Math.round(W / ASPECT), url);
     bitmaps.push(bm);
     return bm;
@@ -241,6 +257,10 @@ function setup(films: Film[], o: { server?: ServerOptions; env?: Partial<LoaderE
     stats: inst.stats,
     requests,
     fileFetches,
+    /** Every createImageBitmap call, by the text of its bytes. */
+    decodes,
+    /** Timers set and not yet run or cleared. */
+    timersPending: () => timers.length,
     bitmaps,
     workers,
     advance,
@@ -494,6 +514,64 @@ describe("film packs: fallbacks", () => {
     await flush(200);
     assert.equal(t.stats.packFallbackFilms, 1);
     assert.equal(t.loader.isComing(0, 10, 2), false);
+  });
+
+  it("a pack whose frames do not decode while its files do: given up once on the main thread, the film from files", async () => {
+    const counts = [65];
+    const films = [makeFilm("b0", 65, 64, true)];
+    const t = setup(films, { decodeFails: (text) => text.startsWith("bad:"), budgetFrames: 80 });
+    await walk(t.loader, counts, 1);
+    await flush(400);
+    t.loader.want(plan(0, 64, 1, counts));
+    await flush(400);
+    // The worker's decodes failed, then the main thread's (the pack read again), then the pack was given up.
+    assert.equal(t.loader.mode, "budget-main");
+    assert.equal(t.stats.mode, "budget-main");
+    assert.ok(t.decodes.filter((d) => d.startsWith("bad:")).length >= 2 * 3, `${t.decodes.length} decodes`);
+    assert.equal(t.stats.packFallbackFilms, 1);
+    assert.equal(t.stats.packFilms, 0);
+    assert.equal(t.requests.length, 2, "the pack read by the worker, then once more by the main thread");
+    // Every frame from its file, once, decoded.
+    assert.equal(t.fileFetches.length, 65);
+    assert.equal(new Set(t.fileFetches).size, 65);
+    assert.equal(t.loader.loaded(0), 65);
+    assert.equal(t.loader.nearest(0, 64)?.frame, 64);
+    assert.ok(t.bitmaps.every((b) => !b.url.startsWith("bad:")));
+  });
+
+  it("when the frame files do not decode either, the loader stops after its one rescue: nothing more is read or fetched", async () => {
+    const counts = [65, 65];
+    const films = counts.map((c, i) => makeFilm(`u${i}`, c, c - 1, true));
+    const t = setup(films, { decodeFails: () => true });
+    t.loader.want(plan(0, 0, 1, counts));
+    await flush(400);
+    await t.advance(2000);
+    await flush(400);
+    assert.equal(t.loader.mode, "stopped");
+    assert.equal(t.stats.mode, "stopped");
+    // It went through the rescue first: both packs given up, frame files fetched and rejected too.
+    assert.equal(t.stats.packFallbackFilms, 2);
+    assert.ok(t.fileFetches.length > 0, "frame files fetched after the packs were given up");
+    assert.ok(t.decodes.some((d) => !d.startsWith("bad:")), "a frame file's bytes were decoded");
+    assert.equal(t.timersPending(), 0, "no timer left");
+    const reads = t.requests.length;
+    const files = t.fileFetches.length;
+    const decodes = t.decodes.length;
+    // Nothing more: both films walked down and back, the retry delays, the network back, the page shown.
+    await walk(t.loader, counts, 1);
+    await walk(t.loader, counts, -1);
+    await t.advance(30_000);
+    t.loader.network(true);
+    t.loader.visibility(false);
+    await flush(200);
+    assert.equal(t.requests.length, reads, "no pack read after the stop");
+    assert.equal(t.fileFetches.length, files, "no frame file fetched after the stop");
+    assert.equal(t.decodes.length, decodes, "no decode after the stop");
+    assert.equal(t.timersPending(), 0);
+    assert.equal(t.loader.isComing(0, 10, 4), false);
+    assert.equal(t.stats.packRequests, reads);
+    assert.equal(t.stats.inflight, 0);
+    assert.equal(t.stats.decodeInFlight, 0);
   });
 
   it("packs: false: one file per frame, no pack request", async () => {

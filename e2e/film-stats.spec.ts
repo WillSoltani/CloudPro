@@ -128,18 +128,3 @@ test("the HUD shows only with ?hud=1 @stats", async ({ page }) => {
   else await expect(hud).not.toContainText("packs ");
 });
 });
-
-test("?loader=budget-main decodes on the main thread and ?budget= sets the budget @stats", async ({ page }) => {
-  await page.goto("/?loader=budget-main&budget=160", { waitUntil: "load" });
-  await expect(page.locator("canvas[data-segment]")).toHaveAttribute("data-frame", /^\d+$/);
-  await expect.poll(async () => (await readStats(page))?.mode).toBe("budget-main");
-  await scrollDown(page);
-  await page.waitForTimeout(800);
-  const s = (await readStats(page)) as FilmStats;
-  expect(s.mainThreadDecodes).toBeGreaterThan(0);
-  expect(s.workerDecodes).toBe(0);
-  expect(s.budgetMB).toBeCloseTo((160 * 1024 * 1024) / 1e6, 3);
-  expect(s.decodedMBPeak).toBeLessThanOrEqual(s.budgetMB + 1e-6);
-  expect(s.refetches).toBe(0);
-  expect(s.failures).toBe(0);
-});

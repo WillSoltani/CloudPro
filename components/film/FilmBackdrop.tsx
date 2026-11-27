@@ -55,21 +55,11 @@ import {
 } from "@/components/film/filmStats";
 import { FilmHud } from "@/components/film/FilmHud";
 import { backingSize, growCap, MAX_DPR } from "@/components/film/backing";
-import { createLegacyLoader } from "@/components/film/loader/legacy";
 import { createBudgetLoader } from "@/components/film/loader/budget";
-import { withLegacyFallback } from "@/components/film/loader/fallback";
 import { budgetOverrideBytes } from "@/components/film/loader/budget-bytes";
 import { readConnection, saveDataOn } from "@/components/film/loader/network";
-import { loaderFromQuery, packOriginFromQuery, pageCaps, runnableLoader, type LoaderName } from "@/components/film/loader/select";
+import { packOriginFromQuery, pageCaps, runnableLoader } from "@/components/film/loader/select";
 import type { FrameLoader, LoaderEnv, WantPlan } from "@/components/film/loader/types";
-
-/**
- * The frame loader a page load runs unless `?loader=legacy|budget|budget-main` names another (components/film/loader/
- * select.ts). "budget": the budget loader, decoding in the film worker; it falls back to main-thread decodes on its own,
- * and to the legacy loader if those cannot decode the frames either (loader/fallback.ts); the page runs the legacy
- * loader from the start where it lacks fetch, Blob or createImageBitmap.
- */
-const DEFAULT_LOADER: LoaderName = "budget";
 
 /**
  * One crop point for the whole reel (x, y in 0–1): segments share boundary frames, so a per-film focus
@@ -278,8 +268,7 @@ export function breathCurve(tau: number, tauRead: number): number {
  *
  * Frames: this component owns the clock, the draw call, the hold keys, the chrome and the registration; which
  * frames exist in memory is the frame loader's (components/film/loader: the FrameLoader interface in types.ts,
- * the budget loader in budget.ts, the legacy loader in legacy.ts). It is picked in one place in the effect
- * (DEFAULT_LOADER, or `?loader=`).
+ * the budget loader in budget.ts). It is built in one place in the effect.
  * Each segment joins it with the tier tier() picks from the canvas box (`data-width`, the backing cap and the
  * counters read the loader's width); every clock tick hands it what the clock wants (want: the active segment,
  * its target frame, the direction of travel, where the neighbours are entered); draw() paints `loader.nearest`
@@ -458,11 +447,11 @@ export function FilmBackdrop({
       return stageBox(box.h, box.svh, REEL_FOCUS[1]).top;
     };
 
-    // The frame loader (components/film/loader): which frames exist in memory. Picked here, once per page load
-    // (DEFAULT_LOADER, or `?loader=`; `?budget=<MB>` forces the budget loader's decoded-frame budget, for the lab). Its
+    // The frame loader (components/film/loader): which frames exist in memory. Built here, once per page load, in the
+    // film worker where the page can run it (`?budget=<MB>` forces its decoded-frame budget, for the lab). Its
     // counters reach `window.__filmStats` through the one adapter in filmStats.ts.
     const search = window.location.search;
-    const loaderName = runnableLoader(loaderFromQuery(search, DEFAULT_LOADER), pageCaps());
+    const loaderName = runnableLoader(pageCaps());
     const loaderEnv: LoaderEnv = {
       stats: loaderStatsFor(instrument),
       connection,
@@ -483,21 +472,11 @@ export function FilmBackdrop({
         });
       },
     };
-    // The budget loader hands the page to the legacy loader if it cannot decode the frames on the main thread either.
-    const loader: FrameLoader =
-      loaderName === "legacy"
-        ? createLegacyLoader(loaderEnv)
-        : withLegacyFallback(
-            loaderEnv,
-            (onUnusable) =>
-              createBudgetLoader(loaderEnv, {
-                mainThread: loaderName === "budget-main",
-                budgetBytes: budgetOverrideBytes(search) ?? undefined,
-                packOrigin: packOriginFromQuery(search, window.location.hostname) ?? undefined,
-                onUnusable,
-              }),
-            createLegacyLoader,
-          );
+    const loader: FrameLoader = createBudgetLoader(loaderEnv, {
+      mainThread: loaderName === "budget-main",
+      budgetBytes: budgetOverrideBytes(search) ?? undefined,
+      packOrigin: packOriginFromQuery(search, window.location.hostname) ?? undefined,
+    });
     stats.mode = loader.mode;
 
     // Smoothing by input (components/film/smoothing.ts): the wheel, the keys and the scroll bar keep WHEEL_SPRING, touch

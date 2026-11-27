@@ -26,7 +26,7 @@ describe("loaderStatsFor: the legacy way (a frame is held once it has decoded)",
       [s.redecodes, s.workerDecodes, s.mainThreadDecodes, s.decodeMsMean, s.decodeInFlightPeak, s.budgetMB, s.bytesHeldMB, s.bytesHeldMBPeak],
       [0, 0, 0, 0, 0, 0, 0, 0],
     );
-    assert.equal(s.mode, "legacy");
+    assert.equal(s.mode, "budget");
   });
 });
 

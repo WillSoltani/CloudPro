@@ -200,7 +200,7 @@ describe("resetFilmStats", () => {
     assert.equal(s.paintedFrame, 4);
     assert.equal(s.backingW, 1920);
     assert.equal(s.backingH, 1200);
-    assert.equal(s.mode, "legacy");
+    assert.equal(s.mode, "budget");
   });
 
   it("restarts an open stale stretch at the reset", () => {
