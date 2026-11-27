@@ -84,7 +84,7 @@ export const soltaniOrg: Project = {
       "A reload or deep link into a section: its key frame paints before the page's scripts load.",
     ],
     cost: [
-      "A full scroll is 7.5 MB of frames at 768 px, 15.2 MB at 1280 and 27.5 MB at 1920; on phones, 8.3 MB at 432 and 15.2 MB at 720.",
+      "A full scroll is 7.5 MB of frames at 768 px, 15.2 MB at 1280 and 27.5 MB at 1920; on phones, 8.3 MB at 432, and on tablets 15.2 MB at 720.",
       "Frames are cached for a year on CloudFront (PriceClass 100), so a repeat visit reuses them.",
       "The rack act needed no generation credits: it is a local Blender render.",
     ],

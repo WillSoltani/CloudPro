@@ -47,7 +47,7 @@ You QA the homepage reel. Do not edit source files: report findings with numbers
   (moveVh + readVh)·svh; `readVh` 0.5 (Contact 0.6). The hero and the exit are legacy segments (section = move + one viewport).
 - Orientation is chosen once per load with `WIDE_QUERY` `(min-width: 64rem) and (orientation: landscape)`: wide plays landscape,
   anything else the entry's portrait film where it has one. Tiers by pixel count: landscape 768/1280/1920, portrait 432/720/1080
-  (all final; no preview tiers remain); coarse pointers capped at ≈ 1.15 MP; Save-Data the smallest. Tower `-p` films are
+  (all final; no preview tiers remain); coarse pointers capped at ≈ 1.15 MP; a phone held upright (a window at most 520 px wide) and Save-Data the smallest. Tower `-p` films are
   centre crops (x 0.370–0.630, 499×1080, tiers 432/499).
 - Retired, must not appear in any request or DOM: `reel-01`, `reel-05`, `tower-03`, `rack-06`, `rack-07` (and their `-p`),
   `chapter-05/06/07`, HoldPanel, FilmDivider, DitherVeil, `data-hold-panel`, any `/films/<film>/960/` or `/540/` tier.
@@ -155,7 +155,7 @@ exit {0, last} (record every value over a full stepped scroll); never above M (n
 `[data-reveal]` transform identity and, per chapter, opacities all 0 or all 1 together; no spring (two rAFs after a jump
 `data-clock` is final); `scroll-behavior: auto`; zero console errors.
 **C15 Phones** 390×844 and 375×812 (DPR 3, touch): rack entries play `*-p` (`data-film` `rack-0N-p`), tower entries `tower-0N-p` once
-built (today landscape: report); `data-width` from the portrait tiers (≤ 720 coarse); every chapter laid out stacked (on phones
+built (today landscape: report); `data-width` 432 (a phone held upright takes the smallest portrait tier); every chapter laid out stacked (on phones
 `data-compose-mode` stays `auto`: the framed rules apply only under `WIDE_QUERY`, so check `[data-columns]` computes
 `flex-direction: column`) with its first text line top ≥ 0.52·innerHeight at camera rest (Contact: its top block from 0.10);
 no text within 0.07·h of the tower's lamp in Contact; plates per C10; `scrollWidth === clientWidth`; the menu lists GitHub and

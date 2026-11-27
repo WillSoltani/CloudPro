@@ -84,13 +84,17 @@ const KEY_OUT_PX = 120;
 // landscape tier (1280 × 720) with room for the portrait tier that matches it (720 × 1560, 1.22× the
 // pixels), never the 1920 landscape or 1080 portrait tiers.
 const COARSE_MAX_PIXELS = 1280 * 720 * 1.25;
+// A phone held upright: a coarse pointer playing a portrait film in a window at most this wide (CSS px). Above the
+// widest phone (about 450), below a phone held sideways (568 and up) and a tablet (600 and up).
+const PHONE_MAX_WIDTH = 520;
 // A frame within this many of the target may lift the poster (and counts as "landed").
 const LANDED = 8;
 // The canvas fades in over this on its first paint when nothing covers it.
 const FIRST_PAINT_MS = 250;
 // After load, measures keep landing instead of scrubbing for this long (the browser restores scroll).
 const SETTLE_MS = 500;
-// A tier may be up to this much narrower than the need (a 390 px phone at DPR 3 needs 438.75 px: 432 is 1.6 % short).
+// A tier may be up to this much narrower than the need. (Sized for a 390 px phone at DPR 3: 438.75 px against 432.
+// Phones held upright are now sorted by PHONE_MAX_WIDTH; the slack still applies to everything else.)
 const TIER_SLACK = 0.02;
 // The raw clock has no direction of travel once it has been still this long (the follower below).
 const QUIET_MS = 150;
@@ -560,18 +564,22 @@ export function FilmBackdrop({
     // Frame tier, by pixel count so landscape (768/1280/1920) and portrait (432/720/1080) manifests are
     // judged alike: the smallest tier with the pixels the cover-fitted frame needs at (capped) device
     // resolution; coarse pointers top out at COARSE_MAX_PIXELS (the 1280 landscape tier or the 720
-    // portrait tier), Save-Data and a slow network (the loader's isSlow) take the smallest.
+    // portrait tier), Save-Data and a slow network (the loader's isSlow) take the smallest. So does a phone held
+    // upright (PHONE_MAX_WIDTH), whatever its width: the smallest size decodes in about half the time and three times
+    // as many frames fit the budget, the slack a phone needs to keep up ("Wide phones" in docs/film-lab-gate.md).
     const tier = (film: FilmManifest) => {
       const sorted = [...film.widths].sort((a, b) => a - b);
       const pixels = (w: number) => (w * w) / film.aspect;
-      const pool = saveData || loader.isSlow()
+      // The width the picture is painted at (the placement's; the cover fit of the canvas box on desktop). placed()
+      // has measured the box by now, so box.w is the window's width.
+      const span = placed(film.aspect).width;
+      const phone = coarse && film.aspect < 1 && box.w <= PHONE_MAX_WIDTH;
+      const pool = saveData || loader.isSlow() || phone
         ? [sorted[0]]
         : coarse
           ? sorted.filter((w) => pixels(w) <= COARSE_MAX_PIXELS)
           : sorted;
       if (!pool.length) pool.push(sorted[0]);
-      // The width the picture is painted at (the placement's; the cover fit of the canvas box on desktop).
-      const span = placed(film.aspect).width;
       const need = pixels(span * Math.min(dpr, 1.5) * 0.75 * (1 - TIER_SLACK));
       return pool.find((w) => pixels(w) >= need) ?? pool[pool.length - 1];
     };

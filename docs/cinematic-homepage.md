@@ -137,7 +137,7 @@ act is `tower-01` (bridge 145 + lights-on 144, clips mode) and `tower-04` (145) 
 of the 800 ceiling (T0 stills 16, bridge 108, lights-on 162; the bridge is a zero-credit patch of take 1, lights-on take 3
 accepted by Will). Page: `TAILS_ON` on, the exit's portrait is `rack-05-p` with key `rack-K05-p` and no dissolve, the dissolves
 into `tower-01` and `tower-04` stay at 0.2. Bytes for the whole page: 768 7.5 MB, 1280 15.2 MB, 1920 27.5 MB; phones 432
-8.3 MB, 720 15.2 MB (racks at 720 + the tower crops at 499). Today a phone held upright (coarse pointer, DPR 1.5 or more, no Save-Data or slow network) takes 432 up to a painted width of 391.84 CSS px (432 / 1.1025) and 720 above it (the tower films 499); see "Wide phones (2026-11-27)" in `docs/film-lab-gate.md`. Retired preview films live in `films-src/rack/preview/built/`; `reel-01`, `reel-05`, `tower-03`, `K4/K5`
+8.3 MB, 720 15.2 MB (racks at 720 + the tower crops at 499). A phone held upright (a coarse pointer in a window at most 520 CSS px wide) takes 432 for every film; a tablet held upright and a phone held sideways take 720 (the tower films 499). The size is chosen when the page loads; see "Wide phones (2026-11-27)" in `docs/film-lab-gate.md`. Retired preview films live in `films-src/rack/preview/built/`; `reel-01`, `reel-05`, `tower-03`, `K4/K5`
 keys are still tracked and go with the ship commit. Masters are not yet archived (FFV1 after Gate C).
 **QA (2026-10-15):** four fix rounds after the full QA runs (`films-src/qa/part5/qa-run-2…4`, `qa-final`): the tails-on boot key is
 released on the first landed paint of whatever segment the clock targets; the hero poster is up only while segment 0 is targeted and
@@ -173,7 +173,7 @@ work). The gate reproduces that picture on a local production build and puts a n
 **What it measures.** `scripts/films/scrub-quality.mjs` drives one steady, time-based scroll pass through the home page per profile
 (and, with `--back`, the same pass back up, reported separately). Profiles: `desktop` (Chromium 1440x900, DPR 2, 900 px/s),
 `iphone` (WebKit, device "iPhone 14", 600 px/s), `slowphone` (Chromium 390x844 mobile, DPR 3, CPU 4x slower, 9 Mbit/s down,
-1.5 up, 165 ms latency, 600 px/s). Three more profiles run only when named in `--profiles`: `iphone393`, `iphone440` and `slowphone412`, wide phones that run on the 720 frame size; see "Wide phones (2026-11-27)" in `docs/film-lab-gate.md`. The engine's counters (`window.__filmStats`, reset right before the pass) say what the canvas
+1.5 up, 165 ms latency, 600 px/s). Three more profiles run only when named in `--profiles`: `iphone393`, `iphone440` and `slowphone412`, wide phones (they ran on the 720 frame size until 2026-11-27); see "Wide phones (2026-11-27)" in `docs/film-lab-gate.md`. The engine's counters (`window.__filmStats`, reset right before the pass) say what the canvas
 showed; Playwright's request events say what went over the network; the script samples the browser's own frame clock and long
 tasks itself. It refuses any page that is not localhost or 127.0.0.1 unless both `--cap` and `--allow-remote` are given, and it
 never runs against the live site in this repository's workflow.

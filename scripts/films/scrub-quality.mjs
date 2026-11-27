@@ -32,9 +32,8 @@
  *   iphone     WebKit, Playwright device "iPhone 14", 600 px/s
  *   slowphone  Chromium 390x844 mobile, DPR 3, touch, CPU 4x slower, network 9 Mbit/s down / 1.5 up / 165 ms
  *              latency (CDP emulation), 600 px/s
- *   Wide phones, run only when named in --profiles. The film picks its frame size from the width the picture is
- *   painted at, so a wider phone can run on a larger size than the 390 px profiles and hold fewer decoded frames
- *   in the same budget ("frame width px" in the table says which size a profile ran on):
+ *   Wide phones, run only when named in --profiles. They check that a phone wider than the 390 px profiles runs
+ *   on the same small frame size ("frame width px" in the table says which size a profile ran on):
  *   iphone393     WebKit, Playwright device "iPhone 15" (393 px wide), 600 px/s
  *   iphone440     WebKit, Playwright device "iPhone 17 Pro Max" (440 px wide), 600 px/s
  *   slowphone412  slowphone at 412x915
